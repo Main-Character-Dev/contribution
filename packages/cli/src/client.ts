@@ -8,8 +8,9 @@ import type { Response } from '@contribution/contracts';
 
 const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--profile': 'profile', '--availability': 'availability', '--request-id': 'requestId',
   '--expected-revision': 'expectedRevision', '--source-path': 'sourcePath', '--source-tip': 'sourceTip', '--base': 'base', '--expected-tip': 'expectedTip', '--scope-token': 'scopeToken',
-  '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId', '--ssh-alias': 'sshAlias', '--host': 'host' };
-const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle' };
+  '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId', '--ssh-alias': 'sshAlias', '--host': 'host',
+  '--device': 'device', '--artifact': 'artifact', '--app-ref': 'appRef', '--build-profile': 'buildProfile', '--plan': 'plan', '--session-profile': 'sessionProfile', '--duration-seconds': 'durationSeconds', '--max-bytes': 'maxBytes', '--kind': 'kind' };
+const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch' };
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
 export function exitCode(response: Response): number {
@@ -53,12 +54,13 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
       const word = argv[index]!;
       if (word === '--json' || word === '--jsonl') continue;
       if (word === '--wait') { wait = true; continue; } if (word === '--follow') { follow = true; continue; }
+      if (word === '--operation') { const value = argv[++index]; if (!value || value.startsWith('--')) throw new Fault('INVALID_USAGE', 'Select an operation.', 2); args['operations'] = [...(args['operations'] as string[] ?? []), value]; continue; }
       if (word === '--state-dir' || word === '--file' || word === '--metadata-file') {
         const value = argv[++index]; if (!value || value.startsWith('--')) throw new Fault('INVALID_USAGE', `${word} needs a value.`, 2);
         if (word === '--state-dir') directory = value; else args[word === '--file' ? 'config' : 'metadata'] = jsonFile(value); continue;
       }
       const key = values[word];
-      if (key) { const value = argv[++index]; if (!value || value.startsWith('--') || key in args) throw new Fault('INVALID_USAGE', `${word} needs one value.`, 2); args[key] = ['tail', 'after'].includes(key) ? Number(value) : value; continue; }
+      if (key) { const value = argv[++index]; if (!value || value.startsWith('--') || key in args) throw new Fault('INVALID_USAGE', `${word} needs one value.`, 2); args[key] = ['tail', 'after', 'durationSeconds', 'maxBytes'].includes(key) ? Number(value) : value; continue; }
       const flag = flags[word]; if (flag) { if (flag in args) throw new Fault('INVALID_USAGE', `Repeated ${word}.`, 2); args[flag] = true; continue; }
       if (word.startsWith('-') && word !== '--version') throw new Fault('INVALID_USAGE', `Unknown option ${word}.`, 2);
       words.push(word === '--version' ? 'version' : word);
@@ -69,6 +71,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     else throw new Fault('INVALID_USAGE', 'Unknown command. Use contribution help.', 2);
     if (['repos.add', 'repos.create', 'repos.relocate'].includes(command)) args['path'] = words.shift();
     if (command.startsWith('runs.') && !['runs.list', 'runs.events'].includes(command) || ['logs', 'repair-context'].includes(command)) args['operationId'] = words.shift();
+    if (command === 'devices.reconcile') args['operationId'] = words.shift();
     if (words.length) throw new Fault('INVALID_USAGE', 'Unexpected positional arguments.', 2);
     if (['checks.run', 'repos.create'].includes(command) && !args['requestId']) args['requestId'] = randomUUID();
     if (json && jsonl) throw new Fault('INVALID_USAGE', 'Choose --json or --jsonl.', 2);

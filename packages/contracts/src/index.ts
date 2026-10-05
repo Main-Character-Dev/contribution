@@ -6,6 +6,11 @@ import type { AnySchema, ValidateFunction } from 'ajv';
 export type { Response } from './generated/response.js';
 export type { Repository } from './generated/repository.js';
 export type { Machine } from './generated/machine.js';
+export type { DeviceCapability, Context as DeviceContext } from './generated/device-capability.js';
+export type { DeviceOwnership } from './generated/device-ownership.js';
+export type { DeviceOperation } from './generated/device-operation.js';
+export type { DeviceTestEvidence } from './generated/device-test-evidence.js';
+export type { ArtifactProvenance } from './generated/artifact-provenance.js';
 export { buildIdentity } from './generated/version.js';
 
 const directory = new URL('../schemas/', import.meta.url);

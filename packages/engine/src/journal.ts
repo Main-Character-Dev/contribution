@@ -57,10 +57,11 @@ export class Journal {
     requireValue(row['identity'] === digest({ kind, repositoryId, input }), 'REQUEST_ID_CONFLICT', 'This request ID already identifies different immutable inputs.');
     return JSON.parse(String(row['body'])) as Operation;
   }
-  admit(requestId: string, kind: string, repositoryId: string, input: ObjectValue, payload: string, state: State = 'queued'): Operation {
+  admit(requestId: string, kind: string, repositoryId: string, input: ObjectValue, payload: string, state: State = 'queued', initialResult?: (op: Operation) => ObjectValue): Operation {
     const prior = this.existing(requestId, kind, repositoryId, input); if (prior) return prior;
     const op: Operation = { operationId: id(), requestId, repositoryId, kind, input, payload, state, stage: 'accepted',
       result: {}, error: null, createdAt: now(), attemptId: id(), pinned: false, effectDispatched: false };
+    if (initialResult) op.result = initialResult(op);
     const log = openSync(this.logPath(op), 'wx', 0o600); fsyncSync(log); closeSync(log);
     this.transaction(() => {
       this.db.prepare('INSERT INTO operations(id,request_id,identity,repository_id,state,body) VALUES(?,?,?,?,?,?)')
@@ -112,7 +113,7 @@ export class Journal {
   response(op: Operation): Response {
     return { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
-        acceptance: { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
+        acceptance: op.kind === 'device' ? op.result['acceptance'] : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
   }
   async backup(path: string): Promise<void> { await backup(this.db, path); chmodSync(path, 0o600); }
