@@ -3,6 +3,7 @@ import type { Journal, Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import { digest, id, now, requireValue, string } from './core.js';
 import type { ObjectValue } from './core.js';
+import { githubSelection } from './github.js';
 
 export interface Notice {
   id: string; revision: string; repositoryId: string; originHostId: string; title: string; body: string;
@@ -59,7 +60,7 @@ export class Milestones {
     }
     for (const repo of repositories.filter(repo => repo.canonicalHostId === this.store.hostId)) {
       const observation = this.store.record<ObjectValue>('github', repo.id);
-      if (!observation || observation['freshness'] !== 'fresh') { this.retire(`github-pr:${repo.id}`); continue; }
+      if (!observation || observation['freshness'] !== 'fresh' || observation['selection'] !== githubSelection(repo)) { this.retire(`github-pr:${repo.id}`); continue; }
       for (const run of observation['workflows'] as ObjectValue[] ?? []) {
         const key = `github-run:${repo.id}:${String(run['id'])}`;
         if (run['status'] !== 'completed' || !run['conclusion'] || ['success', 'neutral', 'skipped'].includes(String(run['conclusion']))) { this.retire(key); continue; }

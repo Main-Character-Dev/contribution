@@ -8,6 +8,8 @@ import ContributionPlatform
     let notifications = LocalNotifications()
     let updater = ReleaseUpdater()
     @ObservationIgnored private var monitoring: Task<Void, Never>?
+    @ObservationIgnored private var selectionGeneration = UUID()
+    @ObservationIgnored private var loadedOperation: String?
     var notificationContext: NotificationContext?
     var repositories: [JSONValue] = []
     var operations: [JSONValue] = []
@@ -49,9 +51,15 @@ import ContributionPlatform
         await loadSelection()
     }
     func loadSelection() async {
-        guard let selectedOperation else { detail = .null; log = ""; return }
-        if let response = await call("runs.get", ["operationId": .string(selectedOperation)]) { detail = .object(response.fields) }
-        if let response = await call("logs", ["operationId": .string(selectedOperation), "tail": .number(2000)]) { log = response.fields["result"]?.object["text"]?.text ?? "" }
+        let generation = UUID(); selectionGeneration = generation
+        guard let selectedOperation else { detail = .null; log = ""; loadedOperation = nil; return }
+        if loadedOperation != selectedOperation { detail = .null; log = ""; loadedOperation = selectedOperation }
+        let response = await call("runs.get", ["operationId": .string(selectedOperation)])
+        guard !Task.isCancelled, selectionGeneration == generation, self.selectedOperation == selectedOperation else { return }
+        if let response { detail = .object(response.fields) }
+        let logs = await call("logs", ["operationId": .string(selectedOperation), "tail": .number(2000)])
+        guard !Task.isCancelled, selectionGeneration == generation, self.selectedOperation == selectedOperation else { return }
+        if let logs { log = logs.fields["result"]?.object["text"]?.text ?? "" }
     }
     func addRepository() async {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
@@ -174,6 +182,7 @@ private struct HostedActivity: View {
     @State private var log: JSONValue = .null
     @State private var loading = false
     @State private var search = ""
+    @State private var loadGeneration = UUID()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Text("GitHub activity").font(.title2); Spacer(); Button("Refresh from GitHub") { Task { await refresh(true) } }.disabled(loading); Button("Done") { dismiss() } }
@@ -219,21 +228,31 @@ private struct HostedActivity: View {
                 }.padding(8).frame(minWidth: 380)
             }
         }.padding(20).frame(minWidth: 820, minHeight: 620).task { await refresh(false) }
+            .onDisappear { loadGeneration = UUID() }
     }
     @ViewBuilder private func githubLink(_ value: JSONValue?) -> some View {
         if let value, let url = URL(string: value.text), url.scheme == "https", url.host == "github.com", url.user == nil, url.password == nil { Link("Open on GitHub", destination: url) }
     }
     private func refresh(_ remote: Bool) async {
-        loading = true; defer { loading = false }
-        if let response = await workspace.call("status", ["repo": .string(repository), "refresh": .bool(remote)]) { observation = response.fields["result"]?.object["github"] ?? .null }
+        let generation = UUID(); loadGeneration = generation
+        loading = true; defer { if loadGeneration == generation { loading = false } }
+        let response = await workspace.call("status", ["repo": .string(repository), "refresh": .bool(remote)])
+        guard !Task.isCancelled, loadGeneration == generation else { return }
+        if let response { observation = response.fields["result"]?.object["github"] ?? .null }
     }
     private func select(_ run: JSONValue) async {
-        loading = true; defer { loading = false }; selectedRun = run; jobs = []; log = .null
-        if let response = await workspace.call("github.jobs", ["repo": .string(repository), "runId": run.object["id"] ?? .null, "attempt": run.object["run_attempt"] ?? .null]) { jobs = response.fields["result"]?.object["jobs"]?.array ?? [] }
+        let generation = UUID(); loadGeneration = generation
+        loading = true; defer { if loadGeneration == generation { loading = false } }; selectedRun = run; jobs = []; log = .null
+        let response = await workspace.call("github.jobs", ["repo": .string(repository), "runId": run.object["id"] ?? .null, "attempt": run.object["run_attempt"] ?? .null])
+        guard !Task.isCancelled, loadGeneration == generation else { return }
+        if let response { jobs = response.fields["result"]?.object["jobs"]?.array ?? [] }
     }
     private func loadLog(_ job: JSONValue) async {
-        loading = true; defer { loading = false }; log = .null
-        if let response = await workspace.call("github.logs", ["repo": .string(repository), "runId": selectedRun.object["id"] ?? .null, "attempt": selectedRun.object["run_attempt"] ?? .null, "jobId": job.object["id"] ?? .null]) { log = response.fields["result"] ?? .null }
+        let generation = UUID(); loadGeneration = generation
+        loading = true; defer { if loadGeneration == generation { loading = false } }; log = .null
+        let response = await workspace.call("github.logs", ["repo": .string(repository), "runId": selectedRun.object["id"] ?? .null, "attempt": selectedRun.object["run_attempt"] ?? .null, "jobId": job.object["id"] ?? .null])
+        guard !Task.isCancelled, loadGeneration == generation else { return }
+        if let response { log = response.fields["result"] ?? .null }
     }
 }
 private struct OperationRow: View {

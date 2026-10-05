@@ -84,3 +84,37 @@ test('idle discovery includes scheduled/manual activity and polls older active r
   assert.equal(outdated.workflows.find(run => run.id === 42).run_attempt, 2);
   assert.equal(outdated.workflows.find(run => run.id === 42).conclusion, 'success');
 });
+
+test('head, base, merge candidate, rules and review changes during collection invalidate provisional readiness', async () => {
+  for (const changed of ['head', 'base', 'merge', 'review', 'classic', 'rules', 'permission']) {
+    let prReads = 0, ruleReads = 0;
+    const result = await observe(async (path, query) => {
+      const response = await api()(path, query);
+      if (path === '/graphql' && ++prReads === 2) {
+        if (changed === 'permission') return { status: 403, headers: {}, body: {} };
+        const final = structuredClone(pr);
+        if (changed === 'head') final.headRefOid = 'd'.repeat(40);
+        if (changed === 'base') final.baseRefOid = 'd'.repeat(40);
+        if (changed === 'merge') final.potentialMergeCommit.oid = 'd'.repeat(40);
+        if (changed === 'review') final.reviewDecision = 'CHANGES_REQUESTED';
+        if (changed === 'classic') final.baseRef.branchProtectionRule = { requiresStatusChecks: true, requiredStatusChecks: [{ context: 'new-check', app: null }] };
+        return { status: 200, headers: {}, body: { data: { repository: { pullRequest: final } } } };
+      }
+      if (path.includes('/rules/branches/') && ++ruleReads === 2 && changed === 'rules') return { status: 200, headers: {}, body: [...rules, { type: 'pull_request', parameters: { required_approving_review_count: 2 } }] };
+      return response;
+    }, 'example', 'fixture', 'dev');
+    assert.equal(result.readiness, 'unknown', changed); assert.equal(result.freshness, 'stale');
+    assert.equal(result.reasonCodes[0], changed === 'permission' ? 'GITHUB_PERMISSION_DENIED' : 'GITHUB_OBSERVATION_CHANGED');
+  }
+});
+
+test('missing or malformed rule and app identity cannot silently become any-source checks', async () => {
+  for (const app of [{}, { databaseId: null }, { databaseId: 0 }, { databaseId: '1' }]) {
+    const malformed = { ...pr, baseRef: { branchProtectionRule: { requiresStatusChecks: true, requiredStatusChecks: [{ context: 'test', app }] } } };
+    const result = await observe(async path => path === '/graphql' ? { status: 200, headers: {}, body: { data: { repository: { pullRequest: malformed } } } } : api()(path), 'example', 'fixture', 'dev');
+    assert.equal(result.readiness, 'unknown'); assert.equal(result.reasonCodes[0], 'GITHUB_RULES_UNKNOWN');
+  }
+  for (const rule of [{}, { type: null }, { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'test', integration_id: 0 }] } }, { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'test', integration_id: '1' }] } }]) {
+    assert.throws(() => readiness(pr, [check], [rule]), error => error.code === 'GITHUB_RULES_UNKNOWN');
+  }
+});

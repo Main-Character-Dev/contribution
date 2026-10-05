@@ -1,4 +1,4 @@
-import { Fault, now, object, requireValue, redact } from './core.js';
+import { Fault, now, object, requireValue, redact, digest } from './core.js';
 import type { ObjectValue } from './core.js';
 import { executable, run } from './process.js';
 import { gitText } from './git.js';
@@ -8,7 +8,13 @@ import type { Enrolled } from './repositories.js';
 export interface APIReply { status: number; headers: Record<string, string>; body: unknown }
 export type APITransport = (path: string, query?: ObjectValue) => Promise<APIReply>;
 export interface Observation { observedAt: string; freshness: 'fresh' | 'stale'; readiness: string; reasonCodes: string[];
-  pullRequest: ObjectValue | null; checks: ObjectValue[]; workflows: ObjectValue[]; retryAt: string | null; lastKnown?: Observation }
+  pullRequest: ObjectValue | null; checks: ObjectValue[]; workflows: ObjectValue[]; retryAt: string | null; lastKnown?: Observation; selection?: string }
+export const githubSelection = (repo: Enrolled): string => digest({ id: repo.id, path: repo.path, revision: repo.revision, publication: repo.config.publication });
+function staleSelection(previous: Observation | undefined): Observation {
+  const result: Observation = { observedAt: now(), freshness: 'stale', readiness: 'unknown', reasonCodes: ['GITHUB_SELECTION_CHANGED'], pullRequest: null, checks: [], workflows: [], retryAt: null };
+  if (previous) { const { lastKnown: _history, ...lastKnown } = previous.freshness === 'fresh' ? previous : previous.lastKnown ?? previous; result.lastKnown = lastKnown; }
+  return result;
+}
 export function apiFailure(reply: APIReply, time = Date.now()): Fault | null {
   if (reply.status >= 200 && reply.status < 300) return null;
   const retry = reply.headers['retry-after'], reset = reply.headers['x-ratelimit-reset'];
@@ -70,18 +76,22 @@ export function readiness(pr: ObjectValue, checks: ObjectValue[], rules: ObjectV
   // choose whichever SHA happens to have the newest passing check ID.
   const selectedHead = pr['testMergeOid'] && checks.some(check => check['head_sha'] === pr['testMergeOid']) ? pr['testMergeOid'] : pr['headRefOid'];
   const reasons: string[] = [];
+  requireValue(rules.every(rule => typeof rule['type'] === 'string' && /^[a-z][a-z0-9_]+$/.test(rule['type'])), 'GITHUB_RULES_UNKNOWN', 'A repository rule has no readable type.', 3);
   for (const rule of rules.filter(rule => rule['type'] === 'required_status_checks')) {
     const parameters = object(rule['parameters']), required = parameters['required_status_checks'];
     requireValue(Array.isArray(required), 'GITHUB_RULES_UNKNOWN', 'Required checks are not readable.', 3);
     for (const item of required) {
       const requirement = object(item), context = requirement['context'];
       requireValue(typeof context === 'string' && context.length > 0, 'GITHUB_RULES_UNKNOWN', 'A required check identity is missing.', 3);
+      const integration = requirement['integration_id'];
+      requireValue(integration === undefined || integration === null || Number.isSafeInteger(integration) && Number(integration) > 0,
+        'GITHUB_RULES_UNKNOWN', 'A required check has an unreadable integration identity.', 3);
       const matching = checks.filter(check => check['name'] === context && selectedHead === check['head_sha']);
       const kinds = [...new Set(matching.map(check => check['kind'] ?? 'check_run'))];
       let passed = kinds.length > 0;
       for (const kind of kinds) {
         const current = matching.filter(check => (check['kind'] ?? 'check_run') === kind &&
-          (!requirement['integration_id'] || object(check['app'] ?? {})['id'] === requirement['integration_id']))
+          (integration === undefined || integration === null || object(check['app'] ?? {})['id'] === integration))
           .sort((a, b) => Number(b['id']) - Number(a['id']))[0];
         if (!current || current['status'] !== 'completed' || !(kind === 'commit_status' ? ['success'] : ['success', 'neutral', 'skipped']).includes(String(current['conclusion']))) passed = false;
       }
@@ -94,6 +104,19 @@ export function readiness(pr: ObjectValue, checks: ObjectValue[], rules: ObjectV
   // not fully represented in a check rollup. Anything short of CLEAN is not ready.
   if (pr['mergeable'] !== 'MERGEABLE' || pr['mergeStateStatus'] !== 'CLEAN') return { readiness: 'unknown', reasonCodes: ['MERGE_RULES_NOT_CONFIRMED'] };
   return { readiness: 'ready', reasonCodes: [] };
+}
+const pullRequestQuery = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){number url title state isDraft headRefOid baseRefName baseRefOid mergeable mergeStateStatus reviewDecision potentialMergeCommit{oid} baseRef{branchProtectionRule{requiresStatusChecks requiredStatusChecks{context app{databaseId}}}}}}}`;
+async function pullRequest(api: APITransport, owner: string, name: string, number: number): Promise<ObjectValue> {
+  const response = await checked(api, '/graphql', { query: pullRequestQuery, variables: { owner, name, number } });
+  const body = object(response.body); requireValue(!body['errors'], 'GITHUB_RULES_UNKNOWN', 'GitHub could not resolve current PR rules.', 3);
+  const pr = object(object(object(body['data'])['repository'])['pullRequest']);
+  requireValue(pr['number'] === number && typeof pr['headRefOid'] === 'string' && /^[a-f0-9]{40}$/.test(pr['headRefOid']) &&
+    typeof pr['baseRefOid'] === 'string' && /^[a-f0-9]{40}$/.test(pr['baseRefOid']) && typeof pr['baseRefName'] === 'string' && pr['baseRefName'].length > 0 && typeof pr['isDraft'] === 'boolean',
+    'GITHUB_MALFORMED_RESPONSE', 'PR identity or source/base state is incomplete.', 3);
+  return pr;
+}
+function prIdentity(pr: ObjectValue): string {
+  return digest(Object.fromEntries(['number', 'state', 'isDraft', 'headRefOid', 'baseRefName', 'baseRefOid', 'potentialMergeCommit', 'mergeable', 'mergeStateStatus', 'reviewDecision', 'baseRef'].map(key => [key, pr[key]])));
 }
 export async function observe(api: APITransport, owner: string, name: string, branch: string, previous?: Observation): Promise<Observation> {
   const observedAt = now(), prefix = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
@@ -120,13 +143,11 @@ export async function observe(api: APITransport, owner: string, name: string, br
     requireValue(prs.length <= 1, 'GITHUB_PR_AMBIGUOUS', 'More than one current PR matches this branch.', 3);
     const selectedPR = prs[0] ?? known?.pullRequest;
     if (!selectedPR) return { observedAt, freshness: 'fresh', readiness: 'no_pull_request', reasonCodes: [], pullRequest: null, checks: [], workflows, retryAt: null };
-    const number = Number(selectedPR['number']); requireValue(Number.isSafeInteger(number), 'GITHUB_MALFORMED_RESPONSE', 'PR identity is missing.', 3);
-    const response = await checked(api, '/graphql', { query: `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){number url title state isDraft headRefOid baseRefName baseRefOid mergeable mergeStateStatus reviewDecision potentialMergeCommit{oid} baseRef{branchProtectionRule{requiresStatusChecks requiredStatusChecks{context app{databaseId}}}}}}}`, variables: { owner, name, number } });
-    const body = object(response.body); requireValue(!body['errors'], 'GITHUB_RULES_UNKNOWN', 'GitHub could not resolve current PR rules.', 3);
-    const pr = object(object(object(body['data'])['repository'])['pullRequest']);
-    requireValue(typeof pr['headRefOid'] === 'string' && typeof pr['baseRefName'] === 'string' && typeof pr['isDraft'] === 'boolean', 'GITHUB_MALFORMED_RESPONSE', 'PR state is incomplete.', 3);
+    const number = Number(selectedPR['number']); requireValue(Number.isSafeInteger(number) && number > 0, 'GITHUB_MALFORMED_RESPONSE', 'PR identity is missing.', 3);
+    const pr = await pullRequest(api, owner, name, number);
     if (['CLOSED', 'MERGED'].includes(String(pr['state']))) return { observedAt, freshness: 'fresh', ...readiness(pr, [], []), pullRequest: pr, checks: [], workflows, retryAt: null };
     const merge = pr['potentialMergeCommit'] ? object(pr['potentialMergeCommit'])['oid'] : null;
+    requireValue(merge === null || typeof merge === 'string' && /^[a-f0-9]{40}$/.test(merge), 'GITHUB_MALFORMED_RESPONSE', 'The potential merge commit identity is unreadable.', 3);
     const checks: ObjectValue[] = [];
     for (const sha of [...new Set([pr['headRefOid'], merge].filter((value): value is string => typeof value === 'string'))]) {
       const runs = await list(api, `${prefix}/commits/${encodeURIComponent(sha)}/check-runs`, 'check_runs');
@@ -137,17 +158,27 @@ export async function observe(api: APITransport, owner: string, name: string, br
       checks.push(...statuses.map(value => ({ ...value, kind: 'commit_status', head_sha: sha, name: value['context'], status: value['state'] === 'pending' ? 'in_progress' : 'completed', conclusion: value['state'] })));
     }
     const rules = await list(api, `${prefix}/rules/branches/${encodeURIComponent(String(pr['baseRefName']))}`);
+    const rulesIdentity = digest(rules);
     const classic = object(pr['baseRef'])['branchProtectionRule'];
     requireValue(classic === null || classic && typeof object(classic)['requiresStatusChecks'] === 'boolean', 'GITHUB_RULES_UNKNOWN', 'Classic branch protection was not observed.', 3);
     if (classic && object(classic)['requiresStatusChecks']) {
       const required = object(classic)['requiredStatusChecks'];
       requireValue(Array.isArray(required), 'GITHUB_RULES_UNKNOWN', 'Classic required check contexts are unavailable.', 3);
       rules.push({ type: 'required_status_checks', parameters: { required_status_checks: required.map(value => {
-        const item = object(value); return { context: item['context'], integration_id: item['app'] ? object(item['app'])['databaseId'] : null };
+        const item = object(value), app = item['app'];
+        requireValue(app === null || app && Number.isSafeInteger(object(app)['databaseId']) && Number(object(app)['databaseId']) > 0, 'GITHUB_RULES_UNKNOWN', 'A classic required-check app was not fully observed.', 3);
+        return { context: item['context'], integration_id: app === null ? null : object(app)['databaseId'] };
       }) } });
     }
     const current = { ...pr, testMergeOid: merge };
-    return { observedAt, freshness: 'fresh', ...readiness(current, checks, rules), pullRequest: current, checks, workflows, retryAt: null };
+    const result = readiness(current, checks, rules);
+    if (result.readiness === 'ready') {
+      const finalRules = await list(api, `${prefix}/rules/branches/${encodeURIComponent(String(pr['baseRefName']))}`);
+      const finalPR = await pullRequest(api, owner, name, number);
+      requireValue(digest(finalRules) === rulesIdentity && prIdentity(finalPR) === prIdentity(pr), 'GITHUB_OBSERVATION_CHANGED',
+        'The PR head, base, review state or rules changed during observation. Refresh before reporting readiness.', 3);
+    }
+    return { observedAt: now(), freshness: 'fresh', ...result, pullRequest: current, checks, workflows, retryAt: null };
   } catch (error) {
     const fault = error instanceof Fault ? error : new Fault('GITHUB_MALFORMED_RESPONSE', 'GitHub observation was incomplete.', 3);
     const result: Observation = { observedAt, freshness: 'stale', readiness: 'unknown', reasonCodes: [fault.code], pullRequest: null, checks: [], workflows: [], retryAt: typeof fault.details['retryAt'] === 'string' ? fault.details['retryAt'] : null };
@@ -198,7 +229,8 @@ export async function workflowLog(api: APITransport, prefix: string, runId: numb
 }
 export class GitHubMonitor {
   private running = false;
-  get busy(): boolean { return this.running; }
+  private refreshing = new Map<string, Promise<Observation | null>>();
+  get busy(): boolean { return this.running || this.refreshing.size > 0; }
   constructor(readonly store: Journal, readonly api = transport()) {}
   private async destination(repo: Enrolled): Promise<{ owner: string; name: string } | null> {
     if (!repo.config.publication.remote) return null;
@@ -214,20 +246,46 @@ export class GitHubMonitor {
     return workflowLog(this.api, `/repos/${remote.owner}/${remote.name}`, runId, attempt, jobId);
   }
   async refresh(repo: Enrolled): Promise<Observation | null> {
+    const scope = githubSelection(repo);
+    const running = this.refreshing.get(repo.id);
+    if (running) {
+      const result = await running;
+      if (this.store.record<{ scope: string }>('githubSelection', repo.id)?.scope === scope) return result;
+      return this.refresh(repo);
+    }
+    const work = this.refreshOnce(repo, scope); this.refreshing.set(repo.id, work);
+    try { return await work; } finally { if (this.refreshing.get(repo.id) === work) this.refreshing.delete(repo.id); }
+  }
+  private async refreshOnce(repo: Enrolled, scope: string): Promise<Observation | null> {
     if (!repo.config.publication.remote || !repo.config.publication.branch) return null;
     const remote = await this.destination(repo); if (!remote) return null;
-    const previous = this.store.record<Observation>('github', repo.id);
+    const cached = this.store.record<Observation>('github', repo.id), selectedDestination = this.store.record<{ destination: string }>('githubSelection', repo.id);
+    const previous = cached?.selection === scope && selectedDestination?.destination === digest(remote) ? cached : undefined;
     if (previous?.retryAt && Date.parse(previous.retryAt) > Date.now()) return previous;
-    const observation = await observe(this.api, remote.owner, remote.name, repo.config.publication.branch, previous);
+    let observation = await observe(this.api, remote.owner, remote.name, repo.config.publication.branch, previous);
+    const selected = this.store.db.prepare('SELECT body FROM repositories WHERE id=?').get(repo.id);
+    const current = selected ? JSON.parse(String(selected['body'])) as Enrolled : null;
+    let sameSelection = false;
+    try { sameSelection = Boolean(current && githubSelection(current) === scope && digest(await this.destination(repo)) === digest(remote)); } catch { /* A missing/changed remote is not the observed destination. */ }
+    if (!sameSelection) observation = staleSelection(previous);
+    observation.selection = scope;
     observation.workflows = observation.workflows.map(current => {
       const old = previous?.workflows.find(item => item['id'] === current['id']);
       return old && (Number(old['run_attempt']) > Number(current['run_attempt']) ||
         Number(old['run_attempt']) === Number(current['run_attempt']) && String(old['updated_at']) > String(current['updated_at'])) ? old : current;
     });
-    this.store.put('github', repo.id, observation);
+    this.store.transaction(() => { this.store.put('github', repo.id, observation); this.store.put('githubSelection', repo.id, { scope, destination: digest(remote), observedAt: observation.observedAt }); });
     const active = observation.workflows.some(run => run['status'] !== 'completed') || ['blocked', 'unknown'].includes(observation.readiness);
     this.store.put('githubNext', repo.id, { at: observation.retryAt ? Date.parse(observation.retryAt) : Date.now() + (observation.freshness === 'stale' ? 300000 : active ? 30000 : 600000) });
     return observation;
+  }
+  async cached(repo: Enrolled): Promise<Observation | null> {
+    const observation = this.store.record<Observation>('github', repo.id); if (!observation) return null;
+    const selection = this.store.record<{ destination: string }>('githubSelection', repo.id);
+    let matches = false;
+    try { matches = observation.selection === githubSelection(repo) && selection?.destination === digest(await this.destination(repo)); } catch { /* Preserve previous data only as stale context. */ }
+    if (matches) return observation;
+    const stale = staleSelection(observation); this.store.put('github', repo.id, stale); return stale;
   }
   async tick(repos: Enrolled[]): Promise<void> {
     if (this.running) return; this.running = true;

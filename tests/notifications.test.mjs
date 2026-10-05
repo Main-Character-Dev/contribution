@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { Milestones } from '../packages/engine/dist/notifications.js';
+import { githubSelection } from '../packages/engine/dist/github.js';
 const setup = () => {
   const root = mkdtempSync(join(tmpdir(), 'ct-notice-')), store = new Journal(root), center = new Milestones(store);
   const repo = { id: randomUUID(), canonicalHostId: store.hostId, config: { name: 'Fixture' } };
@@ -36,13 +37,13 @@ test('preferred host and attention preferences fence delivery while remote rerun
   const f = setup(); try {
     const target = randomUUID(), workflow = { id: 123, run_attempt: 1, name: 'Scheduled task', status: 'completed', conclusion: 'failure', updated_at: new Date().toISOString(), html_url: 'https://github.com/example/fixture/actions/runs/123' };
     f.store.setMeta('settings', { notifications: { preferredHostId: target, success: true, failure: true } });
-    f.store.put('github', f.repo.id, { freshness: 'fresh', workflows: [workflow], readiness: 'no_pull_request' });
+    f.store.put('github', f.repo.id, { selection: githubSelection(f.repo), freshness: 'fresh', workflows: [workflow], readiness: 'no_pull_request' });
     f.center.synchronize([f.repo]); assert.deepEqual(f.center.pending(f.store.hostId), []);
     const notice = f.center.pending(target)[0];
     assert.throws(() => f.center.claim(f.store.hostId, f.repo.id, notice.id, notice.revision, randomUUID()), error => error.code === 'NOTIFICATION_CHANGED');
-    f.store.put('github', f.repo.id, { freshness: 'fresh', workflows: [{ ...workflow, run_attempt: 2, status: 'in_progress', conclusion: null }], readiness: 'no_pull_request' });
+    f.store.put('github', f.repo.id, { selection: githubSelection(f.repo), freshness: 'fresh', workflows: [{ ...workflow, run_attempt: 2, status: 'in_progress', conclusion: null }], readiness: 'no_pull_request' });
     f.center.synchronize([f.repo]); assert.deepEqual(f.center.pending(target), []);
-    f.store.put('github', f.repo.id, { freshness: 'fresh', workflows: [{ ...workflow, run_attempt: 2 }], readiness: 'no_pull_request' });
+    f.store.put('github', f.repo.id, { selection: githubSelection(f.repo), freshness: 'fresh', workflows: [{ ...workflow, run_attempt: 2 }], readiness: 'no_pull_request' });
     f.center.synchronize([f.repo]); assert.equal(f.center.pending(target)[0].id, notice.id); assert.notEqual(f.center.pending(target)[0].revision, notice.revision);
     f.store.setMeta('settings', { notifications: { preferredHostId: target, success: true, failure: false } }); assert.deepEqual(f.center.pending(target), []);
   } finally { f.cleanup(); }
@@ -51,15 +52,15 @@ test('preferred host and attention preferences fence delivery while remote rerun
 test('a superseded delivered failure is withdrawn once and stale GitHub readiness cannot create a success alert', () => {
   const f = setup(); try {
     const workflow = { id: 7, run_attempt: 1, name: 'Test', status: 'completed', conclusion: 'failure', updated_at: new Date().toISOString() };
-    f.store.put('github', f.repo.id, { freshness: 'fresh', workflows: [workflow], readiness: 'no_pull_request' }); f.center.synchronize([f.repo]);
+    f.store.put('github', f.repo.id, { selection: githubSelection(f.repo), freshness: 'fresh', workflows: [workflow], readiness: 'no_pull_request' }); f.center.synchronize([f.repo]);
     const notice = f.center.pending(f.store.hostId)[0], claim = f.center.claim(f.store.hostId, f.repo.id, notice.id, notice.revision, randomUUID());
     f.center.acknowledge(f.store.hostId, f.repo.id, notice.id, notice.revision, claim.notice.claim.token, true);
-    f.store.put('github', f.repo.id, { freshness: 'fresh', workflows: [{ ...workflow, run_attempt: 2, conclusion: 'success' }], readiness: 'no_pull_request' }); f.center.synchronize([f.repo]);
+    f.store.put('github', f.repo.id, { selection: githubSelection(f.repo), freshness: 'fresh', workflows: [{ ...workflow, run_attempt: 2, conclusion: 'success' }], readiness: 'no_pull_request' }); f.center.synchronize([f.repo]);
     assert.equal(f.center.pending(f.store.hostId)[0].state, 'superseded');
     f.center.acknowledge(f.store.hostId, f.repo.id, notice.id, notice.revision, claim.notice.claim.token, false);
     assert.deepEqual(f.center.pending(f.store.hostId), []);
-    f.store.put('github', f.repo.id, { freshness: 'fresh', workflows: [], readiness: 'ready', pullRequest: { number: 1, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), url: 'https://github.com/example/fixture/pull/1' } });
+    f.store.put('github', f.repo.id, { selection: githubSelection(f.repo), freshness: 'fresh', workflows: [], readiness: 'ready', pullRequest: { number: 1, headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), url: 'https://github.com/example/fixture/pull/1' } });
     f.center.synchronize([f.repo]); assert.equal(f.center.pending(f.store.hostId)[0].outcome, 'success');
-    f.store.put('github', f.repo.id, { freshness: 'stale', readiness: 'unknown', workflows: [] }); f.center.synchronize([f.repo]); assert.deepEqual(f.center.pending(f.store.hostId), []);
+    f.store.put('github', f.repo.id, { selection: githubSelection(f.repo), freshness: 'stale', readiness: 'unknown', workflows: [] }); f.center.synchronize([f.repo]); assert.deepEqual(f.center.pending(f.store.hostId), []);
   } finally { f.cleanup(); }
 });

@@ -459,7 +459,7 @@ export class Engine {
           }
           return completed({ canonicalHostId: repo.canonicalHostId, canonicalTip: null, ownerFreshness: 'stale', lastKnown: this.store.record('canonicalStatus', repo.id) ?? null, localMirrorTip: (await identity(repo.path)).tip });
         }
-        const github = args['refresh'] === true ? await this.github.refresh(repo) : this.store.record('github', repo.id) ?? null;
+        const github = args['refresh'] === true ? await this.github.refresh(repo) : await this.github.cached(repo);
         return completed({ ...await this.repos.status(repo, args['refresh'] === true), github });
       }
       if (command === 'push') {
