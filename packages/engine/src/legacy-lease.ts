@@ -12,11 +12,16 @@ export interface LegacyOwner {
 export class LegacyPrimaryLease {
   readonly directory: string;
   readonly owner: LegacyOwner;
-  constructor(commonDirectory: string, attemptId: string) {
+  static ownerFor(attemptId: string): LegacyOwner {
     const start = processIdentity(process.pid);
     requireValue(start, 'PROCESS_IDENTITY_UNAVAILABLE', 'Cannot verify the primary writer identity.', 3);
+    return { version: 1, token: id(), pid: process.pid, purpose: `contribution:${attemptId}`, acquired_at: now(), start_time: start };
+  }
+  constructor(commonDirectory: string, attemptId: string, retainedOwner?: LegacyOwner) {
     this.directory = join(commonDirectory, 'primary-checkout-mutation.lock');
-    this.owner = { version: 1, token: id(), pid: process.pid, purpose: `contribution:${attemptId}`, acquired_at: now(), start_time: start };
+    this.owner = retainedOwner ?? LegacyPrimaryLease.ownerFor(attemptId);
+    requireValue(this.owner.pid === process.pid && this.owner.start_time === processIdentity(process.pid) && this.owner.purpose === `contribution:${attemptId}`,
+      'LEASE_IDENTITY_CHANGED', 'A new lease must identify its actual live creator.', 3);
     const boundary = `${this.directory}.recovery`, boundaryOwner = { ...this.owner, token: id(), purpose: 'primary-checkout-lease-recovery' };
     const candidate = `${this.directory}.candidate.${process.pid}.${this.owner.token}`;
     const boundaryCandidate = `${boundary}.candidate.${process.pid}.${boundaryOwner.token}`;
@@ -50,7 +55,7 @@ export class LegacyPrimaryLease {
     mkdirSync(path, { mode: 0o700 }); writeFileSync(join(path, 'owner.json'), JSON.stringify(owner) + '\n', { flag: 'wx', mode: 0o600 });
     this.sync(join(path, 'owner.json')); this.sync(path);
   }
-  private static removeOwned(path: string, expected: LegacyOwner): boolean {
+  static removeOwned(path: string, expected: LegacyOwner): boolean {
     if (!existsSync(path)) return false;
     const info = lstatSync(path); if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid?.()) return false;
     if (readdirSync(path).join() !== 'owner.json') return false;
@@ -60,6 +65,20 @@ export class LegacyPrimaryLease {
     unlinkSync(file); rmdirSync(path); return true;
   }
   release(): void { LegacyPrimaryLease.removeOwned(this.directory, this.owner); }
+  /** Excludes the original stale-owner reclamation path while a retained owned
+   * lease is released. A crash leaves this boundary visibly unresolved. */
+  static withRecovery<T>(commonDirectory: string, action: () => T): T {
+    const path = join(commonDirectory, 'primary-checkout-mutation.lock.recovery'), owner = { ...this.ownerFor(id()), purpose: 'primary-checkout-lease-recovery' };
+    const candidate = `${path}.candidate.${process.pid}.${owner.token}`;
+    let acquired = false;
+    try {
+      this.writeCandidate(candidate, owner);
+      requireValue(!existsSync(path), 'REPOSITORY_BUSY', 'A legacy recovery boundary must be reconciled before releasing this fence.', 3);
+      try { renameSync(candidate, path); acquired = true; }
+      catch { throw new Fault('REPOSITORY_BUSY', 'Another legacy recovery owns this checkout.', 3); }
+      return action();
+    } finally { this.removeOwned(candidate, owner); if (acquired) this.removeOwned(path, owner); }
+  }
   static borrow(commonDirectory: string, expected: LegacyOwner, caller: { pid: number; start: string }, invocation: { pid: number; start: string }): { status: 'acquired'; leasePath: string; token: string; owner: LegacyOwner; contributionBorrowed: true } {
     const owner = this.inspect(commonDirectory);
     requireValue(owner && owner.token === expected.token && owner.pid === expected.pid && owner.start_time === expected.start_time && processIdentity(owner.pid) === owner.start_time,
