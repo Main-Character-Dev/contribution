@@ -21,6 +21,7 @@ import { DeviceOwnershipTransfers } from './device-ownership.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import { LegacyReporting } from './legacy-reporting.js';
+import { LegacyHookBorrow } from './legacy-hook-borrow.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
 import { Milestones } from './notifications.js';
 import type { Notice } from './notifications.js';
@@ -42,6 +43,7 @@ const allowed: Record<string, string[]> = {
   'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
   'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
+  'hook.borrow': ['repo', 'operationId', 'hookToken', 'caller'], 'hook.release-borrow': ['repo', 'operationId', 'hookToken', 'caller', 'borrowToken'],
   'github.jobs': ['repo', 'runId', 'attempt'], 'github.logs': ['repo', 'runId', 'attempt', 'jobId'],
   'notifications.pending': [], 'notifications.context': ['repo', 'originHostId', 'noticeId'],
   'notifications.claim': ['repo', 'originHostId', 'noticeId', 'revision', 'requestId'],
@@ -253,7 +255,7 @@ export class Engine {
         const reads = ['version', 'doctor', 'service.status', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
-        requireValue(reads.includes(command) || (command === 'hook.pre-push' && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+        requireValue(reads.includes(command) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
           'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
       }
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
@@ -353,6 +355,11 @@ export class Engine {
         return this.store.response(op);
       }
       const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
+      if (command === 'hook.borrow' || command === 'hook.release-borrow') {
+        this.peers.assertWriter(repo);
+        const bridge = new LegacyHookBorrow(this.store);
+        return completed(command === 'hook.borrow' ? bridge.borrow(repo, args) : bridge.release(repo, args));
+      }
       if (remoteDeviceCommands.has(command) || remoteDeviceReads.has(command)) {
         const hostId = command === 'devices.artifacts.transfer' ? args['fromHost'] : args['host'];
         if (typeof hostId === 'string' && hostId !== this.store.hostId) {

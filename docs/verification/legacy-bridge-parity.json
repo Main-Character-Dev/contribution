@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-05",
+  "scope": "Generated primary-lease bridge only; adopted policy execution and live cutover remain pending",
+  "environment": "Disposable repositories, actual local Git push ancestry and authenticated service IPC",
+  "proof": "tests/integration/legacy-bridge-parity.mjs",
+  "result": "passed",
+  "cases": ["original fallback", "mutual exclusion", "actual Git ancestry and IPC", "serialized borrowed-token release", "legacy writer resumes after outer release"],
+  "sources": [
+    {"project": "mathy", "leaseFileSha256": "9d577b66935e8e9915615eadd2a8a77cf6d6489e4c23574b548512360b136bef", "preservedDependency": "scripts/lib/process-identity.mjs"},
+    {"project": "maincharacter", "leaseFileSha256": "8f211194a22c2f630b2590ad4f2ef0a457a2ec649c706e3fb780efe65c7d9255"},
+    {"project": "roboty", "leaseFileSha256": "8f211194a22c2f630b2590ad4f2ef0a457a2ec649c706e3fb780efe65c7d9255"},
+    {"project": "glassalpha", "leaseFileSha256": "8f211194a22c2f630b2590ad4f2ef0a457a2ec649c706e3fb780efe65c7d9255"}
+  ],
+  "projectGateExecution": "not_run",
+  "liveProjectMutation": "none",
+  "adoptionActivation": "not_enabled"
+}

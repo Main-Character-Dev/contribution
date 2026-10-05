@@ -10,7 +10,7 @@ export interface AdoptionPolicy {
 const common = ['AGENTS.md', 'package.json', '.node-version', 'scripts/worktree-land', 'scripts/worktree-landing-worker', 'scripts/lib/primary-checkout-lease.mjs', 'scripts/lib/worktree-landing-flight.mjs', 'scripts/lib/worktree-landing-state.mjs'];
 export const adoptionPolicies: readonly AdoptionPolicy[] = [
   { id: 'mathy-v1', packageName: 'mathy', gate: 'enabled', hookOwner: 'trusted-dispatcher', landing: 'policy-only', attributionDates: 'multiple', validation: 'cumulative',
-    policyFiles: [...common, '.githooks/pre-push', '.githooks/_/runtime-bootstrap.sh', 'scripts/prepare-push.mjs', 'scripts/validation-profile.mjs'] },
+    policyFiles: [...common, '.githooks/pre-push', '.githooks/_/runtime-bootstrap.sh', 'scripts/prepare-push.mjs', 'scripts/validation-profile.mjs', 'scripts/lib/process-identity.mjs'] },
   { id: 'maincharacter-v1', packageName: 'maincharacter', gate: 'enabled', hookOwner: 'husky', landing: 'integration-only', attributionDates: 'one', validation: 'cumulative',
     policyFiles: [...common, '.husky/pre-push', 'scripts/run-changed-checks.mjs', 'scripts/pre-push-exact-tree.mjs', 'scripts/pre-push-process-context.mjs'] },
   { id: 'roboty-v1', packageName: 'roboty', gate: 'enabled', hookOwner: 'husky', landing: 'integration-only', attributionDates: 'one', validation: 'local-safety',

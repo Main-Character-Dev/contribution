@@ -12,6 +12,7 @@ const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--
   '--device': 'device', '--artifact': 'artifact', '--app-ref': 'appRef', '--build-profile': 'buildProfile', '--plan': 'plan', '--session-profile': 'sessionProfile', '--duration-seconds': 'durationSeconds', '--max-bytes': 'maxBytes', '--kind': 'kind', '--node': 'node', '--pnpm': 'pnpm', '--adapter': 'adapter', '--to-host': 'toHost', '--from-host': 'fromHost' };
 values['--release-ref'] = 'releaseRef';
 values['--evidence'] = 'evidence';
+values['--borrow-token'] = 'borrowToken';
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch', '--prepare-reporting': 'prepareReporting' };
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
@@ -90,10 +91,12 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     if (wait && command !== 'push') throw new Fault('INVALID_USAGE', '--wait is supported on push; use runs wait for other operations.', 2);
     if (follow && command !== 'logs') throw new Fault('INVALID_USAGE', '--follow is supported on logs; use runs follow for events.', 2);
     if (jsonl && command !== 'runs.follow') throw new Fault('INVALID_USAGE', '--jsonl is only supported on runs follow.', 2);
-    if (command === 'hook.pre-push') {
+    if (['hook.pre-push', 'hook.borrow', 'hook.release-borrow'].includes(command)) {
       args['operationId'] = process.env['CONTRIBUTION_OPERATION_ID'] ?? '';
       args['hookToken'] = process.env['CONTRIBUTION_HOOK_TOKEN'] ?? '';
       args['caller'] = callerIdentity();
+    }
+    if (command === 'hook.pre-push') {
       const chunks: Buffer[] = []; let bytes = 0;
       for await (const chunk of process.stdin) { const data = Buffer.from(chunk); bytes += data.length; if (bytes > 65536) throw new Fault('REF_TRANSACTION_UNSUPPORTED', 'Hook input exceeds its bound.', 2); chunks.push(data); }
       args['stdin'] = Buffer.concat(chunks).toString('utf8');
