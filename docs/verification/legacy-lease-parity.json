@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-05",
+  "scope": "Mutual exclusion protocol only; original gate, hook adoption, landing flight and live cutover remain unqualified",
+  "environment": "Disposable Git repositories; four inspected legacy modules loaded read-only",
+  "proof": "tests/integration/legacy-live-parity.mjs",
+  "result": "passed",
+  "sources": [
+    {
+      "project": "mathy",
+      "head": "84ff4e28f5c8473180880936f5e273ba453507e8",
+      "branch": "mathy-30",
+      "leaseFileSha256": "9d577b66935e8e9915615eadd2a8a77cf6d6489e4c23574b548512360b136bef",
+      "leaseFileDirty": false
+    },
+    {
+      "project": "maincharacter",
+      "head": "9d20ff9803b9bd305204e02d100bae337d0d02c4",
+      "branch": "mc-ai-129",
+      "leaseFileSha256": "8f211194a22c2f630b2590ad4f2ef0a457a2ec649c706e3fb780efe65c7d9255",
+      "leaseFileDirty": false
+    },
+    {
+      "project": "roboty",
+      "head": "a5bd4f5da923f2c30201a4299e0fc861caa36665",
+      "branch": "roboty-1",
+      "leaseFileSha256": "8f211194a22c2f630b2590ad4f2ef0a457a2ec649c706e3fb780efe65c7d9255",
+      "leaseFileDirty": false
+    },
+    {
+      "project": "glassalpha",
+      "head": "871532fb343150ec3b896a11505d43019a6b26d3",
+      "branch": "ga-ai-1",
+      "leaseFileSha256": "8f211194a22c2f630b2590ad4f2ef0a457a2ec649c706e3fb780efe65c7d9255",
+      "leaseFileDirty": false
+    }
+  ]
+}
