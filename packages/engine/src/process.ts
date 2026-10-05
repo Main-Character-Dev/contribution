@@ -56,11 +56,14 @@ export function gitPushAncestor(caller: { pid: number; start: string }): { pid: 
   }
   return null;
 }
-export interface ProcessResult { code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean }
+export interface ProcessResult { code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean; outputLimited?: boolean }
 export interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number;
+  stdoutSink?: { maxBytes: number; write: (data: Buffer) => void };
   signal?: AbortSignal; output?: (text: string) => void; started?: (pid: number, start: string | null) => void }
 export async function run(executable: string, argv: readonly string[], options: RunOptions = {}): Promise<ProcessResult> {
   requireValue(executable.startsWith('/'), 'INVALID_EXECUTABLE', 'Executables must resolve to an absolute approved path.', 2);
+  requireValue(!options.stdoutSink || (Number.isSafeInteger(options.stdoutSink.maxBytes) && options.stdoutSink.maxBytes >= 0 && options.stdoutSink.maxBytes <= 4 * 1024 ** 3),
+    'INVALID_OUTPUT_BOUND', 'Binary process output requires a finite byte limit.', 2);
   if (options.signal?.aborted) throw new Fault('CANCELLED', 'Operation cancelled before dispatch.', 130);
   const environment: NodeJS.ProcessEnv = { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_OPTIONAL_LOCKS: '0' };
   // A caller's Git repository/index overrides must never retarget the service.
@@ -68,11 +71,12 @@ export async function run(executable: string, argv: readonly string[], options: 
   Object.assign(environment, options.env ?? {});
   return new Promise((resolveResult, reject) => {
     const child = spawn(executable, [...argv], { cwd: options.cwd, env: environment, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '', bytes = 0, timedOut = false, cancelled = false, killTimer: NodeJS.Timeout | undefined;
+    let stdout = '', stderr = '', bytes = 0, binaryBytes = 0, binaryOverflow = false, timedOut = false, cancelled = false, stopped = false, closed = false, killTimer: NodeJS.Timeout | undefined;
+    let callbackFailure: 'OUTPUT_SINK_FAILED' | 'PROCESS_OBSERVER_FAILED' | undefined;
     const pending = { stdout: '', stderr: '' };
     const maxBytes = options.maxBytes ?? 4 * 1024 * 1024;
     const stop = (): void => {
-      if (!child.pid) return;
+      if (!child.pid || stopped || closed) return; stopped = true;
       const members = groupMembers(child.pid);
       // A still-unreaped child belongs to this process; its PID cannot be reused.
       try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already exited */ }
@@ -86,24 +90,40 @@ export async function run(executable: string, argv: readonly string[], options: 
     options.signal?.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeoutMs ?? 30000);
     const cleanup = (): void => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); options.signal?.removeEventListener('abort', cancel); };
-    child.once('spawn', () => { if (child.pid) options.started?.(child.pid, processIdentity(child.pid)); });
+    const emit = (text: string): void => {
+      if (callbackFailure) return;
+      try { options.output?.(text); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); }
+    };
+    child.once('spawn', () => {
+      try { if (child.pid) options.started?.(child.pid, processIdentity(child.pid)); }
+      catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; stop(); }
+    });
     child.once('error', error => { cleanup(); reject(new Fault('EXECUTABLE_UNAVAILABLE', `Cannot start ${executable}: ${(error as NodeJS.ErrnoException).code ?? 'unknown error'}`, 3)); });
     const collect = (channel: 'stdout' | 'stderr', data: Buffer): void => {
+      if (callbackFailure || binaryOverflow || bytes > maxBytes) return;
+      if (channel === 'stdout' && options.stdoutSink) {
+        binaryBytes += data.length;
+        if (binaryBytes > options.stdoutSink.maxBytes) { binaryOverflow = true; stop(); return; }
+        try { options.stdoutSink.write(data); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); }
+        return;
+      }
       bytes += data.length;
       if (bytes > maxBytes) { stop(); return; }
       const text = data.toString('utf8'); if (channel === 'stdout') stdout += text; else stderr += text;
       pending[channel] += text;
       const newline = pending[channel].lastIndexOf('\n');
-      if (newline >= 0) { options.output?.(pending[channel].slice(0, newline + 1)); pending[channel] = pending[channel].slice(newline + 1); }
+      if (newline >= 0) { emit(pending[channel].slice(0, newline + 1)); pending[channel] = pending[channel].slice(newline + 1); }
       if (pending[channel].length > 65536) { pending[channel] = '[oversized log line omitted]\n'; }
     };
     child.stdout.on('data', (data: Buffer) => collect('stdout', data)); child.stderr.on('data', (data: Buffer) => collect('stderr', data));
     child.stdin.on('error', () => { /* child may exit before consuming input */ }); child.stdin.end(options.input);
-    child.once('close', (code, signal) => { cleanup(); for (const text of Object.values(pending)) if (text) options.output?.(text); resolveResult({
+    child.once('close', (code, signal) => { closed = true; cleanup(); for (const text of Object.values(pending)) if (text) emit(text);
+      if (callbackFailure) { reject(new Fault(callbackFailure, 'Retaining process output or execution ownership failed. The process was stopped; preserve existing evidence for reconciliation.', 5, { actualExitCode: code })); return; }
+      resolveResult({
       // A cooperative shell can trap TERM and exit zero after its deadline or
       // cancellation. Consumers of code alone must never call that success.
-      code: cancelled ? 130 : timedOut ? 124 : bytes > maxBytes ? 5 : code ?? 5, actualExitCode: code, signal, stdout, stderr,
-      timedOut, cancelled }); });
+      code: cancelled ? 130 : timedOut ? 124 : bytes > maxBytes || binaryOverflow ? 5 : code ?? 5, actualExitCode: code, signal, stdout, stderr,
+      timedOut, cancelled, outputLimited: binaryOverflow || bytes > maxBytes }); });
   });
 }
 function groupMembers(group: number): { pid: number; start: string }[] {

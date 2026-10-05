@@ -17,6 +17,7 @@ import { AdoptedLanding } from './adopted-landing.js';
 import { AdoptedChecks } from './adopted-checks.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
 import { StableFileReader } from './bounded-file.js';
+import { createBoundedBundle, MAX_GIT_BUNDLE } from './git-bundle.js';
 
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
@@ -82,8 +83,8 @@ export class Workflows {
     if (retained.code !== 0) await gitText(sourcePath, ['update-ref', retention, tip, '0'.repeat(tip.length)]);
     const directory = join(this.store.directory, 'transfers'); mkdirSync(directory, { recursive: true, mode: 0o700 });
     const bundle = join(directory, `${digest({ requestId })}.bundle`);
-    if (!existsSync(bundle)) await gitText(sourcePath, ['bundle', 'create', bundle, retention]);
-    const artifact = new StableFileReader(bundle, 256 * 1024 * 1024, 'CAPTURE_RECOVERY_REQUIRED');
+    await createBoundedBundle(this.store, requestId, sourcePath, retention, tip, bundle);
+    const artifact = new StableFileReader(bundle, MAX_GIT_BUNDLE, 'CAPTURE_RECOVERY_REQUIRED');
     try {
     const bundleDigest = artifact.digest();
     await gitText(sourcePath, ['bundle', 'verify', bundle]);

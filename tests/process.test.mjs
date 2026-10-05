@@ -25,3 +25,25 @@ test('a zero child exit cannot erase cancellation, timeout or output-limit failu
   }
   const exit = await run('/bin/sh', ['-c', 'exit 7']); assert.equal(exit.code, 7); assert.equal(exit.actualExitCode, 7);
 });
+
+test('binary stdout preserves bytes independently of logs and stops before exceeding its sink bound', async () => {
+  const binary = Buffer.from([0, 255, 128, 10, 254]); let chunks = [], logs = '';
+  const result = await run(process.execPath, ['-e', 'process.stdout.write(Buffer.from([0,255,128,10,254])); process.stderr.write("diagnostic\\n")'], {
+    maxBytes: 32, stdoutSink: { maxBytes: 5, write: data => chunks.push(Buffer.from(data)) }, output: text => { logs += text; }
+  });
+  assert.equal(result.code, 0); assert.equal(result.stdout, ''); assert.equal(result.stderr, 'diagnostic\n'); assert.equal(logs, 'diagnostic\n'); assert.deepEqual(Buffer.concat(chunks), binary);
+  let retained = 0;
+  const overflow = await run(process.execPath, ['-e', 'process.on("SIGTERM",()=>process.exit(0)); setInterval(()=>process.stdout.write(Buffer.alloc(1024,255)),1)'], {
+    stdoutSink: { maxBytes: 4096, write: data => { retained += data.length; } }, timeoutMs: 5000
+  });
+  assert.equal(overflow.code, 5); assert.equal(overflow.outputLimited, true); assert(retained <= 4096); assert.equal(overflow.stdout, '');
+});
+
+test('failed output and ownership callbacks stop the child and reject without escaping the runner', async () => {
+  for (const mode of ['binary', 'log', 'owner']) {
+    const options = mode === 'binary' ? { stdoutSink: { maxBytes: 1024, write: () => { throw new Error('fixture disk full'); } } } :
+      mode === 'log' ? { output: () => { throw new Error('fixture log full'); } } : { started: () => { throw new Error('fixture journal unavailable'); } };
+    await assert.rejects(run(process.execPath, ['-e', 'setInterval(()=>process.stdout.write("output\\n"),5)'], { ...options, timeoutMs: 3000 }),
+      { code: mode === 'owner' ? 'PROCESS_OBSERVER_FAILED' : 'OUTPUT_SINK_FAILED' });
+  }
+});

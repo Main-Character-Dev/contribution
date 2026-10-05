@@ -13,6 +13,7 @@ import { Milestones } from './notifications.js';
 import { ProjectRegistry } from './project-registry.js';
 import type { ProjectCatalog } from './project-registry.js';
 import { StableFileReader, stableFileDigest } from './bounded-file.js';
+import { createBoundedBundle, MAX_GIT_BUNDLE } from './git-bundle.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
 export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
@@ -27,7 +28,7 @@ interface HistoryCapture {
   destinationHostId: string; authority: string; bundle?: { bytes: number; sha256: string };
 }
 interface Authority { transitionId: string; epoch: number; previousTransitionId: string | null; ownerHostId: string; previousOwnerHostId: string; phase: 'frozen' | 'active'; peerHostId: string; tip: string | null; policy: string }
-const CHUNK = 256 * 1024, MAX_BUNDLE = 256 * 1024 * 1024;
+const CHUNK = 256 * 1024, MAX_BUNDLE = MAX_GIT_BUNDLE;
 export const remoteDeviceCommands = new Set(['devices.connect', 'devices.prepare', 'devices.install', 'devices.launch', 'devices.logs', 'devices.test', 'devices.ui', 'devices.debug', 'devices.capture', 'devices.disconnect', 'devices.qualify', 'devices.artifacts.transfer']);
 export const remoteDeviceReads = new Set(['devices.list', 'devices.apps', 'devices.status', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get']);
 export function compatiblePeer(hello: ObjectValue): boolean {
@@ -379,7 +380,7 @@ export class Peers {
     requireValue(retained.code !== 0 || retained.stdout.trim() === m.tip, 'HISTORY_SELECTION_CHANGED', 'The retained source ref changed; preserve both histories for reconciliation.', 3);
     if (retained.code !== 0) await gitText(repo.path, ['update-ref', sourceRef, m.tip, '0'.repeat(m.tip.length)]);
     const directory = join(this.store.directory, 'transfers'); privateDirectory(directory);
-    if (!existsSync(path)) await gitText(repo.path, ['bundle', 'create', path, sourceRef]); sync(path);
+    await createBoundedBundle(this.store, requestId, repo.path, sourceRef, m.tip, path);
     const bundle = stableFileDigest(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
     requireValue(!selected.bundle || digest(selected.bundle) === digest(bundle), 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
     await gitText(repo.path, ['bundle', 'verify', path]);
