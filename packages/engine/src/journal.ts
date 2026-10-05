@@ -70,14 +70,30 @@ export class Journal {
     requireValue(row['identity'] === digest({ kind, repositoryId, input }), 'REQUEST_ID_CONFLICT', 'This request ID already identifies different immutable inputs.');
     return JSON.parse(String(row['body'])) as Operation;
   }
+  assertAdmissionStorage(kind?: string, repositoryId?: string, input: ObjectValue = {}): void {
+    const storage = this.retention(true);
+    if (!storage.admissionBlocked) return;
+    // A full cap must not prevent the owner from raising that cap. This
+    // exception is restricted to one reviewed retention-only control request.
+    const previous = this.getMeta<ObjectValue>('settings'), config = input['config'] as ObjectValue | undefined;
+    let recovery = false;
+    if (kind === 'settings.apply' && repositoryId === this.hostId && previous && config && input['expectedRevision'] === digest(previous)) {
+      try {
+        assertContract('machine', config);
+        const retention = config['retention'] as { maxLogBytes: number };
+        recovery = Number.isSafeInteger(retention.maxLogBytes) && retention.maxLogBytes > storage.totalBytes && digest({ ...config, retention: previous['retention'] }) === digest(previous) &&
+          !this.unsettled().some(op => op.kind === 'settings.apply');
+      } catch { /* Invalid settings never gain a storage-recovery exception. */ }
+    }
+    requireValue(recovery, 'STORAGE_PRESSURE', 'Protected logs reached the cap. Raise the cap above current usage with a reviewed retention-only settings change, or release eligible evidence. Other new work remains paused.', 3);
+  }
   admit(requestId: string, kind: string, repositoryId: string, input: ObjectValue, payload: string, state: State = 'queued', initialResult?: (op: Operation) => ObjectValue): Operation {
     const prior = this.existing(requestId, kind, repositoryId, input); if (prior) return prior;
     this.assertRepositoryAvailable(repositoryId);
     requireValue(!this.records<{ state: string; completed: string[]; preview: { candidates: { owner: { repositoryId: string; attemptId: string } }[] } }>('worktreeCleanup')
       .some(cleanup => cleanup.state === 'removing' && cleanup.preview.candidates.some(value => value.owner.repositoryId === repositoryId && !cleanup.completed.includes(value.owner.attemptId))),
       'STORAGE_CLEANUP_PENDING', 'A retained worktree cleanup is in progress for this clone. Resume that cleanup before admitting new work.', 3);
-    const storage = this.retention(true);
-    requireValue(!storage.admissionBlocked, 'STORAGE_PRESSURE', 'Retained logs reached the cap. Protected evidence remains preserved; raise the cap or export and release eligible evidence.', 3);
+    this.assertAdmissionStorage(kind, repositoryId, input);
     const op: Operation = { operationId: id(), requestId, repositoryId, kind, input, payload, state, stage: 'accepted',
       result: {}, error: null, createdAt: now(), attemptId: id(), pinned: false, effectDispatched: false };
     const log = openSync(this.logPath(op), 'wx', 0o600); fsyncSync(log); closeSync(log);

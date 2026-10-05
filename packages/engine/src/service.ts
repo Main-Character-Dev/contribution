@@ -157,8 +157,9 @@ export class Engine {
     setImmediate(() => { this.scheduled = false; void this.schedule(); });
   }
   private async schedule(): Promise<void> {
-    if (this.stopping || this.store.getMeta<boolean>('paused') || this.store.getMeta<boolean>('maintenance')) return;
+    if (this.stopping || this.store.getMeta<boolean>('maintenance')) return;
     for (const op of this.store.queue()) {
+      if (this.store.getMeta<boolean>('paused') && op.kind !== 'settings.apply') continue;
       if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId) || this.adoptions.isBusy(op.repositoryId)) continue;
       const blocked = isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
       if (blocked) continue;
@@ -391,6 +392,7 @@ export class Engine {
       }
       if (command === 'repos.create') {
         const requestId = string(args['requestId'], 'requestId');
+        if (!this.store.byRequest(requestId)) this.store.assertAdmissionStorage();
         const repo = await this.repos.create(string(args['path'], 'path'), requestId); return this.admit(requestId, 'initialize', repo.id, { policy: repo.revision });
       }
       if (command === 'runs.list') return completed({ operations: this.store.list().filter(op => !args['repo'] || op.repositoryId === args['repo']) });

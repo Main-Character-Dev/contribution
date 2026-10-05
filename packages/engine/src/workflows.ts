@@ -56,6 +56,7 @@ export class Workflows {
   async capture(repo: Enrolled, requestId: string, sourcePath: string, tip: string, base: string, metadata: ObjectValue): Promise<Operation> {
     const input = { sourcePath, tip, base, metadata, policy: repo.revision };
     const prior = this.store.existing(requestId, 'submit', repo.id, input); if (prior) return prior;
+    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
     const pending = this.store.record<{ identity: string }>('captureIntent', requestId);
     requireValue(!pending || pending.identity === digest({ repositoryId: repo.id, input }), 'REQUEST_ID_CONFLICT', 'This request already retained a different committed source.');
     const info = await identity(sourcePath); oid(tip, info.objectFormat); oid(base, info.objectFormat);
@@ -69,6 +70,7 @@ export class Workflows {
       requireValue(authors.size === 1, 'AUTHOR_POLICY_CONFLICT', 'The generic adapter requires one original source author.');
       requireValue(commits.length === 1 || (typeof metadata['integrationMessage'] === 'string' && metadata['integrationMessage'].trim()), 'NEEDS_INPUT', 'A multi-commit task requires an explicit combined integration message.', 2);
     } else await this.adoptedLanding.capture(repo, requestId, sourcePath, tip, base, metadata);
+    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
     this.store.put('captureIntent', requestId, { identity: digest({ repositoryId: repo.id, input }), repositoryId: repo.id, input });
     const retention = `refs/contribution/outbox/${digest({ requestId })}`;
     await gitText(sourcePath, ['update-ref', retention, tip]);

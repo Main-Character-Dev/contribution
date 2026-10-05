@@ -327,11 +327,13 @@ export class Peers {
   async captureHistory(repo: Enrolled, kind: 'seed' | 'mirror', requestId: string): Promise<Operation> {
     const prior = this.store.list(100000).find(op => op.requestId === requestId);
     if (prior) { requireValue(prior.kind === `transfer.${kind}` && prior.repositoryId === repo.id, 'REQUEST_ID_CONFLICT', 'Request ID identifies another operation.'); return prior; }
+    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
     await this.repos.current(repo); const info = await identity(repo.path); requireValue(info.tip, 'UNBORN_REPOSITORY', 'No committed history is available to transfer.', 3);
     await ordinaryHistory(repo.path, info.tip);
     const authority = this.store.record<Authority>('authority', repo.id); requireValue(authority?.phase === 'active', 'AUTHORITY_TRANSITION_PENDING', 'Complete repository pairing before history transfer.', 3);
     requireValue(kind === 'mirror' ? repo.canonicalHostId === this.store.hostId : repo.canonicalHostId !== this.store.hostId, 'TRANSFER_DIRECTION_INVALID', 'History transfer does not match this host role.');
     const sourceRef = `refs/contribution/outbox/${digest({ requestId })}`;
+    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
     await gitText(repo.path, ['update-ref', sourceRef, info.tip]);
     const directory = join(this.store.directory, 'transfers'); privateDirectory(directory); const path = join(directory, `${digest({ requestId })}.bundle`);
     if (!existsSync(path)) await gitText(repo.path, ['bundle', 'create', path, sourceRef]); sync(path);
