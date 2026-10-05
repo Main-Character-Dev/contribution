@@ -34,9 +34,8 @@ export type Status = ContributionResponseEnvelopeV1 & {
   error?: null;
   [k: string]: unknown;
 };
-export type ContributionResponseEnvelopeV1 = {
-  [k: string]: unknown;
-} & {
+
+export interface ContributionResponseEnvelopeV1 {
   schemaVersion: 1;
   requestStatus: "completed" | "accepted" | "rejected";
   operationId: string | null;
@@ -73,4 +72,4 @@ export type ContributionResponseEnvelopeV1 = {
     [k: string]: unknown;
   } | null;
   [k: string]: unknown;
-};
+}

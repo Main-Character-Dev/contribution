@@ -1,8 +1,6 @@
 /* Generated from canonical JSON Schema. Runtime validation remains required. */
 
-export type DeviceCapability = {
-  [k: string]: unknown;
-} & {
+export interface DeviceCapability {
   schemaVersion: 1;
   recordMode: "observed" | "fixture";
   capabilityId: string;
@@ -24,8 +22,7 @@ export type DeviceCapability = {
   evidenceIds: string[];
   limitations: string[];
   reasonCodes: string[];
-};
-
+}
 export interface Context {
   host: {
     hostId: string;

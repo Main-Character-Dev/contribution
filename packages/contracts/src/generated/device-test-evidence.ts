@@ -1,8 +1,6 @@
 /* Generated from canonical JSON Schema. Runtime validation remains required. */
 
-export type DeviceTestEvidence = {
-  [k: string]: unknown;
-} & {
+export interface DeviceTestEvidence {
   schemaVersion: 1;
   recordMode: "observed" | "fixture";
   evidenceId: string;
@@ -43,8 +41,7 @@ export type DeviceTestEvidence = {
   dataRetention: "not_tested" | "passed" | "failed" | "not_applicable";
   claims: string[];
   missingProof: string[];
-};
-
+}
 export interface Context {
   host: {
     hostId: string;

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "observedDate": "2026-10-04",
+  "timezone": "America/New_York",
+  "scope": "S0 TypeScript projection repair only",
+  "checkout": "/Users/gabe/.codex/worktrees/0e4e/contribution",
+  "branch": "codex/s0-foundation",
+  "baseCommit": "627c637cc57eba2748b2aa0d9d2ae4911df55653",
+  "finding": "Compiler 15.0.4 lost ordinary unnamed object properties beside conditional allOf; generated intent, effects and availability accepted malformed structural fields.",
+  "repair": "Normalize in-memory compiler inputs, exclude standalone conditional-only branches from static projection, preserve ordinary siblings as an explicit structural allOf branch; full canonical Ajv runtime validation retained.",
+  "inspection": {
+    "schemasInspected": 12,
+    "structuresLosingFields": [
+      "device-operation.intent",
+      "device-operation.effects.items",
+      "device-status.result.availability.items"
+    ],
+    "regeneratedTypeFiles": [
+      "packages/contracts/src/generated/device-capability.ts",
+      "packages/contracts/src/generated/device-operation.ts",
+      "packages/contracts/src/generated/device-ownership.ts",
+      "packages/contracts/src/generated/device-status.ts",
+      "packages/contracts/src/generated/device-test-evidence.ts",
+      "packages/contracts/src/generated/response.ts",
+      "packages/contracts/src/generated/status.ts"
+    ]
+  },
+  "compileRegression": {
+    "before": "failed against initial outputs with unknown field-access errors and thirteen unused expected-error directives",
+    "after": "passed",
+    "validStructures": [
+      "intent",
+      "effect",
+      "availability"
+    ],
+    "expectedErrors": 13,
+    "structuralAllOfFixtureExpectedErrors": 4,
+    "originalThreeMalformedReviewAssignments": "rejected by TypeScript after regeneration"
+  },
+  "checks": [
+    {
+      "command": "bash scripts/dev.sh generate",
+      "outcome": "passed",
+      "generatedOutputs": 15
+    },
+    {
+      "command": "bash scripts/dev.sh contracts:check",
+      "outcome": "passed",
+      "exit": 0,
+      "nodeTestsPassed": 30,
+      "includesGenerationDriftAndStrictPackageBuild": true,
+      "compileTimeRegression": "passed",
+      "schemas": 12,
+      "examples": 14,
+      "runtimeNegativeShapes": 23
+    },
+    {
+      "command": "bash scripts/dev.sh check",
+      "outcome": "passed",
+      "exit": 0,
+      "nodeTestsPassed": 34,
+      "compileTimeRegression": "passed",
+      "localLinksChecked": 203
+    },
+    {
+      "command": "git diff --check",
+      "outcome": "passed",
+      "exit": 0
+    }
+  ],
+  "preservation": {
+    "canonicalSchemaExampleJsonByteIdentical": 26,
+    "runtimeValidatorChanged": false,
+    "nativeSourceProjectVersionOutputsChanged": false,
+    "requirementsAndAcceptanceLedgerChanged": false,
+    "applicationCasesPassed": 0
+  },
+  "limits": "Static conditionals/contains/formats/bounds/patterns/cross-record semantics remain runtime-only; native/GUI/device qualification is not repeated or advanced by this repair.",
+  "sideEffects": {
+    "dependenciesInstalled": false,
+    "serviceOrCLIInstalled": false,
+    "pushed": false,
+    "M0M1Started": false
+  }
+}

@@ -31,6 +31,8 @@ Ambient Node was 24.19.0. The scoped runtime uses the newer official 24.21.0 LTS
 
 ## Verification commands and outcomes
 
+The table and clean-snapshot receipt below describe initial S0 delivery `627c637`. The later S0 projection repair restores ordinary nested intent/effect/availability structure that the initial generated TypeScript lost beside conditional `allOf`. Canonical schemas/examples, runtime validation and native/version outputs remain unchanged. [The separate repair evidence](verification/s0-projection-repair.json) records regeneration, compile-time regression, package/contract checks and source preservation; it does not repeat or extend application/native qualification.
+
 | Exact command | Outcome |
 |---|---|
 | `python3 scripts/bootstrap.py` | Official Node checksum manifest and downloaded SHA-256 verified; pnpm SHA-512 verified; scoped versions match pins |

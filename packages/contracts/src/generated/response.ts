@@ -1,8 +1,6 @@
 /* Generated from canonical JSON Schema. Runtime validation remains required. */
 
-export type Response = {
-  [k: string]: unknown;
-} & {
+export interface Response {
   schemaVersion: 1;
   requestStatus: "completed" | "accepted" | "rejected";
   operationId: string | null;
@@ -39,4 +37,4 @@ export type Response = {
     [k: string]: unknown;
   } | null;
   [k: string]: unknown;
-};
+}

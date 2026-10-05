@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { compile } from 'json-schema-to-typescript';
+import { projectForTypes } from './schema-projection.mjs';
 
 const root = new URL('../', import.meta.url);
 const readJSON = async path => JSON.parse(await readFile(new URL(path, root), 'utf8'));
@@ -18,25 +19,13 @@ for (const name of names) {
   const schema = JSON.parse(await readFile(new URL(name, schemaDir), 'utf8'));
   local.set(schema.$id, fileURLToPath(new URL(name, schemaDir)));
 }
-// Generator-only ref rewriting. Canonical JSON remains byte-identical.
-// Resolution is local and HTTP fetching is disabled.
-function transform(value) {
-  if (Array.isArray(value)) return value.map(transform);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, val]) => {
-    if (key === '$ref' && typeof val === 'string' && val.startsWith('urn:')) {
-      const [id, fragment] = val.split('#');
-      assert(local.has(id), `Unknown schema URN ${id}`);
-      return [key, local.get(id) + (fragment ? '#' + fragment : '')];
-    }
-    return [key, transform(val)];
-  }));
-  return value;
-}
-// A custom resolver also rewrites nested files before the tested generator sees them.
-const resolver = { order: 1, canRead: true, read: async file => JSON.stringify(transform(JSON.parse(await readFile(file.url, 'utf8')))) };
+// The same compiler-input projection applies to referenced files. HTTP fetching
+// is disabled, and canonical JSON is never written by generation.
+const resolver = { order: 1, canRead: true, read: async file =>
+  JSON.stringify(projectForTypes(JSON.parse(await readFile(file.url, 'utf8')), local)) };
 const outputs = new Map();
 for (const name of names) {
-  const schema = transform(JSON.parse(await readFile(new URL(name, schemaDir), 'utf8')));
+  const schema = projectForTypes(JSON.parse(await readFile(new URL(name, schemaDir), 'utf8')), local);
   delete schema.title; delete schema.$id;
   const type = name.replace('.schema.json', '').split('-').map(s => s[0].toUpperCase() + s.slice(1)).join('');
   outputs.set(`packages/contracts/src/generated/${name.replace('.schema.json', '.ts')}`,

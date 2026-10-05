@@ -32,7 +32,21 @@ export type DeviceStatus = ContributionResponseEnvelopeV1 & {
     };
     capabilities: ContributionOperationCapabilityQualificationV1[];
     availability: {
-      [k: string]: unknown;
+      operation:
+        | "connect"
+        | "prepare"
+        | "install"
+        | "launch"
+        | "logs"
+        | "test"
+        | "ui"
+        | "debug"
+        | "screenshot"
+        | "screen_capture"
+        | "native_xcode_destination";
+      callable: boolean;
+      capabilityId: string;
+      reasonCodes: string[];
     }[];
     ownership: ContributionPrivateDeviceOwnershipRecordV1;
     unresolvedOperationIds: string[];
@@ -49,9 +63,8 @@ export type DeviceStatus = ContributionResponseEnvelopeV1 & {
   error?: null;
   [k: string]: unknown;
 };
-export type ContributionResponseEnvelopeV1 = {
-  [k: string]: unknown;
-} & {
+
+export interface ContributionResponseEnvelopeV1 {
   schemaVersion: 1;
   requestStatus: "completed" | "accepted" | "rejected";
   operationId: string | null;
@@ -88,10 +101,24 @@ export type ContributionResponseEnvelopeV1 = {
     [k: string]: unknown;
   } | null;
   [k: string]: unknown;
-};
-export type ContributionOperationCapabilityQualificationV1 = {
-  [k: string]: unknown;
-} & {
+}
+export interface Network {
+  scenario:
+    | "same_lan_wifi"
+    | "remote_wifi"
+    | "isolated_guest_wifi"
+    | "warm_cellular"
+    | "cold_cellular"
+    | "tethered"
+    | "mixed"
+    | "unknown";
+  hostUnderlay: "ethernet" | "wifi" | "cellular_tether" | "unknown";
+  phoneUnderlay: "wifi" | "cellular" | "unknown";
+  tailnetPath: "direct" | "relay" | "unknown";
+  developerSession: "fresh" | "existing" | "none" | "unknown";
+  internetState: "ready" | "captive_portal" | "offline" | "unknown";
+}
+export interface ContributionOperationCapabilityQualificationV1 {
   schemaVersion: 1;
   recordMode: "observed" | "fixture";
   capabilityId: string;
@@ -113,45 +140,6 @@ export type ContributionOperationCapabilityQualificationV1 = {
   evidenceIds: string[];
   limitations: string[];
   reasonCodes: string[];
-};
-export type ContributionPrivateDeviceOwnershipRecordV1 = {
-  [k: string]: unknown;
-} & {
-  schemaVersion: 1;
-  recordMode: "observed" | "fixture";
-  ownershipId: string;
-  deviceId: string;
-  ownerHostId: string | null;
-  selectedHostId: string;
-  previousHostId: string | null;
-  state: "unowned" | "owned" | "transfer_pending" | "previous_owner_unconfirmed" | "busy_external" | "blocked";
-  mutationsPermitted: boolean;
-  revision: string;
-  activeOperationIds: string[];
-  leaseExpiresAt: string | null;
-  priorSession: "none" | "released" | "active" | "unknown";
-  releaseReceiptRef: string | null;
-  recoveryEvidenceRefs: string[];
-  externalSession: "absent" | "present" | "unknown";
-  observedAt: string | null;
-  reasonCodes: string[];
-};
-
-export interface Network {
-  scenario:
-    | "same_lan_wifi"
-    | "remote_wifi"
-    | "isolated_guest_wifi"
-    | "warm_cellular"
-    | "cold_cellular"
-    | "tethered"
-    | "mixed"
-    | "unknown";
-  hostUnderlay: "ethernet" | "wifi" | "cellular_tether" | "unknown";
-  phoneUnderlay: "wifi" | "cellular" | "unknown";
-  tailnetPath: "direct" | "relay" | "unknown";
-  developerSession: "fresh" | "existing" | "none" | "unknown";
-  internetState: "ready" | "captive_portal" | "offline" | "unknown";
 }
 export interface Context {
   host: {
@@ -197,4 +185,24 @@ export interface Context {
   };
   signingMode: "development" | "ad_hoc" | "not_applicable" | "unknown";
   bootstrapMethod: "existing" | "wireless" | "usb" | "unknown";
+}
+export interface ContributionPrivateDeviceOwnershipRecordV1 {
+  schemaVersion: 1;
+  recordMode: "observed" | "fixture";
+  ownershipId: string;
+  deviceId: string;
+  ownerHostId: string | null;
+  selectedHostId: string;
+  previousHostId: string | null;
+  state: "unowned" | "owned" | "transfer_pending" | "previous_owner_unconfirmed" | "busy_external" | "blocked";
+  mutationsPermitted: boolean;
+  revision: string;
+  activeOperationIds: string[];
+  leaseExpiresAt: string | null;
+  priorSession: "none" | "released" | "active" | "unknown";
+  releaseReceiptRef: string | null;
+  recoveryEvidenceRefs: string[];
+  externalSession: "absent" | "present" | "unknown";
+  observedAt: string | null;
+  reasonCodes: string[];
 }

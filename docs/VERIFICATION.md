@@ -10,6 +10,8 @@ The [S0 record](verification/s0-setup.json) covers frozen setup, strict package 
 
 The concurrent [acceptance hardening review](ACCEPTANCE_HARDENING.md) is preserved: 54 original core plus five robustness additions and 24 device cases, 83 total, all unrun. The source/package review below still describes its original 78-case snapshot.
 
+The [S0 projection repair record](verification/s0-projection-repair.json) separately checks required ordinary nested fields, enums, nullability, arrays and structural `allOf` in generated TypeScript. The initial 31 runtime/boundary tests did not detect this static projection loss. Compilation still does not validate conditional relationships or authorize device operations. Schema/example bytes, Swift/version outputs and every unrun application case remain unchanged.
+
 ## Review evidence
 
 | Check | Result |

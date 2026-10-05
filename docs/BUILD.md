@@ -22,7 +22,8 @@ If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global
 | `bash scripts/dev.sh check:generated` | Fail on missing, changed, or extra generated TypeScript outputs |
 | `bash scripts/dev.sh build` | Drift check and strict compilation of contracts, adapters, engine, CLI |
 | `bash scripts/dev.sh typecheck` | Strict TypeScript project-reference compilation |
-| `bash scripts/dev.sh contracts:check` | All 12 schemas/14 examples, 23 negative shapes and format checks |
+| `bash scripts/dev.sh contracts:types` | Compile-time structure proof for generated clients, including thirteen expected errors |
+| `bash scripts/dev.sh contracts:check` | Generation/package build, client type proof, all 12 schemas/14 examples, 23 runtime negative shapes, formats and projection tests |
 | `bash scripts/dev.sh check` | Package build, boundary tests, privacy/provenance/requirements/docs checks |
 | `bash scripts/dev.sh native:test` | Compile/test the Swift platform package against canonical envelope fixtures and engine responses |
 | `bash scripts/dev.sh native:build` | Build/inspect an unsigned development `.app` with the shared Xcode scheme |

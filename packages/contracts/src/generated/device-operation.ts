@@ -1,8 +1,6 @@
 /* Generated from canonical JSON Schema. Runtime validation remains required. */
 
-export type DeviceOperation = {
-  [k: string]: unknown;
-} & {
+export interface DeviceOperation {
   schemaVersion: 1;
   recordMode: "observed" | "fixture";
   operationId: string;
@@ -11,7 +9,53 @@ export type DeviceOperation = {
   executionHostId: string;
   deviceId: string;
   intent: {
-    [k: string]: unknown;
+    operation:
+      | "connect"
+      | "prepare"
+      | "install"
+      | "install_and_launch"
+      | "launch"
+      | "logs"
+      | "test"
+      | "ui"
+      | "debug"
+      | "screenshot"
+      | "screen_capture"
+      | "disconnect"
+      | "transfer_host";
+    app: {
+      bundleId: string;
+      teamId: string;
+      applicationIdentifier: string;
+      marketingVersion: string;
+      buildVersion: string;
+    };
+    artifactRef: {
+      artifactId: string;
+      sha256: string;
+    } | null;
+    installedAppRef: string | null;
+    sourceCommit: string | null;
+    configurationId: string | null;
+    adapterId: string;
+    policyRevision: string;
+    /**
+     * @minItems 1
+     */
+    authorizedOperations: [string, ...string[]];
+    mode: "routine" | "qualification";
+    qualification: {
+      acceptanceId: string;
+      planId: string;
+      fixtureId: string;
+      expectedContextDigest: string;
+      /**
+       * @minItems 1
+       */
+      authorizedOperations: [string, ...string[]];
+      maxAttempts: number;
+      maxDurationSeconds: number;
+    } | null;
   };
   context: Context;
   capabilityIds: string[];
@@ -37,19 +81,101 @@ export type DeviceOperation = {
    */
   effects: [
     {
-      [k: string]: unknown;
-    } & {
-      [k: string]: unknown;
-    } & {
-      [k: string]: unknown;
+      effectId: string;
+      operation:
+        | "prepare"
+        | "install"
+        | "launch"
+        | "logs"
+        | "test"
+        | "ui"
+        | "debug"
+        | "screenshot"
+        | "screen_capture"
+        | "connect"
+        | "disconnect"
+        | "transfer_host";
+      state:
+        | "not_requested"
+        | "queued"
+        | "running"
+        | "succeeded"
+        | "failed"
+        | "cancelled"
+        | "outcome_unknown"
+        | "needs_attention";
+      certainty: "not_observed" | "confirmed" | "uncertain";
+      startedAt: string | null;
+      completedAt: string | null;
+      installReadback: {
+        deviceId: string;
+        bundleId: string;
+        teamId: string | null;
+        marketingVersion: string;
+        buildVersion: string;
+        observedAt: string;
+        method: string;
+      } | null;
+      launchReadback: {
+        deviceId: string;
+        bundleId: string;
+        processState: "running" | "foreground" | "not_running" | "unknown";
+        processId: number | null;
+        observedAt: string;
+        method: string;
+      } | null;
+      evidenceRefs: string[];
+      reasonCodes: string[];
+      missingProof: string[];
     },
-    ...({
-      [k: string]: unknown;
-    } & {
-      [k: string]: unknown;
-    } & {
-      [k: string]: unknown;
-    })[]
+    ...{
+      effectId: string;
+      operation:
+        | "prepare"
+        | "install"
+        | "launch"
+        | "logs"
+        | "test"
+        | "ui"
+        | "debug"
+        | "screenshot"
+        | "screen_capture"
+        | "connect"
+        | "disconnect"
+        | "transfer_host";
+      state:
+        | "not_requested"
+        | "queued"
+        | "running"
+        | "succeeded"
+        | "failed"
+        | "cancelled"
+        | "outcome_unknown"
+        | "needs_attention";
+      certainty: "not_observed" | "confirmed" | "uncertain";
+      startedAt: string | null;
+      completedAt: string | null;
+      installReadback: {
+        deviceId: string;
+        bundleId: string;
+        teamId: string | null;
+        marketingVersion: string;
+        buildVersion: string;
+        observedAt: string;
+        method: string;
+      } | null;
+      launchReadback: {
+        deviceId: string;
+        bundleId: string;
+        processState: "running" | "foreground" | "not_running" | "unknown";
+        processId: number | null;
+        observedAt: string;
+        method: string;
+      } | null;
+      evidenceRefs: string[];
+      reasonCodes: string[];
+      missingProof: string[];
+    }[]
   ];
   reconciliation: {
     status: "not_required" | "required" | "in_progress" | "resolved" | "blocked";
@@ -60,8 +186,7 @@ export type DeviceOperation = {
   logRefs: string[];
   reasonCodes: string[];
   missingProof: string[];
-};
-
+}
 export interface Context {
   host: {
     hostId: string;

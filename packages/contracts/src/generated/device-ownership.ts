@@ -1,8 +1,6 @@
 /* Generated from canonical JSON Schema. Runtime validation remains required. */
 
-export type DeviceOwnership = {
-  [k: string]: unknown;
-} & {
+export interface DeviceOwnership {
   schemaVersion: 1;
   recordMode: "observed" | "fixture";
   ownershipId: string;
@@ -21,4 +19,4 @@ export type DeviceOwnership = {
   externalSession: "absent" | "present" | "unknown";
   observedAt: string | null;
   reasonCodes: string[];
-};
+}
