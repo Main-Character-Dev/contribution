@@ -5,6 +5,9 @@ import ContributionPlatform
 
 @MainActor @Observable private final class Workspace {
     let client = ServiceClient()
+    let notifications = LocalNotifications()
+    @ObservationIgnored private var monitoring: Task<Void, Never>?
+    var notificationContext: NotificationContext?
     var repositories: [JSONValue] = []
     var operations: [JSONValue] = []
     var selectedRepository: String?
@@ -17,6 +20,16 @@ import ContributionPlatform
     var search = ""
     var busy = false
     var preview: PublicationPreview?
+    func startMonitoring() {
+        guard monitoring == nil else { return }
+        monitoring = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await refresh(); await notifications.poll(client: client)
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
     func call(_ command: String, _ args: [String: JSONValue] = [:]) async -> ResponseEnvelope? {
         do {
             let response = try await client.request(command, args: args)
@@ -61,6 +74,7 @@ import ContributionPlatform
 private struct PublicationPreview: Identifiable {
     let id = UUID(), repository: String, fields: JSONValue
 }
+private struct NotificationContext: Identifiable { let id = UUID(); let value: JSONValue }
 
 @main struct ContributionApp: App {
     @State private var workspace = Workspace()
@@ -72,6 +86,8 @@ private struct PublicationPreview: Identifiable {
 }
 private struct WorkspaceView: View {
     @Bindable var workspace: Workspace
+    @State private var hostedRepository: HostedRepository?
+    @Environment(\.openWindow) private var openWindow
     var body: some View {
         NavigationSplitView {
             List(selection: $workspace.selectedRepository) {
@@ -101,6 +117,7 @@ private struct WorkspaceView: View {
             .toolbar {
                 Button("Refresh", systemImage: "arrow.clockwise") { Task { await workspace.refresh() } }.disabled(workspace.busy)
                 Button("Preview Push", systemImage: "arrow.up.circle") { Task { await workspace.previewPush() } }.disabled(workspace.selectedRepository == nil)
+                Button("GitHub activity", systemImage: "network") { if let id = workspace.selectedRepository { hostedRepository = HostedRepository(id: id) } }.disabled(workspace.selectedRepository == nil)
             }
         } detail: {
             OperationDetail(workspace: workspace)
@@ -111,9 +128,110 @@ private struct WorkspaceView: View {
                     .padding(10).background(.orange.opacity(0.12)).accessibilityIdentifier("contribution.error")
             }
         }
-        .task { while !Task.isCancelled { await workspace.refresh(); try? await Task.sleep(for: .seconds(2)) } }
+        .onAppear {
+            workspace.startMonitoring()
+            workspace.notifications.onOpen = { route in
+                if let response = await workspace.call("notifications.context", route.mapValues(JSONValue.string)) {
+                    workspace.notificationContext = NotificationContext(value: response.fields["result"] ?? .null)
+                    openWindow(id: "main"); NSApplication.shared.activate(ignoringOtherApps: true)
+                }
+            }
+        }
         .task(id: workspace.selectedOperation) { await workspace.loadSelection() }
         .sheet(item: $workspace.preview) { preview in PublicationSheet(workspace: workspace, preview: preview) }
+        .sheet(item: $hostedRepository) { repository in HostedActivity(workspace: workspace, repository: repository.id) }
+        .sheet(item: $workspace.notificationContext) { context in NotificationContextSheet(value: context.value) }
+    }
+}
+private struct NotificationContextSheet: View {
+    let value: JSONValue
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        let notice = value.object["notice"]?.object ?? [:]
+        VStack(alignment: .leading, spacing: 14) {
+            Text(notice["title"]?.text ?? "Contribution activity").font(.title2)
+            Text(notice["body"]?.text ?? "").textSelection(.enabled)
+            if let state = value.object["operation"]?.object["state"]?.text { Text("Current result: \(state.replacingOccurrences(of: "_", with: " "))") }
+            ScrollView([.vertical, .horizontal]) { Text(value.object["log"]?.text ?? "").font(.body.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+            HStack {
+                if let text = notice["url"]?.text, let url = URL(string: text), url.scheme == "https", url.host == "github.com", url.user == nil, url.password == nil { Link("Open on GitHub", destination: url) }
+                Button("Copy retained details") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value.formatted, forType: .string) }
+                Spacer(); Button("Done") { dismiss() }
+            }
+        }.padding(24).frame(width: 720, height: 500)
+    }
+}
+private struct HostedRepository: Identifiable { let id: String }
+private struct HostedActivity: View {
+    @Bindable var workspace: Workspace
+    let repository: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var observation: JSONValue = .null
+    @State private var jobs: [JSONValue] = []
+    @State private var selectedRun: JSONValue = .null
+    @State private var log: JSONValue = .null
+    @State private var loading = false
+    @State private var search = ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack { Text("GitHub activity").font(.title2); Spacer(); Button("Refresh from GitHub") { Task { await refresh(true) } }.disabled(loading); Button("Done") { dismiss() } }
+            if let error = workspace.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+            if observation == .null { Text(loading ? "Loading…" : "No GitHub observation. Configure a GitHub destination and refresh.").foregroundStyle(.secondary) }
+            else {
+                HStack { Text(observation.object["readiness"]?.text.replacingOccurrences(of: "_", with: " ").capitalized ?? "Unknown"); Text(observation.object["freshness"]?.text ?? "Unknown freshness").foregroundStyle(.secondary); Spacer(); githubLink(observation.object["pullRequest"]?.object["url"]) }
+                Text(observation.object["reasonCodes"]?.array.compactMap { $0.text }.joined(separator: " · ") ?? "").font(.caption).textSelection(.enabled)
+            }
+            HSplitView {
+                List {
+                    ForEach(Array((observation.object["workflows"]?.array ?? []).enumerated()), id: \.offset) { _, run in
+                        Button { Task { await select(run) } } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(run.object["name"]?.text ?? "Workflow").font(.headline)
+                                Text("\(run.object["event"]?.text ?? "Remote activity") · \(run.object["conclusion"]?.text.isEmpty == false ? run.object["conclusion"]!.text : run.object["status"]?.text ?? "Unknown")")
+                                Text("Attempt \(run.object["run_attempt"]?.formatted ?? "?") · \(run.object["updated_at"]?.text ?? "")").font(.caption).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.buttonStyle(.plain)
+                    }
+                }.frame(minWidth: 250, idealWidth: 310)
+                VStack(alignment: .leading, spacing: 8) {
+                    githubLink(selectedRun.object["html_url"])
+                    ScrollView {
+                        ForEach(Array(jobs.enumerated()), id: \.offset) { _, job in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack { Text(job.object["name"]?.text ?? "Job").bold(); Spacer(); Button("Read log") { Task { await loadLog(job) } }.disabled(loading) }
+                                Text(job.object["conclusion"]?.text.isEmpty == false ? job.object["conclusion"]!.text : job.object["status"]?.text ?? "Unknown")
+                                ForEach(Array((job.object["steps"]?.array ?? []).enumerated()), id: \.offset) { _, step in
+                                    Text("\(step.object["name"]?.text ?? "Step"): \(step.object["conclusion"]?.text.isEmpty == false ? step.object["conclusion"]!.text : step.object["status"]?.text ?? "Unknown")").font(.caption)
+                                }
+                            }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 10)
+                        }
+                    }.frame(maxHeight: 180)
+                    HStack { Text(log.object["state"]?.text.replacingOccurrences(of: "_", with: " ").capitalized ?? "Select a job log"); Spacer(); Button("Copy log") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(log.object["text"]?.text ?? "", forType: .string) }.disabled(log.object["state"]?.text != "available") }
+                    Text(log.object["reasonCode"]?.text ?? "GitHub logs are snapshots when available.").font(.caption).foregroundStyle(.secondary)
+                    TextField("Search downloaded log", text: $search).textFieldStyle(.roundedBorder)
+                    ScrollView([.vertical, .horizontal]) {
+                        Text((log.object["text"]?.text ?? "").split(separator: "\n", omittingEmptySubsequences: false).filter { search.isEmpty || $0.localizedCaseInsensitiveContains(search) }.joined(separator: "\n"))
+                            .font(.body.monospaced()).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }.accessibilityIdentifier("contribution.githubLog")
+                    if log.object["truncated"]?.boolean == true { Text("Showing the first 512 KiB. Open GitHub for the complete log.").font(.caption) }
+                }.padding(8).frame(minWidth: 380)
+            }
+        }.padding(20).frame(minWidth: 820, minHeight: 620).task { await refresh(false) }
+    }
+    @ViewBuilder private func githubLink(_ value: JSONValue?) -> some View {
+        if let value, let url = URL(string: value.text), url.scheme == "https", url.host == "github.com", url.user == nil, url.password == nil { Link("Open on GitHub", destination: url) }
+    }
+    private func refresh(_ remote: Bool) async {
+        loading = true; defer { loading = false }
+        if let response = await workspace.call("status", ["repo": .string(repository), "refresh": .bool(remote)]) { observation = response.fields["result"]?.object["github"] ?? .null }
+    }
+    private func select(_ run: JSONValue) async {
+        loading = true; defer { loading = false }; selectedRun = run; jobs = []; log = .null
+        if let response = await workspace.call("github.jobs", ["repo": .string(repository), "runId": run.object["id"] ?? .null, "attempt": run.object["run_attempt"] ?? .null]) { jobs = response.fields["result"]?.object["jobs"]?.array ?? [] }
+    }
+    private func loadLog(_ job: JSONValue) async {
+        loading = true; defer { loading = false }; log = .null
+        if let response = await workspace.call("github.logs", ["repo": .string(repository), "runId": selectedRun.object["id"] ?? .null, "attempt": selectedRun.object["run_attempt"] ?? .null, "jobId": job.object["id"] ?? .null]) { log = response.fields["result"] ?? .null }
     }
 }
 private struct OperationRow: View {
@@ -200,6 +318,14 @@ private struct ContributionSettings: View {
     @Bindable var workspace: Workspace
     @State private var registration = ServiceRegistration.status
     @State private var cliStatus = CLIInstallation().status
+    @State private var notificationPermission = "Checking…"
+    @State private var notificationMachine: [String: JSONValue] = [:]
+    @State private var notificationRevision = ""
+    @State private var notificationHosts: [JSONValue] = []
+    @State private var preferredHost = ""
+    @State private var notifySuccess = true
+    @State private var notifyFailure = true
+    @State private var notificationSave = ""
     var body: some View {
         Form {
             Section("Background service") {
@@ -209,12 +335,41 @@ private struct ContributionSettings: View {
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Version") { LabeledContent("Contribution", value: BuildIdentity.version); Text("Development build · Remote device capabilities remain unverified").foregroundStyle(.secondary) }
+            Section("Notifications") {
+                LabeledContent("Permission", value: notificationPermission)
+                Button("Allow milestone notifications") { Task { do { try await workspace.notifications.requestPermission(); notificationPermission = await workspace.notifications.permission() } catch { workspace.error = error.localizedDescription } } }
+                Toggle("Successful milestones", isOn: $notifySuccess)
+                Toggle("Failures and required actions", isOn: $notifyFailure)
+                Picker("Deliver milestones from this Mac to", selection: $preferredHost) {
+                    ForEach(Array(notificationHosts.enumerated()), id: \.offset) { _, host in Text(host.object["label"]?.text ?? host.object["alias"]?.text ?? "Paired Mac").tag(host.object["hostId"]?.text ?? "") }
+                }
+                Button("Save notification preferences") { Task { await saveNotifications() } }.disabled(notificationRevision.isEmpty || preferredHost.isEmpty)
+                if !notificationSave.isEmpty { Text(notificationSave).font(.caption) }
+                Text("Notification permission never changes workflow results. Offline delivery remains in the activity view.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Command line") {
                 Text(cliStatus)
                 Button("Install bundled CLI") { do { try CLIInstallation().install(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
                 Button("Remove owned CLI link") { do { try CLIInstallation().uninstallOwnedLink(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
                 Text("Add ~/.local/bin to your shell PATH. This action preserves any unrelated executable already at that location.").font(.caption).foregroundStyle(.secondary)
             }
-        }.formStyle(.grouped).padding().frame(width: 540)
+        }.formStyle(.grouped).padding().frame(width: 540).task {
+            notificationPermission = await workspace.notifications.permission()
+            if let result = await workspace.call("settings.get") {
+                notificationMachine = result.fields["result"]?.object["settings"]?.object ?? [:]
+                notificationRevision = result.fields["result"]?.object["revision"]?.text ?? ""
+                let preferences = notificationMachine["notifications"]?.object ?? [:]
+                preferredHost = preferences["preferredHostId"]?.text ?? ""; notifySuccess = preferences["success"]?.boolean ?? true; notifyFailure = preferences["failure"]?.boolean ?? true
+            }
+            if let result = await workspace.call("hosts.list") { notificationHosts = result.fields["result"]?.object["hosts"]?.array ?? [] }
+        }
+    }
+    private func saveNotifications() async {
+        var updated = notificationMachine
+        updated["notifications"] = .object(["preferredHostId": .string(preferredHost), "success": .bool(notifySuccess), "failure": .bool(notifyFailure)])
+        if let response = await workspace.call("settings.apply", ["config": .object(updated), "expectedRevision": .string(notificationRevision), "requestId": .string(UUID().uuidString)]) {
+            notificationSave = "Preference change accepted. Follow its result in Activity."
+            notificationRevision = ""; workspace.selectedOperation = response.operationID
+        }
     }
 }

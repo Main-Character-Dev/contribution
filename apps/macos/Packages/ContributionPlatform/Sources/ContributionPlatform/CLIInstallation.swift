@@ -22,7 +22,9 @@ public struct CLIInstallation: Sendable {
         try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try manager.createDirectory(at: receipt.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let data = try JSONEncoder().encode(["target": expected, "destination": destination.path])
-        try data.write(to: receipt, options: [.atomic, .completeFileProtectionUnlessOpen])
+        // This path-only receipt must remain readable by the user service while
+        // the Mac is locked. Ownership and mode protect it like other IPC state.
+        try data.write(to: receipt, options: [.atomic])
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: receipt.path)
         try manager.createSymbolicLink(atPath: destination.path, withDestinationPath: expected)
     }

@@ -154,3 +154,26 @@ test('replaying an old authority activation cannot undo a newer owner transition
     assert.throws(() => f.hosts.mini.peers.assertWriter(f.hosts.mini.repos.all()[0]), /mirror/);
   } finally { await f.cleanup(); }
 });
+
+test('paired milestone delivery is claimed only on the preferred host and opens the exact origin receipt', async () => {
+  const f = await pairFixture(); try {
+    const repo = f.config.repositoryId, mini = f.hosts.mini, laptop = f.hosts.laptop;
+    assert.equal((await f.call('laptop', 'repos.pair', { repo, host: mini.store.hostId, requestId: randomUUID() })).error, null);
+    mini.store.setMeta('settings', { ...mini.settings(), notifications: { preferredHostId: laptop.store.hostId, success: true, failure: true } });
+    const op = mini.store.admit(randomUUID(), 'push', repo, {}, 'fixture', 'running');
+    mini.store.log(op, 'retained fixture gate failure\n');
+    mini.store.update(op, { state: 'failed', error: { code: 'GATE_FAILED', message: 'The selected gate failed.', retryable: false, nextActions: [] } });
+    await laptop.refreshNotifications();
+    const pending = await f.call('laptop', 'notifications.pending'), notice = pending.result.notices[0];
+    assert.equal(notice.operationId, op.operationId); assert.equal(notice.originHostId, mini.store.hostId);
+    const route = { repo, originHostId: mini.store.hostId, noticeId: notice.id, revision: notice.revision, requestId: randomUUID() };
+    assert.equal((await f.call('mini', 'notifications.claim', route)).error.code, 'NOTIFICATION_CHANGED');
+    const claim = await f.call('laptop', 'notifications.claim', route); assert.equal(claim.error, null); assert.equal(claim.result.newlyClaimed, true);
+    assert.equal((await f.call('laptop', 'notifications.claim', route)).result.newlyClaimed, false);
+    const context = await f.call('laptop', 'notifications.context', { repo, originHostId: mini.store.hostId, noticeId: notice.id });
+    assert.equal(context.result.operation.operationId, op.operationId); assert.match(context.result.log, /fixture gate failure/);
+    const receipt = { repo, originHostId: mini.store.hostId, noticeId: notice.id, revision: notice.revision, token: claim.result.notice.claim.token, delivered: true };
+    assert.equal((await f.call('laptop', 'notifications.acknowledge', receipt)).result.notice.state, 'delivered');
+    assert.equal((await f.call('laptop', 'notifications.claim', { ...route, requestId: randomUUID() })).error.code, 'NOTIFICATION_ALREADY_CLAIMED');
+  } finally { await f.cleanup(); }
+});

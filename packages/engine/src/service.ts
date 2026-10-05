@@ -18,6 +18,8 @@ import type { DeviceBackend } from './devices.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
+import { Milestones } from './notifications.js';
+import type { Notice } from './notifications.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
@@ -33,6 +35,10 @@ const allowed: Record<string, string[]> = {
   'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
   'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
+  'github.jobs': ['repo', 'runId', 'attempt'], 'github.logs': ['repo', 'runId', 'attempt', 'jobId'],
+  'notifications.pending': [], 'notifications.context': ['repo', 'originHostId', 'noticeId'],
+  'notifications.claim': ['repo', 'originHostId', 'noticeId', 'revision', 'requestId'],
+  'notifications.acknowledge': ['repo', 'originHostId', 'noticeId', 'revision', 'token', 'delivered'],
 };
 for (const name of ['connect', 'prepare', 'install', 'launch', 'logs', 'test', 'ui', 'debug', 'capture', 'disconnect', 'qualify'])
   allowed[`devices.${name}`] = ['repo', 'host', 'device', 'requestId', 'artifact', 'launch', 'sourceTip', 'buildProfile', 'appRef', 'plan', 'sessionProfile', 'durationSeconds', 'maxBytes', 'kind'];
@@ -50,6 +56,9 @@ export class Engine {
   stopping = false;
   restartRequested = false;
   private scheduled = false;
+  private notificationRefresh = false;
+  private notificationRefreshAt = 0;
+  get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy; }
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture' }) {
     this.repos = new Repositories(store); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
     this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
@@ -83,6 +92,21 @@ export class Engine {
     }
   }
   settings(): Machine { return this.store.getMeta<Machine>('settings')!; }
+  async refreshNotifications(): Promise<void> {
+    if (this.notificationRefresh || this.stopping || Date.now() < this.notificationRefreshAt) return;
+    this.notificationRefresh = true; this.notificationRefreshAt = Date.now() + 30000;
+    try {
+      await Promise.all(this.repos.all().filter(repo => repo.availability === 'both-macs').map(async repo => {
+        const authority = this.store.record<{ peerHostId: string }>('authority', repo.id); if (!authority) return;
+        try {
+          const response = await this.peers.call(authority.peerHostId, 'notifications.pending', { repositoryId: repo.id });
+          const notices = response['notices'];
+          requireValue(Array.isArray(notices) && notices.length <= 100 && notices.every(value => object(value)['repositoryId'] === repo.id && object(value)['originHostId'] === authority.peerHostId), 'PEER_PROTOCOL_ERROR', 'Notification scope did not match the paired host.');
+          this.store.put('notificationInbox', repo.id, { observedAt: now(), notices });
+        } catch { /* Cached attention stays separate from permission to dispatch a banner. */ }
+      }));
+    } finally { this.notificationRefresh = false; }
+  }
   kick(): void {
     if (this.scheduled || this.stopping) return; this.scheduled = true;
     setImmediate(() => { this.scheduled = false; void this.schedule(); });
@@ -195,7 +219,7 @@ export class Engine {
       }
       if (command === 'service.restart' || command === 'update.apply') {
         requireValue(args['whenIdle'] === true, 'IDLE_WINDOW_REQUIRED', 'Use --when-idle for lifecycle changes.', 2);
-        requireValue(this.active.size === 0 && !this.peers.busy, 'SERVICE_BUSY', 'Active work and peer transfers must drain before restart or update.', 4);
+        requireValue(this.active.size === 0 && !this.backgroundBusy, 'SERVICE_BUSY', 'Active work, observations and peer transfers must drain before restart or update.', 4);
         requireValue(!this.store.unsettled().some(op => op.state === 'outcome_unknown'), 'RECONCILIATION_REQUIRED', 'Resolve uncertain effects before lifecycle changes.');
         if (command === 'update.apply') throw new Fault('SIGNED_UPDATE_REQUIRED', 'No verified signed update is staged. Use the native updater once release signing is configured.', 3);
         requireValue(typeof process.execve === 'function', 'RESTART_UNAVAILABLE', 'This runtime cannot replace the service process safely.', 3);
@@ -212,6 +236,11 @@ export class Engine {
         await this.devices.reconcile(op); return this.store.response(this.store.get(op.operationId));
       }
       if (command === 'settings.get') return completed({ settings: this.settings(), revision: digest(this.settings()) });
+      if (command === 'notifications.pending') {
+        const milestones = new Milestones(this.store); milestones.synchronize(this.repos.all()); void this.refreshNotifications();
+        const remote = this.store.records<{ observedAt: string; notices: Notice[] }>('notificationInbox').filter(entry => Date.parse(entry.observedAt) > Date.now() - 120000).flatMap(entry => entry.notices);
+        return completed({ notices: [...milestones.pending(this.store.hostId), ...remote].slice(0, 100) });
+      }
       if (command === 'settings.apply') { assertContract('machine', args['config']); return this.admit(args['requestId'], command, this.store.hostId, { config: args['config'], expectedRevision: string(args['expectedRevision'], 'expectedRevision') }); }
       if (command === 'repos.list') return completed({ repositories: this.repos.all() });
       if (command === 'repos.discover') return completed({ repositories: await discover(string(args['root'], 'root')), limits: { maxDepth: 3, maxDirectories: 250 } });
@@ -265,6 +294,13 @@ export class Engine {
         }
         const op = await this.devices.admit(repo, action as DeviceOperation['intent']['operation'], deviceArgs); this.kick(); return this.store.response(op);
       }
+      if (command.startsWith('notifications.')) {
+        const origin = string(args['originHostId'], 'originHostId');
+        return completed(origin === this.store.hostId ? new Milestones(this.store).dispatch(command, this.store.hostId, repo, args) :
+          await this.peers.call(origin, command, { ...args, repositoryId: repo.id }));
+      }
+      if (command === 'github.jobs') return completed(await this.github.jobs(repo, Number(args['runId']), Number(args['attempt'])));
+      if (command === 'github.logs') return completed(await this.github.logs(repo, Number(args['runId']), Number(args['attempt']), Number(args['jobId'])));
       if (command === 'repos.pair') return completed(await this.peers.bind(repo, string(args['host'], 'host'), string(args['requestId'], 'requestId')));
       if (command === 'repos.seed' || command === 'repos.mirror') return this.store.response(await this.peers.captureHistory(repo, command === 'repos.seed' ? 'seed' : 'mirror', string(args['requestId'], 'requestId')));
       if (command === 'repos.inspect') return completed({ repository: repo.config, revision: repo.revision, path: repo.path, commonDirectory: repo.commonDir, availability: repo.availability, canonicalHostId: repo.canonicalHostId });

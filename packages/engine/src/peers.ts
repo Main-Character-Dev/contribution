@@ -9,6 +9,7 @@ import type { Repositories, Enrolled } from './repositories.js';
 import { identity, git, gitText, ordinaryHistory, oid, clean } from './git.js';
 import { run, Lease } from './process.js';
 import { privateDirectory } from './private-files.js';
+import { Milestones } from './notifications.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
 export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
@@ -140,6 +141,7 @@ export class Peers {
       }
       const authority = this.store.record<Authority>('authority', repositoryId);
       requireValue(repo.availability === 'both-macs' && authority?.phase === 'active' && authority.peerHostId === from, 'REPOSITORY_PEER_UNAUTHORIZED', 'This peer is not associated with the repository authority.');
+      if (['notifications.pending', 'notifications.claim', 'notifications.acknowledge', 'notifications.context'].includes(action)) return new Milestones(this.store).dispatch(action, from, repo, body);
       if (action === 'publication.preview' || action === 'publication.start' || action === 'repository.status' || action === 'checks.start') {
         this.assertWriter(repo); requireValue(this.dispatchLocal, 'PEER_DISPATCH_UNAVAILABLE', 'The service dispatcher is unavailable.', 3);
         const args: ObjectValue = action === 'checks.start' ? { repo: repo.id, requestId: uuid(body['requestId'], 'requestId'), canonical: true, fresh: body['fresh'] === true, ...(body['checkId'] ? { checkId: string(body['checkId'], 'checkId') } : {}) } : action === 'publication.start'

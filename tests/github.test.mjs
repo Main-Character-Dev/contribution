@@ -4,11 +4,11 @@ import { observe, readiness, apiFailure, githubRepository } from '../packages/en
 
 const head = 'a'.repeat(40), merge = 'b'.repeat(40);
 const pr = { number: 8, url: 'https://github.com/example/fixture/pull/8', title: 'Fixture', state: 'OPEN', isDraft: false,
-  headRefOid: head, baseRefName: 'main', baseRefOid: 'c'.repeat(40), mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, potentialMergeCommit: { oid: merge } };
+  headRefOid: head, baseRefName: 'main', baseRefOid: 'c'.repeat(40), mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, potentialMergeCommit: { oid: merge }, baseRef: { branchProtectionRule: null } };
 const rules = [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'test', integration_id: 1 }] } }];
 const check = { id: 1, name: 'test', head_sha: head, app: { id: 1 }, status: 'completed', conclusion: 'success' };
 function api(overrides = {}) { return async path => {
-  const body = path === '/graphql' ? { data: { repository: { pullRequest: pr } } } : path.includes('/actions/runs') ? { workflow_runs: [] } : path.includes('/pulls?') ? [{ number: 8 }] : path.includes('/check-runs') ? { check_runs: [check] } : rules;
+  const body = path === '/graphql' ? { data: { repository: { pullRequest: pr } } } : path.includes('/actions/runs') ? { workflow_runs: [] } : path.includes('/pulls?') ? [{ number: 8 }] : path.includes('/check-runs') ? { check_runs: [{ ...check, head_sha: path.includes(merge) ? merge : head }] } : path.includes('/statuses') ? [] : rules;
   return { status: 200, headers: {}, body, ...overrides };
 }; }
 test('current head and explicit test-merge association determine required-check readiness', async () => {
@@ -46,4 +46,41 @@ test('bounded pagination cannot silently omit missing checks or PRs; no PR is a 
   assert.equal(apiFailure({ status: 200, headers: {}, body: {} }), null);
   assert.deepEqual(githubRepository('git@github.com:example/fixture.git'), { owner: 'example', name: 'fixture' });
   assert.equal(githubRepository('https://secret:token@github.com/example/fixture'), null);
+});
+
+
+test('classic statuses and same-name check runs both pass on the selected test-merge commit', async () => {
+  const anySource = [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'test' }] } }];
+  const status = { id: 50, kind: 'commit_status', name: 'test', head_sha: head, status: 'completed', conclusion: 'failure' };
+  assert.equal(readiness(pr, [check, status], anySource).readiness, 'blocked');
+  assert.equal(readiness(pr, [{ ...status, conclusion: 'success' }], anySource).readiness, 'ready');
+  assert.equal(readiness(pr, [{ ...status, conclusion: 'success' }], rules).readiness, 'blocked', 'a classic status does not prove the required app identity');
+  assert.equal(readiness({ ...pr, testMergeOid: merge }, [{ ...check, id: 999 }, { ...check, id: 2, head_sha: merge, conclusion: 'failure' }], rules).readiness, 'blocked');
+  assert.equal(readiness({ ...pr, testMergeOid: merge }, [{ ...check, id: 999, conclusion: 'failure' }, { ...check, id: 2, head_sha: merge }], rules).readiness, 'ready');
+  const classic = { ...pr, potentialMergeCommit: null, baseRef: { branchProtectionRule: { requiresStatusChecks: true, requiredStatusChecks: [{ context: 'legacy', app: null }] } } };
+  const result = await observe(async path => {
+    if (path === '/graphql') return { status: 200, headers: {}, body: { data: { repository: { pullRequest: classic } } } };
+    if (path.includes('/statuses')) return { status: 200, headers: {}, body: [{ id: 100, context: 'legacy', state: 'failure' }] };
+    return api()(path);
+  }, 'example', 'fixture', 'dev');
+  assert.equal(result.readiness, 'blocked'); assert.deepEqual(result.reasonCodes, ['REQUIRED_CHECK:legacy']);
+  assert.equal(result.checks.find(item => item.kind === 'commit_status').head_sha, head);
+});
+
+test('idle discovery includes scheduled/manual activity and polls older active runs without rolling attempts backward', async () => {
+  const old = { id: 42, run_attempt: 2, status: 'in_progress', conclusion: null, updated_at: '2026-10-01T00:00:00Z' };
+  const previous = { observedAt: '2026-10-02T00:00:00Z', freshness: 'fresh', readiness: 'no_pull_request', reasonCodes: [], pullRequest: null, checks: [], workflows: [old], retryAt: null };
+  const paths = [];
+  const result = await observe(async path => {
+    paths.push(path);
+    const body = path.includes('/actions/runs?') ? { workflow_runs: [{ id: 50, run_attempt: 1, status: 'completed', conclusion: 'failure', event: 'schedule', updated_at: '2026-10-02T01:00:00Z' }] }
+      : path.endsWith('/actions/runs/42') ? { ...old, status: 'completed', conclusion: 'success', updated_at: '2026-10-02T00:30:00Z' } : [];
+    return { status: 200, headers: {}, body };
+  }, 'example', 'fixture', 'dev', previous);
+  assert.equal(result.freshness, 'fresh'); assert.equal(result.workflows.length, 2);
+  assert.equal(result.workflows.find(run => run.id === 42).conclusion, 'success');
+  assert(paths.some(path => path.includes('created=%3E%3D2026-10-01T23%3A45')));
+  const outdated = await observe(async path => ({ status: 200, headers: {}, body: path.includes('/actions/runs?') ? { workflow_runs: [{ ...old, run_attempt: 1, status: 'completed', conclusion: 'failure' }] } : [] }), 'example', 'fixture', 'dev', result);
+  assert.equal(outdated.workflows.find(run => run.id === 42).run_attempt, 2);
+  assert.equal(outdated.workflows.find(run => run.id === 42).conclusion, 'success');
 });

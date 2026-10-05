@@ -23,7 +23,7 @@ try {
     if (closing) return; closing = true; engine.stopping = true; clearInterval(monitor); clearInterval(peerMonitor);
     // A maintenance stop drains instead of killing owned effects.
     const drain = setInterval(() => {
-      if (engine.active.size || engine.peers.busy) return;
+      if (engine.active.size || engine.backgroundBusy) return;
       clearInterval(drain); server.close(() => {
         try { unlinkSync(socketPath(directory)); } catch { /* server may remove it */ }
         journal.close(); lock.release();
