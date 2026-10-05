@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import { assertContract } from '@contribution/contracts';
 import type { DeviceCapability, DeviceContext, DeviceOwnership, DeviceOperation, DeviceTestEvidence, ArtifactProvenance, Response } from '@contribution/contracts';
 import { digest, id, now, requireValue, Fault, object, string, completed } from './core.js';
@@ -6,6 +6,7 @@ import type { ObjectValue } from './core.js';
 import type { Journal, Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import { identity, clean } from './git.js';
+import { artifactFileDigest } from './device-artifacts.js';
 import { DeviceBuilds } from './device-builds.js';
 import type { DeviceBuildDriver } from './device-builds.js';
 
@@ -180,7 +181,7 @@ export class Devices {
       artifact = this.store.record<RetainedDeviceArtifact>('deviceArtifact', string(args['artifact'], 'artifact'));
       requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.repositoryId === repo.id && artifact.provenance.signing.eligibleDeviceRefs.includes(deviceId), 'ARTIFACT_UNAUTHORIZED', 'The selected signed artifact is not eligible for this app/device.', 3);
       requireValue(this.appIdentity({ ...profile, app: artifact.provenance.app }) === this.appIdentity(profile), 'APP_IDENTITY_MISMATCH', 'In-place installation must preserve the approved bundle/team identity.');
-      requireValue(statSync(artifact.path).size === artifact.provenance.artifact.bytes && digest(readFileSync(artifact.path)) === artifact.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'The immutable artifact bytes changed.');
+      requireValue(statSync(artifact.path).size === artifact.provenance.artifact.bytes && artifactFileDigest(artifact.path) === artifact.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'The immutable artifact bytes changed.');
     }
     let installed: { app: DeviceOperation['intent']['app']; deviceId: string; repositoryId: string; hostId: string; policy: string } | undefined;
     if (['launch', 'logs', 'debug', 'screenshot', 'screen_capture'].includes(action)) {
@@ -243,7 +244,7 @@ export class Devices {
         this.permission(repo, receipt.deviceId, profile, [effect.operation]);
         if (effect.operation === 'install') {
           const artifact = this.store.record<RetainedDeviceArtifact>('deviceArtifact', receipt.intent.artifactRef!.artifactId);
-          requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.artifact.sha256 === receipt.intent.artifactRef!.sha256 && statSync(artifact.path).size === artifact.provenance.artifact.bytes && digest(readFileSync(artifact.path)) === receipt.intent.artifactRef!.sha256,
+          requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.artifact.sha256 === receipt.intent.artifactRef!.sha256 && statSync(artifact.path).size === artifact.provenance.artifact.bytes && artifactFileDigest(artifact.path) === receipt.intent.artifactRef!.sha256,
             'ARTIFACT_CHANGED', 'Retained artifact bytes changed before device dispatch.');
           await this.backend.verifyArtifact(artifact, receipt);
         }

@@ -1,9 +1,23 @@
-import { readFileSync, readdirSync, lstatSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { ArtifactProvenance } from '@contribution/contracts';
 import { run } from './process.js';
 import { digest, now, requireValue, object } from './core.js';
 import type { ObjectValue } from './core.js';
+
+export function artifactFileDigest(path: string): string {
+  const info = lstatSync(path);
+  requireValue(info.isFile() && !info.isSymbolicLink() && info.size > 0 && info.size <= 1024 ** 3, 'ARTIFACT_INVALID', 'The signed archive must be a bounded regular file.', 3);
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW), hash = createHash('sha256'), buffer = Buffer.alloc(1024 * 1024);
+  try {
+    const opened = fstatSync(fd); requireValue(opened.ino === info.ino && opened.dev === info.dev, 'ARTIFACT_CHANGED', 'The archive changed before verification.');
+    let total = 0, bytes = 0;
+    while ((bytes = readSync(fd, buffer, 0, buffer.length, null)) > 0) { total += bytes; requireValue(total <= info.size, 'ARTIFACT_CHANGED', 'Archive bytes changed during verification.'); hash.update(buffer.subarray(0, bytes)); }
+    const after = fstatSync(fd); requireValue(total === info.size && after.size === info.size && after.mtimeMs === info.mtimeMs, 'ARTIFACT_CHANGED', 'The archive changed during verification.');
+    return hash.digest('hex');
+  } finally { closeSync(fd); }
+}
 
 export async function provisioningIdentity(input: Buffer): Promise<{ expiration: string; devices: string[]; teams: string[] }> {
   const extract = async (key: string, format: 'raw' | 'json', type: string): Promise<string> => {

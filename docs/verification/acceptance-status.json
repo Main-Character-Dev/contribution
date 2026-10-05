@@ -786,6 +786,11 @@
           "level": "fixture",
           "source": "tests/device-builds.test.mjs",
           "scope": "Offline preparation, exact committed snapshot, artifact identity and local crash reconciliation only; no real signing, device operation or physical acceptance."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/device-transfer.test.mjs",
+          "scope": "Retained artifact transfer in both directions between disposable services with lost replies and scope/integrity failures; no real SSH, signing or physical phone acceptance."
         }
       ],
       "nextStep": "Implement the owning milestone, then run the original case in its required environment."
@@ -872,6 +877,11 @@
           "level": "fixture",
           "source": "tests/device-builds.test.mjs",
           "scope": "Offline preparation, exact committed snapshot, artifact identity and local crash reconciliation only; no real signing, device operation or physical acceptance."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/device-transfer.test.mjs",
+          "scope": "Retained artifact transfer in both directions between disposable services with lost replies and scope/integrity failures; no real SSH, signing or physical phone acceptance."
         }
       ],
       "nextStep": "No physical operation or network capability is qualified."
@@ -917,6 +927,11 @@
           "level": "fixture",
           "source": "tests/devices.test.mjs",
           "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/device-transfer.test.mjs",
+          "scope": "Retained artifact transfer in both directions between disposable services with lost replies and scope/integrity failures; no real SSH, signing or physical phone acceptance."
         }
       ],
       "nextStep": "No physical operation or network capability is qualified."

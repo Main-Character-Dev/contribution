@@ -49,6 +49,7 @@ export class Peers {
   cancelLocal?: (operation: Operation) => Response;
   prepareFence?: (repo: Enrolled) => Promise<void>;
   dispatchLocal?: (command: string, args: ObjectValue) => Promise<Response>;
+  receiveArtifact?: (repo: Enrolled, from: string, action: string, body: ObjectValue) => Promise<ObjectValue>;
   constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: string, readonly transport: PeerTransport = sshTransport) {}
   list(): Peer[] { return this.store.records<Peer>('peer'); }
   private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -141,6 +142,10 @@ export class Peers {
       }
       const authority = this.store.record<Authority>('authority', repositoryId);
       requireValue(repo.availability === 'both-macs' && authority?.phase === 'active' && authority.peerHostId === from, 'REPOSITORY_PEER_UNAUTHORIZED', 'This peer is not associated with the repository authority.');
+      if (['artifact.begin', 'artifact.chunk', 'artifact.finish'].includes(action)) {
+        requireValue(this.receiveArtifact, 'PEER_ACTION_UNSUPPORTED', 'This peer has no installed artifact receiver.', 3);
+        return this.receiveArtifact(repo, from, action, body);
+      }
       if (['notifications.pending', 'notifications.claim', 'notifications.acknowledge', 'notifications.context'].includes(action)) return new Milestones(this.store).dispatch(action, from, repo, body);
       if (action === 'publication.preview' || action === 'publication.start' || action === 'repository.status' || action === 'checks.start') {
         this.assertWriter(repo); requireValue(this.dispatchLocal, 'PEER_DISPATCH_UNAVAILABLE', 'The service dispatcher is unavailable.', 3);

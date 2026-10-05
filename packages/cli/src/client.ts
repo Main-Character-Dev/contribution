@@ -9,7 +9,7 @@ import type { Response } from '@contribution/contracts';
 const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--profile': 'profile', '--availability': 'availability', '--request-id': 'requestId',
   '--expected-revision': 'expectedRevision', '--source-path': 'sourcePath', '--source-tip': 'sourceTip', '--base': 'base', '--expected-tip': 'expectedTip', '--scope-token': 'scopeToken',
   '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId', '--ssh-alias': 'sshAlias', '--host': 'host',
-  '--device': 'device', '--artifact': 'artifact', '--app-ref': 'appRef', '--build-profile': 'buildProfile', '--plan': 'plan', '--session-profile': 'sessionProfile', '--duration-seconds': 'durationSeconds', '--max-bytes': 'maxBytes', '--kind': 'kind', '--node': 'node', '--pnpm': 'pnpm', '--adapter': 'adapter' };
+  '--device': 'device', '--artifact': 'artifact', '--app-ref': 'appRef', '--build-profile': 'buildProfile', '--plan': 'plan', '--session-profile': 'sessionProfile', '--duration-seconds': 'durationSeconds', '--max-bytes': 'maxBytes', '--kind': 'kind', '--node': 'node', '--pnpm': 'pnpm', '--adapter': 'adapter', '--to-host': 'toHost' };
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch' };
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
@@ -49,7 +49,8 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repos pair --repo ID --host HOST --request-id UUID', 'repos seed|mirror --repo ID --request-id UUID',
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID]',
         'devices list|status|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
-        'devices profile --repo ID', 'devices configure --repo ID --file PATH --expected-revision REVISION --request-id UUID', 'devices artifacts list|get --repo ID [--artifact ID]'],
+        'devices profile --repo ID', 'devices configure --repo ID --file PATH --expected-revision REVISION --request-id UUID', 'devices artifacts list|get --repo ID [--artifact ID]',
+        'devices artifacts transfer --repo ID --artifact ID --to-host HOST --request-id UUID'],
         waitSeconds: 30, eventPollMilliseconds: 500, json: 'One response envelope; --jsonl for runs follow.',
         unavailable: ['Live host pairing and adopted project migration need qualification.', 'Device operations require configured identity and evidence.', 'Signed updates need a configured verified feed.'] };
       write(render(response, json)); return 0;
@@ -74,7 +75,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     if (single.has(group)) command = group;
     else if (groups.has(group)) { const action = words.shift(); if (!action) throw new Fault('INVALID_USAGE', `Specify a ${group} action.`, 2); command = `${group}.${action}`; }
     else throw new Fault('INVALID_USAGE', 'Unknown command. Use contribution help.', 2);
-    if (command === 'devices.artifacts') { const action = words.shift(); if (!['list', 'get'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices artifacts list or get.', 2); command += `.${action}`; }
+    if (command === 'devices.artifacts') { const action = words.shift(); if (!['list', 'get', 'transfer'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices artifacts list, get or transfer.', 2); command += `.${action}`; }
     if (['repos.add', 'repos.create', 'repos.relocate'].includes(command)) args['path'] = words.shift();
     if (command.startsWith('runs.') && !['runs.list', 'runs.events'].includes(command) || ['logs', 'repair-context'].includes(command)) args['operationId'] = words.shift();
     if (command === 'devices.reconcile') args['operationId'] = words.shift();

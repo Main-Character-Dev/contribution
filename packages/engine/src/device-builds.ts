@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, lstatSync, mkdirSync, cpSync, chmodSync, openSync, closeSync, fsyncSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, cpSync, chmodSync, openSync, closeSync, fsyncSync, realpathSync } from 'node:fs';
 import { join, isAbsolute, relative } from 'node:path';
 import { arch } from 'node:os';
 import { assertContract, buildIdentity } from '@contribution/contracts';
@@ -12,7 +12,7 @@ import { clean, identity, gitText, inputFingerprint, contained, ordinaryHistory 
 import { run, alive, processIdentity } from './process.js';
 import type { RunOptions } from './process.js';
 import { privateDirectory } from './private-files.js';
-import { appTreeDigest, inspectSignedApp } from './device-artifacts.js';
+import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
 
 type Build = DeviceProfileConfiguration['builds'][number];
 type Host = DeviceContext['host'];
@@ -133,7 +133,7 @@ export class DeviceBuilds {
     const provenance: ArtifactProvenance = { schemaVersion: 1, recordMode: this.mode, artifactId, repositoryId: repo.id,
       source: { commit: source.tip!, tree: await gitText(repo.path, ['rev-parse', `${source.tip}^{tree}`]), inputDigest, configurationId: build.id, configurationDigest: digest(build), adapterId: registration.config.adapterId, adapterVersion: '1', policyRevision: registration.revision },
       build: { hostId: this.store.hostId, attemptId: op.attemptId, preparedAt: now(), macOSVersion: host.macOSVersion!, macOSBuild: host.macOSBuild!, xcodeVersion: host.xcodeVersion!, xcodeBuild: host.xcodeBuild!, engineVersion: buildIdentity.version },
-      artifact: { sha256: digest(readFileSync(path)), bytes: info.size, format: 'signed_app_archive' }, app: prepared.app, signing: prepared.signing, deviceAcceptance: 'not_established_by_preparation', evidenceRefs: [evidenceRef] };
+      artifact: { sha256: artifactFileDigest(path), bytes: info.size, format: 'signed_app_archive' }, app: prepared.app, signing: prepared.signing, deviceAcceptance: 'not_established_by_preparation', evidenceRefs: [evidenceRef] };
     assertContract('artifact-provenance', provenance);
     const artifact: RetainedDeviceArtifact = { provenance, path, appPath, appDigest: beforeCopy };
     this.store.transaction(() => { this.store.put('deviceBuildEvidence', evidenceRef, { operationId: op.operationId, recordMode: this.mode, source: provenance.source, details: prepared.evidence }); this.store.put('deviceArtifact', artifactId, artifact); this.store.put('devicePreparedArtifact', op.operationId, { artifactId, policy: registration.revision, sourceTip: source.tip }); });
@@ -144,7 +144,7 @@ export class DeviceBuilds {
     requireValue(retained && retained.policy === receipt.intent.policyRevision && retained.sourceTip === receipt.intent.sourceCommit, 'NO_SEALED_ARTIFACT', 'No complete retained artifact exists for this interrupted build. Inspect its local output before requesting a new preparation.', 3);
     const artifact = this.store.record<RetainedDeviceArtifact>('deviceArtifact', retained.artifactId);
     requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.build.attemptId === op.attemptId && artifact.provenance.repositoryId === op.repositoryId &&
-      digest(readFileSync(artifact.path)) === artifact.provenance.artifact.sha256 && lstatSync(artifact.path).size === artifact.provenance.artifact.bytes && appTreeDigest(artifact.appPath) === artifact.appDigest,
+      artifactFileDigest(artifact.path) === artifact.provenance.artifact.sha256 && lstatSync(artifact.path).size === artifact.provenance.artifact.bytes && appTreeDigest(artifact.appPath) === artifact.appDigest,
       'ARTIFACT_CHANGED', 'The sealed build or materialized app changed; preserve it for inspection.');
     assertContract('artifact-provenance', artifact.provenance);
     return { artifact: artifact.provenance, artifactRef: { artifactId: retained.artifactId, sha256: artifact.provenance.artifact.sha256 }, evidenceRefs: artifact.provenance.evidenceRefs };

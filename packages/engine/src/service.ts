@@ -16,6 +16,7 @@ import type { PeerTransport } from './peers.js';
 import { Devices } from './devices.js';
 import type { DeviceBackend } from './devices.js';
 import type { DeviceBuildDriver } from './device-builds.js';
+import { DeviceArtifactTransfers } from './device-transfer.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
@@ -50,6 +51,7 @@ allowed['devices.configure'] = ['repo', 'host', 'config', 'expectedRevision', 'r
 allowed['devices.profile'] = ['repo', 'host'];
 allowed['devices.artifacts.list'] = ['repo', 'host'];
 allowed['devices.artifacts.get'] = ['repo', 'host', 'artifact'];
+allowed['devices.artifacts.transfer'] = ['repo', 'host', 'artifact', 'toHost', 'requestId'];
 allowed['devices.list'] = ['repo', 'host']; allowed['devices.status'] = ['repo', 'host', 'device', 'refresh'];
 allowed['devices.authorize'] = ['repo', 'host', 'device', 'operations', 'requestId']; allowed['devices.revoke'] = allowed['devices.authorize']!;
 allowed['devices.reconcile'] = ['host', 'operationId', 'requestId'];
@@ -59,6 +61,7 @@ export class Engine {
   readonly github: GitHubMonitor;
   readonly peers: Peers;
   readonly devices: Devices;
+  readonly artifacts: DeviceArtifactTransfers;
   readonly maintenance: Maintenance;
   readonly active = new Map<string, AbortController>();
   readonly activeRepositories = new Set<string>();
@@ -77,6 +80,8 @@ export class Engine {
     this.peers.prepareFence = repo => this.workflows.ensureHook(repo);
     this.peers.dispatchLocal = (command, args) => this.dispatch({ schemaVersion: 1, command, args, cwd: this.store.directory });
     this.devices = new Devices(store, deviceRuntime?.backend ?? new CoreDeviceBackend(store), payload.identity, deviceRuntime?.mode ?? 'observed', deviceRuntime?.buildDriver);
+    this.artifacts = new DeviceArtifactTransfers(store, deviceRuntime?.mode ?? 'observed', (host, action, body) => this.peers.call(host, action, body));
+    this.peers.receiveArtifact = (repo, from, action, body) => this.artifacts.receive(repo, from, action, body);
     if (!store.getMeta('settings')) {
       const settings: Machine = { schemaVersion: 1, hostId: store.hostId, label: 'This Mac', role: 'standalone', primaryHostId: store.hostId,
         primarySshAlias: null, projectRoots: [], repositories: [], notifications: { preferredHostId: store.hostId, success: true, failure: true },
@@ -145,12 +150,13 @@ export class Engine {
       if (op.kind === 'settings.apply') result = this.applySettings(op);
       else {
         const repo = await this.repos.get(op.repositoryId);
-        if (op.kind !== 'device') lease = new Lease(repo.commonDir, op.attemptId);
+        if (!['device', 'artifact_transfer'].includes(op.kind)) lease = new Lease(repo.commonDir, op.attemptId);
         if (['initialize', 'submit', 'push', 'seed'].includes(op.kind)) this.peers.assertWriter(repo);
         if (op.kind === 'initialize') result = await this.workflows.initialize(op, repo);
         else if (op.kind === 'submit') result = await this.workflows.landing(op, repo);
         else if (op.kind === 'push') result = await this.workflows.push(op, repo, signal, lease!);
         else if (op.kind === 'device') result = await this.devices.execute(op, repo, signal);
+        else if (op.kind === 'artifact_transfer') result = await this.artifacts.execute(op, signal);
         else if (op.kind === 'seed' || op.kind === 'mirror') result = await this.peers.applyHistory(op, repo);
         else if (op.kind === 'checks') {
           requireValue(op.input['policy'] === repo.revision, 'POLICY_CHANGED', 'Check policy changed after admission.');
@@ -304,7 +310,12 @@ export class Engine {
       if (command === 'runs.events') return completed({ events: this.store.events(Math.max(0, Number(args['after'] ?? 0)), typeof args['operationId'] === 'string' ? args['operationId'] : undefined) });
       if (['runs.get', 'runs.cancel', 'runs.pin', 'runs.unpin', 'runs.reconcile', 'logs', 'repair-context'].includes(command)) {
         let op = this.store.get(string(args['operationId'], 'operationId'));
-        if (command === 'runs.reconcile') { if (op.result['remoteOperationId']) await this.peers.observeOperation(op, true); else await this.recoverObservedEffects(op.operationId); this.kick(); op = this.store.get(op.operationId); }
+        if (command === 'runs.reconcile') {
+          if (op.kind === 'artifact_transfer' && ['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'resuming_retained_transfer', error: null });
+          else if (op.result['remoteOperationId']) await this.peers.observeOperation(op, true);
+          else await this.recoverObservedEffects(op.operationId);
+          this.kick(); op = this.store.get(op.operationId);
+        }
         if (command === 'logs') {
           const cached = op.result['remoteOperationId'] ? this.store.record<ObjectValue>('remoteLog', op.operationId) : undefined;
           return completed({ operationId: op.operationId, attemptId: op.attemptId, ...(cached ?? {}), text: cached ? String(cached['text']).split('\n').slice(-Math.max(1, Math.min(2000, Number(args['tail'] ?? 200)))).join('\n') : this.store.logs(op, Number(args['tail'] ?? 200)), ...(op.result['remoteOperationId'] ? { freshness: 'cached' } : {}) });
@@ -328,6 +339,10 @@ export class Engine {
       if (command === 'devices.configure') return completed(this.devices.builds.configure(repo, args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
       if (command === 'devices.profile') return completed(this.devices.builds.inspect(repo));
       if (command === 'devices.artifacts.list' || command === 'devices.artifacts.get') return completed(this.devices.builds.artifacts(repo, command === 'devices.artifacts.get' ? string(args['artifact'], 'artifact') : undefined));
+      if (command === 'devices.artifacts.transfer') {
+        const op = this.artifacts.admit(repo, string(args['artifact'], 'artifact'), string(args['toHost'], 'toHost'), string(args['requestId'], 'requestId'), this.payload.identity);
+        this.kick(); return this.store.response(op);
+      }
       if (command === 'devices.status') return this.devices.status(repo, string(args['device'], 'device'), args['refresh'] === true);
       if (command === 'devices.authorize' || command === 'devices.revoke') {
         requireValue(Array.isArray(args['operations']) && args['operations'].every(value => typeof value === 'string'), 'INVALID_DEVICE_SCOPE', 'Supply named operations.', 2);
