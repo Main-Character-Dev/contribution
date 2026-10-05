@@ -55,6 +55,9 @@ test('paired artifact transfer retains exact bytes/provenance independently of G
     const received = f.hosts.mini.store.record('deviceArtifact', f.provenance.artifactId);
     assert.deepEqual(received.provenance, f.provenance); assert.equal(digest(readFileSync(received.path)), f.provenance.artifact.sha256); assert.equal(appTreeDigest(received.appPath), appTreeDigest(f.appPath));
     assert.equal((await f.call('laptop', 'devices.artifacts.transfer', f.args)).operationId, accepted.operationId);
+    const canonical = { repo: f.args.repo, artifact: f.args.artifact, requestId: f.args.requestId, fromHost: f.hosts.laptop.store.hostId, host: f.hosts.mini.store.hostId };
+    assert.equal((await f.call('laptop', 'devices.artifacts.transfer', canonical)).operationId, accepted.operationId);
+    assert.equal((await f.call('laptop', 'devices.artifacts.transfer', { ...canonical, fromHost: f.hosts.mini.store.hostId })).error.code, 'EXECUTION_HOST_ROUTE_REQUIRED');
     assert.equal(f.hosts.laptop.repos.all()[0].canonicalHostId, f.hosts.mini.store.hostId);
     const reverse = await f.call('mini', 'devices.artifacts.transfer', { ...f.args, toHost: f.hosts.laptop.store.hostId, requestId: randomUUID() });
     assert.equal((await f.wait('mini', reverse.operationId)).operationState, 'succeeded'); assert.deepEqual(f.phoneCalls, []);

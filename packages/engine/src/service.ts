@@ -51,7 +51,7 @@ allowed['devices.configure'] = ['repo', 'host', 'config', 'expectedRevision', 'r
 allowed['devices.profile'] = ['repo', 'host'];
 allowed['devices.artifacts.list'] = ['repo', 'host'];
 allowed['devices.artifacts.get'] = ['repo', 'host', 'artifact'];
-allowed['devices.artifacts.transfer'] = ['repo', 'host', 'artifact', 'toHost', 'requestId'];
+allowed['devices.artifacts.transfer'] = ['repo', 'host', 'fromHost', 'artifact', 'toHost', 'requestId'];
 allowed['devices.list'] = ['repo', 'host']; allowed['devices.status'] = ['repo', 'host', 'device', 'refresh'];
 allowed['devices.authorize'] = ['repo', 'host', 'device', 'operations', 'requestId']; allowed['devices.revoke'] = allowed['devices.authorize']!;
 allowed['devices.reconcile'] = ['host', 'operationId', 'requestId'];
@@ -282,7 +282,7 @@ export class Engine {
       if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list()] });
       if (command === 'hosts.pair') return completed(await this.peers.pair(string(args['sshAlias'], 'sshAlias')));
       if (command === 'peer.exchange') { const result = await this.peers.receive(object(args['envelope'])); this.kick(); return completed(result); }
-      if (command.startsWith('devices.')) requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke the scoped device command on the selected paired host service.', 3);
+      if (command.startsWith('devices.') && command !== 'devices.artifacts.transfer') requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke the scoped device command on the selected paired host service.', 3);
       if (command === 'devices.list') return completed({ executionHostId: this.store.hostId, devices: await this.devices.backend.inventory(), discoveryGrantsAuthority: false });
       if (command === 'devices.reconcile') {
         const op = this.store.get(string(args['operationId'], 'operationId')); requireValue(op.kind === 'device', 'NOT_A_DEVICE_OPERATION', 'Select a retained device operation.', 2);
@@ -340,7 +340,9 @@ export class Engine {
       if (command === 'devices.profile') return completed(this.devices.builds.inspect(repo));
       if (command === 'devices.artifacts.list' || command === 'devices.artifacts.get') return completed(this.devices.builds.artifacts(repo, command === 'devices.artifacts.get' ? string(args['artifact'], 'artifact') : undefined));
       if (command === 'devices.artifacts.transfer') {
-        const op = this.artifacts.admit(repo, string(args['artifact'], 'artifact'), string(args['toHost'], 'toHost'), string(args['requestId'], 'requestId'), this.payload.identity);
+        requireValue(args['fromHost'] === undefined || args['fromHost'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke artifact transfer on the selected build/source host service.', 3);
+        requireValue(!args['toHost'] || !args['host'] || args['toHost'] === args['host'], 'INVALID_USAGE', 'Destination host selections disagree.', 2);
+        const op = this.artifacts.admit(repo, string(args['artifact'], 'artifact'), string(args['toHost'] ?? args['host'], 'destination host'), string(args['requestId'], 'requestId'), this.payload.identity);
         this.kick(); return this.store.response(op);
       }
       if (command === 'devices.status') return this.devices.status(repo, string(args['device'], 'device'), args['refresh'] === true);

@@ -32,7 +32,7 @@ Use `devices artifacts list --repo ID` or `devices artifacts get --repo ID --art
 
 ## Retained artifact transfer
 
-`devices artifacts transfer --repo ID --artifact ID --to-host HOST --request-id UUID` uses the existing fixed paired-host SSH envelope and durable operation journal. Transfer direction is independent of the repository's canonical Git owner, but both hosts must have the explicit repository association. Remote Devices must be enabled and the receiving host must have a matching project/app and eligible device scope. Transfer does not create phone grants, acquire phone ownership, install, launch or alter Git authority.
+`devices artifacts transfer --repo ID --artifact ID --from-host SOURCE --host DESTINATION --request-id UUID` uses the existing fixed paired-host SSH envelope and durable operation journal. Transfer direction is independent of the repository's canonical Git owner, but both hosts must have the explicit repository association. Remote Devices must be enabled and the receiving host must have a matching project/app and eligible device scope. Transfer does not create phone grants, acquire phone ownership, install, launch or alter Git authority.
 
 The immutable manifest binds the archive digest, full provenance, materialized app digest, app name and both host identities. Chunks have bounded canonical encoding, exact offsets and durable acknowledgments. After a lost chunk reply, the same request resumes at the retained offset. A lost completion reply is reconciled against the exact retained receipt; even later scope revocation does not rewrite a historically completed transfer into failure. New work still requires current scope. Use `runs reconcile OPERATION_ID` to resume a waiting/interrupted/uncertain transfer.
 
@@ -41,3 +41,5 @@ The receiver verifies archive bounds, digest, safe paths, file kinds, sizes, CRC
 Current bounded limits are one GiB for archive and expanded app, 256 MiB per member, 50,000 entries, three unfinished transfers per repository and four GiB of conservative incoming reservation. Incomplete or corrupt transfers remain private for reconciliation; storage pressure blocks admission instead of deleting evidence. Scoped pruning remains part of lifecycle work.
 
 Five two-service fixture cases and three native-archive fixture cases cover both directions, lost acknowledgments, changed policy, corrupt bytes, evidence-mode mismatch, distinct logs, later revocation, contained extraction and executable modes. They never invoke a physical backend. Real SSH, cross-Mac signing/provisioning, large-app performance and install/data continuity remain separate qualification.
+
+Run transfer on the selected source service. The optional `--to-host DESTINATION` shorthand selects that destination from the current source host; it does not replace the approved `--from-host` / `--host` contract. Remote device command forwarding from a third caller remains under implementation.
