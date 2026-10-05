@@ -15,10 +15,10 @@ interface Selection { deviceId: string; identifier: string; udid: string; model:
 export class CoreDeviceBackend implements DeviceBackend {
   readonly recordMode = 'observed' as const;
   readonly supportedOperations = ['connect', 'install', 'launch'] as const;
-  constructor(readonly store: Journal) {}
+  constructor(readonly store: Journal, private readonly execute: typeof run = run) {}
   private async command(argv: string[], timeout = 15000, signal?: AbortSignal): Promise<ObjectValue> {
-    const result = await run('/usr/bin/xcrun', ['devicectl', ...argv, '--timeout', String(Math.ceil(timeout / 1000)), '--json-output', '-'], { timeoutMs: timeout + 2000, maxBytes: 2 * 1024 * 1024, ...(signal ? { signal } : {}) });
-    requireValue(result.code === 0, 'DEVELOPER_SERVICE_UNAVAILABLE', 'CoreDevice did not confirm the bounded operation. Inspect the selected host and phone prerequisites.', 3);
+    const result = await this.execute('/usr/bin/xcrun', ['devicectl', ...argv, '--timeout', String(Math.ceil(timeout / 1000)), '--json-output', '-'], { timeoutMs: timeout + 2000, maxBytes: 2 * 1024 * 1024, ...(signal ? { signal } : {}) });
+    requireValue(result.code === 0 && !result.timedOut && !result.cancelled && !result.signal && !signal?.aborted, 'DEVELOPER_SERVICE_UNAVAILABLE', 'CoreDevice did not confirm the bounded operation. Inspect the selected host and phone prerequisites.', 3);
     let json: ObjectValue;
     try { json = object(JSON.parse(result.stdout)); } catch { throw new Fault('DEVICE_PROTOCOL_CHANGED', 'CoreDevice returned an unrecognized structured result.', 3); }
     requireValue(!json['error'] && json['result'], 'DEVICE_PROTOCOL_CHANGED', 'CoreDevice returned no confirmed result.', 3); return object(json['result']);
@@ -47,7 +47,7 @@ export class CoreDeviceBackend implements DeviceBackend {
     let reachable = false;
     try { reachable = (await this.inventory()).some(device => device.deviceId === deviceId); } catch { /* preserve unknown availability without inventing a cause */ }
     const selection = this.selection(deviceId);
-    const [os, xcode] = await Promise.all([run('/usr/bin/sw_vers', [], { timeoutMs: 3000 }), run('/usr/bin/xcrun', ['xcodebuild', '-version'], { timeoutMs: 5000 })]);
+    const [os, xcode] = await Promise.all([this.execute('/usr/bin/sw_vers', [], { timeoutMs: 3000 }), this.execute('/usr/bin/xcrun', ['xcodebuild', '-version'], { timeoutMs: 5000 })]);
     const context: DeviceContext = { host: { hostId: this.store.hostId, model: null, architecture: arch() === 'arm64' ? 'arm64' : arch() === 'x64' ? 'x86_64' : 'unknown',
       macOSVersion: /ProductVersion:\s*(\S+)/.exec(os.stdout)?.[1] ?? null, macOSBuild: /BuildVersion:\s*(\S+)/.exec(os.stdout)?.[1] ?? null,
       xcodeVersion: /Xcode\s+(\S+)/.exec(xcode.stdout)?.[1] ?? null, xcodeBuild: /Build version\s+(\S+)/.exec(xcode.stdout)?.[1] ?? null },
@@ -56,11 +56,13 @@ export class CoreDeviceBackend implements DeviceBackend {
       engineVersion: buildIdentity.version, network: { scenario: 'unknown', hostUnderlay: 'unknown', phoneUnderlay: 'unknown', tailnetPath: 'unknown', developerSession: reachable && selection.tunnel === 'connected' ? 'existing' : 'unknown', internetState: 'unknown' },
       signingMode: 'unknown', bootstrapMethod: 'existing' };
     // Inventory does not establish absence of another Xcode/test/debug owner.
-    return { recordMode: 'observed', deviceId, observedAt: now(), context, trust: reachable && selection.paired ? 'trusted' : 'unknown', developerService: reachable && selection.tunnel === 'connected' ? 'ready' : 'unknown',
-      session: 'unknown', externalSession: 'unknown', signingReady: false, hostReady: os.code === 0 && xcode.code === 0, reasonCodes: reachable ? [] : ['DEVICE_OFFLINE'] };
+    // Cached inventory/tunnel labels do not prove a live developer-service RPC.
+    // Native session attribution is still required before routine physical work.
+    return { recordMode: 'observed', deviceId, observedAt: now(), context, trust: reachable && selection.paired ? 'trusted' : 'unknown', developerService: 'unknown',
+      session: 'unknown', externalSession: 'unknown', signingReady: false, hostReady: os.code === 0 && xcode.code === 0, reasonCodes: reachable ? ['LIVE_DEVELOPER_SERVICE_UNCONFIRMED'] : ['DEVICE_OFFLINE'] };
   }
-  private async apps(deviceId: string): Promise<ObjectValue[]> {
-    const result = await this.command(['device', 'info', 'apps', '--device', this.selection(deviceId).identifier]);
+  private async apps(deviceId: string, signal?: AbortSignal): Promise<ObjectValue[]> {
+    const result = await this.command(['device', 'info', 'apps', '--device', this.selection(deviceId).identifier], 15000, signal);
     requireValue(Array.isArray(result['apps']), 'DEVICE_PROTOCOL_CHANGED', 'Installed-app inventory has an unknown structure.', 3); return result['apps'].map(object);
   }
   private async installed(receipt: DeviceOperation): Promise<Effect['installReadback']> {
@@ -96,8 +98,14 @@ export class CoreDeviceBackend implements DeviceBackend {
       return this.reconcile({ operation: 'launch' } as Effect, receipt);
     }
     if (action === 'connect') {
-      const details = await this.command(['device', 'info', 'details', '--device', device], 15000, signal);
-      return { state: 'succeeded', certainty: 'confirmed', evidenceRefs: [this.evidence(receipt, details)] };
+      // `device info details` explicitly permits cached results after connection
+      // failure. Confirm a bounded developer-service request instead. Do not
+      // retain unrelated app identities or treat this as ownership/native proof.
+      const apps = await this.apps(receipt.deviceId, signal);
+      return { state: 'succeeded', certainty: 'confirmed', evidenceRefs: [this.evidence(receipt, {
+        deviceId: receipt.deviceId, method: 'CoreDevice installed-app query', appCount: apps.length,
+        proves: 'A completed developer-service query; not native ownership or other capabilities.'
+      })] };
     }
     throw new Fault('CAPABILITY_UNVERIFIED', 'This native operation needs its independently qualified project/backend route.', 3);
   }
