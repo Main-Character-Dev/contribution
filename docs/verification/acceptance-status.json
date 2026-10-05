@@ -140,7 +140,13 @@
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
       "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/adopted-landing.test.mjs",
+          "scope": "All four synthetic adopted policies run original-shaped native or registered captured-source paths. Dirty/advanced source work, original candidate requirements, terminal queue removal, contention, post-promotion uncertainty and observation-only repair are preserved. Actual original module API parity is recorded separately; full live workers and cross-host imports remain unqualified."
+        }
+      ],
       "nextStep": "Exercise all source integration crash boundaries and post-promotion receipt recovery; bootstrap recovery is covered separately by AT-H07."
     },
     {
@@ -178,6 +184,11 @@
           "level": "fixture",
           "source": "tests/service.test.mjs",
           "scope": "Generic detached committed-source landing preserves dirty task work and idempotent replay. Full topology, metadata and adopted policy variants remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adopted-landing.test.mjs",
+          "scope": "All four synthetic adopted policies run original-shaped native or registered captured-source paths. Dirty/advanced source work, original candidate requirements, terminal queue removal, contention, post-promotion uncertainty and observation-only repair are preserved. Actual original module API parity is recorded separately; full live workers and cross-host imports remain unqualified."
         }
       ],
       "nextStep": "Full topology, metadata and adopted policy variants remain open."
@@ -416,6 +427,11 @@
           "level": "fixture",
           "source": "tests/adopted-hooks.test.mjs",
           "scope": "Actual disposable managed and external Git gates share verified borrow authority, distinguish inactive/no-op/transport outcomes and retain uncertain external-client interruption. Real project gate parity and landing/import adapters remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adopted-landing.test.mjs",
+          "scope": "All four synthetic adopted policies run original-shaped native or registered captured-source paths. Dirty/advanced source work, original candidate requirements, terminal queue removal, contention, post-promotion uncertainty and observation-only repair are preserved. Actual original module API parity is recorded separately; full live workers and cross-host imports remain unqualified."
         }
       ],
       "nextStep": "Complete original landing/import adapters and current real-project policy parity, then perform only authorized live cutover."
@@ -479,9 +495,19 @@
           "level": "fixture",
           "source": "tests/peers.test.mjs",
           "scope": "Canonical checks select the owner or report it unavailable; remote waiting, logs and cancellation retain owner identity. Dirty local check scope variants remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adopted-checks.test.mjs",
+          "scope": "Original local-check routes for all four policy families select the actual task checkout. Dirty-source support or refusal is explicit; staged/unstaged/untracked bytes are preserved. An offline canonical owner and retained primary lease do not redirect a local check. Synthetic project programs, not live suite qualification."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/input-fingerprint.test.mjs",
+          "scope": "Changed staged bytes are detected even when working bytes and Git status letters are unchanged. Untracked links are not followed and oversized current-source input is bounded."
         }
       ],
-      "nextStep": "Dirty local check scope variants remain open."
+      "nextStep": "Qualify the original runners and pinned tools in approved live projects and exercise actual two-Mac/native presentation."
     },
     {
       "id": "AT-G01",
@@ -1094,6 +1120,11 @@
           "level": "fixture",
           "source": "tests/service.test.mjs",
           "scope": "Detached committed task landing preserves staged, unstaged, untracked and ignored source work and idempotent replay. Adopted cleanliness policies and every disconnect/head-advance variant remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adopted-landing.test.mjs",
+          "scope": "All four synthetic adopted policies run original-shaped native or registered captured-source paths. Dirty/advanced source work, original candidate requirements, terminal queue removal, contention, post-promotion uncertainty and observation-only repair are preserved. Actual original module API parity is recorded separately; full live workers and cross-host imports remain unqualified."
         }
       ],
       "nextStep": "Complete adopted source policy parity and remaining disconnect/head-advance variants."
@@ -1109,6 +1140,11 @@
           "level": "fixture",
           "source": "tests/service.test.mjs",
           "scope": "Detached committed task landing preserves staged, unstaged, untracked and ignored source work and idempotent replay. Adopted cleanliness policies and every disconnect/head-advance variant remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adopted-landing.test.mjs",
+          "scope": "All four synthetic adopted policies run original-shaped native or registered captured-source paths. Dirty/advanced source work, original candidate requirements, terminal queue removal, contention, post-promotion uncertainty and observation-only repair are preserved. Actual original module API parity is recorded separately; full live workers and cross-host imports remain unqualified."
         }
       ],
       "nextStep": "Complete adopted source policy parity and remaining disconnect/head-advance variants."
@@ -1154,6 +1190,11 @@
           "level": "fixture",
           "source": "tests/peers.test.mjs",
           "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/legacy-authority-fence.test.mjs",
+          "scope": "Internal macOS persistent lease fencing survives creator exit and exact recovery windows while preserving foreign/replaced state. Adopted peer owner transfer is still blocked; this primitive is not proof of an enabled two-host cutover."
         }
       ],
       "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."

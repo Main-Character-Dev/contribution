@@ -1,5 +1,6 @@
-import { realpathSync, existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve, relative, isAbsolute } from 'node:path';
+import { realpathSync, existsSync, readdirSync, lstatSync, readlinkSync, openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { Fault, requireValue, digest, redact } from './core.js';
 import { executable, run } from './process.js';
 import type { RunOptions, ProcessResult } from './process.js';
@@ -56,9 +57,33 @@ export function contained(root: string, subpath: string): string {
   requireValue(rel !== '..' && !rel.startsWith('../') && !isAbsolute(rel), 'INVALID_CHECK_DIRECTORY', 'Check directory escapes the selected checkout.', 2); return path;
 }
 export async function inputFingerprint(path: string): Promise<string> {
+  const root = realpathSync(path);
   const status = await gitText(path, ['status', '--porcelain=v1', '--untracked-files=all']);
-  const tracked = await git(path, ['diff', '--binary', 'HEAD'], { maxBytes: 16 * 1024 * 1024 });
-  requireValue(tracked.code === 0, 'SOURCE_INSPECTION_FAILED', 'Cannot fingerprint the complete source changes.');
+  const tracked = await git(path, ['diff', '--no-ext-diff', '--no-textconv', '--binary', 'HEAD'], { maxBytes: 16 * 1024 * 1024 });
+  const staged = await git(path, ['diff', '--no-ext-diff', '--no-textconv', '--binary', '--cached', 'HEAD'], { maxBytes: 16 * 1024 * 1024 });
+  requireValue(tracked.code === 0 && staged.code === 0, 'SOURCE_INSPECTION_FAILED', 'Cannot fingerprint the complete working and staged source changes.');
   const files = (await gitText(path, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean);
-  return digest({ status, tracked: tracked.stdout, untracked: files.map(file => [file, digest(readFileSync(join(path, file)))]) });
+  requireValue(files.length <= 10000, 'SOURCE_INSPECTION_LIMIT', 'Too many untracked files for a bounded current-source check.', 3);
+  let bytes = 0;
+  const untracked = files.map(file => {
+    requireValue(!isAbsolute(file) && !file.split('/').some(part => part === '..' || part === '.' || !part), 'SOURCE_INSPECTION_FAILED', 'Git returned an invalid source path.', 3);
+    const target = join(root, file), parent = realpathSync(dirname(target));
+    requireValue(parent === root || parent.startsWith(root + '/'), 'SOURCE_INSPECTION_FAILED', 'An untracked source directory changed into a link outside this checkout.', 3);
+    const info = lstatSync(target);
+    if (info.isSymbolicLink()) return [file, 'symlink', digest(readlinkSync(target))]; // hash the link, never read another file through it
+    bytes += info.size;
+    requireValue(info.isFile() && info.size <= 16 * 1024 * 1024 && bytes <= 64 * 1024 * 1024, 'SOURCE_INSPECTION_LIMIT', 'Untracked source exceeds the bounded regular-file inspection limit.', 3);
+    const fd = openSync(target, constants.O_RDONLY | constants.O_NOFOLLOW), hash = createHash('sha256'), buffer = Buffer.alloc(64 * 1024);
+    try {
+      const before = fstatSync(fd);
+      requireValue(before.isFile() && before.dev === info.dev && before.ino === info.ino && before.size === info.size, 'SOURCE_CHANGED', 'An untracked input changed while opening.', 3);
+      let length = 0;
+      for (;;) { const count = readSync(fd, buffer, 0, Math.min(buffer.length, before.size + 1 - length), null); if (!count) break; length += count; requireValue(length <= before.size, 'SOURCE_CHANGED', 'An untracked input grew during inspection.', 3); hash.update(buffer.subarray(0, count)); }
+      const after = fstatSync(fd), current = lstatSync(target);
+      requireValue(length === before.size && after.size === before.size && after.mtimeMs === before.mtimeMs && after.ctimeMs === before.ctimeMs && current.dev === before.dev && current.ino === before.ino && realpathSync(dirname(target)) === parent,
+        'SOURCE_CHANGED', 'An untracked input changed during inspection.', 3);
+      return [file, 'file', before.mode & 0o111, hash.digest('hex')];
+    } finally { closeSync(fd); }
+  });
+  return digest({ version: 2, status, tracked: tracked.stdout, staged: staged.stdout, untracked });
 }
