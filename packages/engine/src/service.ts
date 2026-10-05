@@ -30,6 +30,7 @@ import { policyInventory, identifyAdoption } from '@contribution/adapters';
 import { Milestones } from './notifications.js';
 import type { Notice } from './notifications.js';
 import { Maintenance } from './maintenance.js';
+import { BackendSessions } from './backend-sessions.js';
 import { StorageRetention } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
 import { RepositoryRemoval } from './repository-removal.js';
@@ -105,6 +106,7 @@ export class Engine {
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture'; buildDriver?: DeviceBuildDriver }) {
     this.power = new WorkPower(store);
     this.maintenance = new Maintenance(store, payload.identity);
+    BackendSessions.recover(store);
     this.repos = new Repositories(store); this.adoptions = new Adoptions(store, this.repos); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
     this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
     this.peers.cancelLocal = op => this.cancel(op);
@@ -372,6 +374,7 @@ export class Engine {
       }
       if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
+        backendSessions: BackendSessions.status(this.store),
         storageHold: this.storageHold, power: this.power.status(),
         maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });

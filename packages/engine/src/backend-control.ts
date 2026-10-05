@@ -45,10 +45,12 @@ function exact(socket: Socket, length: number): Promise<Buffer> {
  * A private tunnel observation never establishes phone trust or global absence. */
 export class PrivateBackendControl {
   private readonly bound: string;
-  constructor(readonly directory: string, readonly device: string) {
+  constructor(readonly directory: string, readonly device: string, expectedIdentity?: string) {
     requireValue(/^[A-Za-z0-9-]{8,128}$/.test(device), code, 'Select one exact backend device identity.', 3);
     this.bound = snapshot(directory).identity;
+    requireValue(expectedIdentity === undefined || expectedIdentity === this.bound, 'BACKEND_SESSION_CHANGED', 'The retained private backend endpoint changed across recovery.', 3);
   }
+  get identity(): string { return this.bound; }
   private verify(): ReturnType<typeof snapshot> {
     const current = snapshot(this.directory);
     requireValue(current.identity === this.bound, 'BACKEND_SESSION_CHANGED', 'The selected backend session changed. Reconcile it before opening another connection.', 3); return current;

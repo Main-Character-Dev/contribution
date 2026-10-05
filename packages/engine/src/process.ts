@@ -58,6 +58,9 @@ export function gitPushAncestor(caller: { pid: number; start: string }): { pid: 
 }
 export interface ProcessResult { code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean; outputLimited?: boolean }
 export interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number; terminationGraceMs?: number;
+  /** Grant a waiting wrapper its input only after its exact process identity
+   * has been retained. A throwing callback closes input and stops the wrapper. */
+  inputAfterStarted?: (pid: number, start: string) => string | Buffer;
   stdoutSink?: { maxBytes: number; write: (data: Buffer) => void };
   signal?: AbortSignal; output?: (text: string) => void; started?: (pid: number, start: string | null) => void }
 export async function run(executable: string, argv: readonly string[], options: RunOptions = {}): Promise<ProcessResult> {
@@ -66,6 +69,7 @@ export async function run(executable: string, argv: readonly string[], options: 
     'INVALID_TERMINATION_BOUND', 'Process termination grace must remain between zero and thirty seconds.', 2);
   requireValue(!options.stdoutSink || (Number.isSafeInteger(options.stdoutSink.maxBytes) && options.stdoutSink.maxBytes >= 0 && options.stdoutSink.maxBytes <= 4 * 1024 ** 3),
     'INVALID_OUTPUT_BOUND', 'Binary process output requires a finite byte limit.', 2);
+  requireValue(!options.inputAfterStarted || options.input === undefined, 'INVALID_PROCESS_INPUT', 'Select ordinary input or a retained-process grant, never both.', 2);
   if (options.signal?.aborted) throw new Fault('CANCELLED', 'Operation cancelled before dispatch.', 130);
   const environment: NodeJS.ProcessEnv = { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_OPTIONAL_LOCKS: '0' };
   // A caller's Git repository/index overrides must never retarget the service.
@@ -97,8 +101,15 @@ export async function run(executable: string, argv: readonly string[], options: 
       try { options.output?.(text); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); }
     };
     child.once('spawn', () => {
-      try { if (child.pid) options.started?.(child.pid, processIdentity(child.pid)); }
-      catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; stop(); }
+      try {
+        if (child.pid) {
+          const start = processIdentity(child.pid); options.started?.(child.pid, start);
+          if (options.inputAfterStarted) {
+            requireValue(start && !stopped && !options.signal?.aborted, 'PROCESS_IDENTITY_UNAVAILABLE', 'The waiting process must have a retained identity before dispatch.', 3);
+            child.stdin.end(options.inputAfterStarted(child.pid, start));
+          }
+        }
+      } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; child.stdin.end(); stop(); }
     });
     child.once('error', error => { cleanup(); reject(new Fault('EXECUTABLE_UNAVAILABLE', `Cannot start ${executable}: ${(error as NodeJS.ErrnoException).code ?? 'unknown error'}`, 3)); });
     const collect = (channel: 'stdout' | 'stderr', data: Buffer): void => {
@@ -118,7 +129,8 @@ export async function run(executable: string, argv: readonly string[], options: 
       if (pending[channel].length > 65536) { pending[channel] = '[oversized log line omitted]\n'; }
     };
     child.stdout.on('data', (data: Buffer) => collect('stdout', data)); child.stderr.on('data', (data: Buffer) => collect('stderr', data));
-    child.stdin.on('error', () => { /* child may exit before consuming input */ }); child.stdin.end(options.input);
+    child.stdin.on('error', () => { /* child may exit before consuming input */ });
+    if (!options.inputAfterStarted) child.stdin.end(options.input);
     child.once('close', (code, signal) => { closed = true; cleanup(); for (const text of Object.values(pending)) if (text) emit(text);
       if (callbackFailure) { reject(new Fault(callbackFailure, 'Retaining process output or execution ownership failed. The process was stopped; preserve existing evidence for reconciliation.', 5, { actualExitCode: code })); return; }
       resolveResult({

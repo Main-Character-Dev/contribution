@@ -99,3 +99,15 @@ test('a silent private backend has one finite authentication deadline and is nev
     const controller = new AbortController(); controller.abort(); await assert.rejects(f.client.observe(controller.signal), { code: 'CANCELLED' });
   } finally { await f.cleanup(); }
 });
+
+test('recovered control clients preserve the original endpoint identity across key replacement', async () => {
+  const f = await fixture();
+  try {
+    const identity = f.client.identity, recovered = new PrivateBackendControl(f.root, device, identity);
+    assert.equal((await recovered.observe()).controlAuthenticated, true);
+    const key = join(f.root, 'session.key'); renameSync(key, key + '-old');
+    writeFileSync(key, randomBytes(32), { mode: 0o600 });
+    assert.throws(() => new PrivateBackendControl(f.root, device, identity), { code: 'BACKEND_SESSION_CHANGED' });
+    assert.equal(f.paths.length, 3);
+  } finally { await f.cleanup(); }
+});
