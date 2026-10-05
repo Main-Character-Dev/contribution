@@ -1,4 +1,4 @@
-import { openSync, closeSync, fsyncSync, writeFileSync, statSync, existsSync, readdirSync, appendFileSync } from 'node:fs';
+import { openSync, closeSync, fsyncSync, writeFileSync, statSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildIdentity, validateContractFormat, assertContract } from '@contribution/contracts';
 import type { Response } from '@contribution/contracts';
@@ -14,6 +14,8 @@ import { ProjectRegistry } from './project-registry.js';
 import type { ProjectCatalog } from './project-registry.js';
 import { StableFileReader, stableFileDigest } from './bounded-file.js';
 import { createBoundedBundle, MAX_GIT_BUNDLE } from './git-bundle.js';
+import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './incoming-file.js';
+import type { IncomingFileIdentity } from './incoming-file.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
 export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
@@ -22,7 +24,7 @@ export interface TransferManifest {
   kind: 'submit' | 'seed' | 'mirror'; branch: string; tip: string; base: string | null; metadata: ObjectValue;
   policy: string; objectFormat: string; sourceRef: string; bundleDigest: string; bytes: number;
 }
-interface Transfer { manifest: TransferManifest; path: string; accepted?: ObjectValue }
+interface Transfer { manifest: TransferManifest; path: string; fileIdentity?: IncomingFileIdentity; accepted?: ObjectValue }
 interface HistoryCapture {
   manifest: Omit<TransferManifest, 'bundleDigest' | 'bytes'>; path: string; commonDir: string;
   destinationHostId: string; authority: string; bundle?: { bytes: number; sha256: string };
@@ -270,31 +272,33 @@ export class Peers {
     requireValue(/^refs\/contribution\/outbox\/[a-f0-9]{64}$/.test(m.sourceRef) && /^[a-f0-9]{64}$/.test(m.bundleDigest) && Number.isSafeInteger(m.bytes) && m.bytes > 0 && m.bytes <= MAX_BUNDLE, 'INVALID_TRANSFER', 'Bundle identity or size is outside the transfer contract.', 2);
     requireValue(m.kind === 'mirror' ? repo.canonicalHostId === from : repo.canonicalHostId === this.store.hostId, 'CANONICAL_OWNER_REQUIRED', 'Transfer direction does not match canonical authority.');
     const previous = this.store.record<Transfer>('transfer', m.transferId);
-    if (previous) { requireValue(digest(previous.manifest) === digest(m), 'TRANSFER_ID_CONFLICT', 'Transfer ID is immutable.'); return { transferId: m.transferId, offset: statSync(previous.path).size, accepted: previous.accepted ?? null }; }
+    if (previous) { requireValue(digest(previous.manifest) === digest(m), 'TRANSFER_ID_CONFLICT', 'Transfer ID is immutable.'); return { transferId: m.transferId, offset: previous.accepted ? previous.manifest.bytes : incomingFileSize(previous.path, previous.manifest.bytes, previous.fileIdentity), accepted: previous.accepted ?? null }; }
     this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
+    const pending = this.store.records<Transfer>('transfer').filter(item => !item.accepted);
+    requireValue(pending.filter(item => item.manifest.repositoryId === repo.id).length < 3 && pending.reduce((sum, item) => sum + item.manifest.bytes, m.bytes) <= 1024 ** 3,
+      'TRANSFER_STORAGE_QUOTA', 'Retained Git transfers reached their bounded incoming reservation. Reconcile the existing transfers first.', 3);
     const directory = join(this.store.directory, 'incoming'); privateDirectory(directory);
     const path = join(directory, `${m.transferId}.bundle`);
-    if (!existsSync(path)) { writeFileSync(path, '', { flag: 'wx', mode: 0o600 }); sync(path); }
-    requireValue(statSync(path).size === 0, 'TRANSFER_RECOVERY_REQUIRED', 'An unacknowledged partial transfer must be reconciled before reusing this identity.', 3);
-    this.store.put('transfer', m.transferId, { manifest: m, path }); return { transferId: m.transferId, offset: 0 };
+    requireValue(!existsSync(path), 'TRANSFER_RECOVERY_REQUIRED', 'An unrecorded incoming file must be preserved for reconciliation before reusing this identity.', 3);
+    writeFileSync(path, '', { flag: 'wx', mode: 0o600 }); sync(path); sync(directory);
+    const fileIdentity = incomingFileIdentity(path);
+    this.store.put('transfer', m.transferId, { manifest: m, path, fileIdentity }); return { transferId: m.transferId, offset: 0 };
   }
   private chunk(from: string, body: ObjectValue): ObjectValue {
     const transfer = this.store.record<Transfer>('transfer', uuid(body['transferId'], 'transferId'));
     requireValue(transfer && transfer.manifest.senderHostId === from && transfer.manifest.repositoryId === body['repositoryId'], 'TRANSFER_NOT_FOUND', 'No transfer belongs to this peer.');
     const encoded = body['data']; requireValue(typeof encoded === 'string' && encoded.length <= Math.ceil(CHUNK / 3) * 4 && /^[A-Za-z0-9+/]+={0,2}$/.test(encoded), 'INVALID_CHUNK', 'Chunk encoding exceeds its bound.', 2);
-    const data = Buffer.from(encoded, 'base64'), offset = Number(body['offset']), current = statSync(transfer.path).size;
+    const data = Buffer.from(encoded, 'base64'), offset = Number(body['offset']);
     requireValue(data.toString('base64') === encoded && data.length <= CHUNK && Number.isSafeInteger(offset) && offset >= 0 && offset + data.length <= transfer.manifest.bytes, 'INVALID_CHUNK', 'Chunk has an invalid range.', 2);
-    if (offset < current) {
-      const retained = new StableFileReader(transfer.path, MAX_BUNDLE, 'CHUNK_CONFLICT');
-      try { requireValue(offset + data.length <= retained.size && retained.read(offset, data.length).equals(data), 'CHUNK_CONFLICT', 'Previously acknowledged bytes differ.'); }
-      finally { retained.close(); }
-    } else { requireValue(!transfer.accepted && offset === current, 'CHUNK_OFFSET', 'Resume at the last confirmed offset.'); appendFileSync(transfer.path, data); sync(transfer.path); }
-    return { transferId: transfer.manifest.transferId, offset: statSync(transfer.path).size };
+    requireValue(!transfer.accepted, 'TRANSFER_ALREADY_COMPLETE', 'This bundle already has an immutable acceptance receipt.');
+    const retained = retainIncomingChunk(transfer.path, transfer.manifest.bytes, transfer.fileIdentity, offset, data);
+    return { transferId: transfer.manifest.transferId, offset: retained };
   }
   private async finish(repo: Enrolled, from: string, body: ObjectValue): Promise<ObjectValue> {
     const transfer = this.store.record<Transfer>('transfer', uuid(body['transferId'], 'transferId'));
     requireValue(transfer && transfer.manifest.senderHostId === from && transfer.manifest.repositoryId === repo.id, 'TRANSFER_NOT_FOUND', 'No transfer belongs to this peer.');
     if (transfer.accepted) return transfer.accepted;
+    incomingFileSize(transfer.path, transfer.manifest.bytes, transfer.fileIdentity);
     const m = transfer.manifest, file = new StableFileReader(transfer.path, MAX_BUNDLE, 'BUNDLE_DIGEST_MISMATCH');
     try {
     this.prepareRequest(repo, from, m.requestId, { manifest: m });

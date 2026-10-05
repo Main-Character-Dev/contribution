@@ -1,4 +1,4 @@
-import { writeFileSync, appendFileSync, statSync, existsSync, mkdirSync, openSync, readSync, closeSync, fsyncSync, chmodSync } from 'node:fs';
+import { writeFileSync, existsSync, mkdirSync, openSync, closeSync, fsyncSync, chmodSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { assertContract, validateContractFormat } from '@contribution/contracts';
 import type { ArtifactProvenance, DeviceProfileConfiguration } from '@contribution/contracts';
@@ -11,16 +11,16 @@ import { privateDirectory } from './private-files.js';
 import { extractSignedAppArchive } from './app-archive.js';
 import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
 import { requireArtifactAvailable } from './storage.js';
+import { StableFileReader } from './bounded-file.js';
+import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './incoming-file.js';
+import type { IncomingFileIdentity } from './incoming-file.js';
 
 type PeerCall = (hostId: string, action: string, body: ObjectValue) => Promise<ObjectValue>;
 interface Manifest { schemaVersion: 1; transferId: string; requestId: string; repositoryId: string; senderHostId: string; receiverHostId: string; provenance: ArtifactProvenance; appName: string; appDigest: string }
-interface Incoming { manifest: Manifest; directory: string; path: string; policy: string; accepted?: ObjectValue }
+interface Incoming { manifest: Manifest; directory: string; path: string; policy: string; fileIdentity?: IncomingFileIdentity; accepted?: ObjectValue }
 const CHUNK = 256 * 1024, CAPACITY = 4 * 1024 ** 3;
 function sync(path: string): void { const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); } }
 function uuid(value: unknown): string { const text = string(value, 'transfer identity'); requireValue(validateContractFormat('uuid', text), 'INVALID_TRANSFER', 'Transfer and host identities must be UUIDs.', 2); return text; }
-function slice(path: string, offset: number, length: number): Buffer {
-  const fd = openSync(path, 'r'); try { const bytes = Buffer.alloc(length); requireValue(readSync(fd, bytes, 0, length, offset) === length, 'ARTIFACT_CHANGED', 'The retained archive changed during transfer.'); return bytes; } finally { closeSync(fd); }
-}
 function appIdentity(app: ArtifactProvenance['app']): string { return digest({ bundleId: app.bundleId, teamId: app.teamId, applicationIdentifier: app.applicationIdentifier }); }
 
 /** Artifact transport uses the existing paired-host envelope and operation
@@ -49,23 +49,26 @@ export class DeviceArtifactTransfers {
     this.enabled();
     const outbox = this.store.record<{ manifest: Manifest; path: string }>('artifactOutbox', op.operationId); requireValue(outbox, 'ARTIFACT_TRANSFER_INCOMPLETE', 'The immutable artifact transfer intent is unavailable.', 3);
     const { manifest: m, path } = outbox, expected = m.provenance.artifact;
-    requireValue(statSync(path).size === expected.bytes && artifactFileDigest(path) === expected.sha256, 'ARTIFACT_CHANGED', 'The selected immutable archive changed before transfer.');
+    const file = new StableFileReader(path, 1024 ** 3, 'ARTIFACT_CHANGED');
+    try {
+    requireValue(file.size === expected.bytes && file.digest() === expected.sha256, 'ARTIFACT_CHANGED', 'The selected immutable archive changed before transfer.');
     const body = { repositoryId: m.repositoryId, transferId: m.transferId };
     const check = (): void => { this.enabled(); requireValue(!signal.aborted, 'CANCELLED', 'Artifact transfer was cancelled; already received private bytes remain retained without installation authority.', 130); };
     check(); let response = await this.call(m.receiverHostId, 'artifact.begin', { ...body, manifest: m });
     if (response['accepted']) return this.confirm(m, object(response['accepted']));
     let offset = Number(response['offset']); requireValue(Number.isSafeInteger(offset) && offset >= 0 && offset <= expected.bytes, 'PEER_PROTOCOL_ERROR', 'The receiver returned an invalid retained byte offset.', 3);
     while (offset < expected.bytes) {
-      check(); const data = slice(path, offset, Math.min(CHUNK, expected.bytes - offset));
+      check(); const data = file.read(offset, Math.min(CHUNK, expected.bytes - offset));
       response = await this.call(m.receiverHostId, 'artifact.chunk', { ...body, offset, data: data.toString('base64') });
       requireValue(response['offset'] === offset + data.length, 'PEER_PROTOCOL_ERROR', 'The receiver did not acknowledge the exact immutable chunk.', 3);
       offset += data.length; this.store.log(op, `[artifact transfer] ${offset}/${expected.bytes} bytes acknowledged\n`);
       const latest = this.store.get(op.operationId); this.store.update(latest, { stage: 'transferring_artifact', result: { ...latest.result, acknowledgedBytes: offset } });
     }
-    check(); requireValue(artifactFileDigest(path) === expected.sha256, 'ARTIFACT_CHANGED', 'The archive changed during transfer.');
+    check(); file.verify();
     this.store.update(this.store.get(op.operationId), { stage: 'verifying_remote_artifact', effectDispatched: true });
     response = await this.call(m.receiverHostId, 'artifact.finish', body);
     return this.confirm(m, response);
+    } finally { file.close(); }
   }
   private confirm(m: Manifest, receipt: ObjectValue): ObjectValue {
     requireValue(receipt['transferId'] === m.transferId && receipt['artifactId'] === m.provenance.artifactId && receipt['sha256'] === m.provenance.artifact.sha256 && receipt['provenanceDigest'] === digest(m.provenance) && receipt['receiverHostId'] === m.receiverHostId,
@@ -92,7 +95,7 @@ export class DeviceArtifactTransfers {
         // A retained completion receipt is historical observation, even after
         // later policy changes. No new bytes or effects follow this reply.
         if (!previous.accepted) requireValue(this.profile(repo, m).revision === previous.policy, 'POLICY_CHANGED', 'The receiving scope changed during the retained transfer.');
-        return { transferId, offset: previous.accepted ? previous.manifest.provenance.artifact.bytes : statSync(previous.path).size, accepted: previous.accepted ?? null };
+        return { transferId, offset: previous.accepted ? previous.manifest.provenance.artifact.bytes : incomingFileSize(previous.path, previous.manifest.provenance.artifact.bytes, previous.fileIdentity), accepted: previous.accepted ?? null };
       }
       const profile = this.profile(repo, m);
       this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
@@ -103,7 +106,7 @@ export class DeviceArtifactTransfers {
       const root = join(this.store.directory, 'artifact-incoming'); privateDirectory(root);
       const directory = join(root, transferId); requireValue(!existsSync(directory), 'TRANSFER_RECOVERY_REQUIRED', 'An unrecorded incoming directory must be reconciled before reusing this transfer identity.', 3);
       mkdirSync(directory, { mode: 0o700 }); const path = join(directory, 'signed-app.zip'); writeFileSync(path, '', { mode: 0o600, flag: 'wx' }); sync(path); sync(directory); sync(root);
-      this.store.put('artifactIncoming', transferId, { manifest: m, directory, path, policy: profile.revision }); return { transferId, offset: 0, accepted: null };
+      this.store.put('artifactIncoming', transferId, { manifest: m, directory, path, policy: profile.revision, fileIdentity: incomingFileIdentity(path) }); return { transferId, offset: 0, accepted: null };
     }
     const incoming = this.store.record<Incoming>('artifactIncoming', transferId);
     requireValue(incoming && incoming.manifest.repositoryId === repo.id && incoming.manifest.senderHostId === from, 'TRANSFER_NOT_FOUND', 'This peer has no matching retained artifact transfer.', 3);
@@ -111,16 +114,15 @@ export class DeviceArtifactTransfers {
     if (incoming.accepted) { requireValue(action === 'artifact.finish', 'TRANSFER_ALREADY_COMPLETE', 'This artifact is already sealed.'); return incoming.accepted; }
     requireValue(this.profile(repo, m).revision === incoming.policy, 'POLICY_CHANGED', 'The receiving project/device scope changed while bytes were in flight. Reconcile this retained transfer before a new selection.', 3);
     if (action === 'artifact.chunk') {
-      const encoded = body['data'], offset = Number(body['offset']), current = statSync(incoming.path).size;
+      const encoded = body['data'], offset = Number(body['offset']);
       requireValue(typeof encoded === 'string' && encoded.length <= Math.ceil(CHUNK / 3) * 4 && /^[A-Za-z0-9+/]+={0,2}$/.test(encoded), 'INVALID_CHUNK', 'Artifact chunk is not bounded canonical base64.', 2);
       const data = Buffer.from(encoded, 'base64');
       requireValue(data.toString('base64') === encoded && data.length > 0 && data.length <= CHUNK && Number.isSafeInteger(offset) && offset >= 0 && offset + data.length <= m.provenance.artifact.bytes, 'INVALID_CHUNK', 'Artifact chunk range is invalid.', 2);
-      if (offset < current) requireValue(offset + data.length <= current && slice(incoming.path, offset, data.length).equals(data), 'CHUNK_CONFLICT', 'Previously acknowledged artifact bytes differ.');
-      else { requireValue(offset === current, 'CHUNK_OFFSET', 'Resume artifact transfer at its last retained offset.'); appendFileSync(incoming.path, data); sync(incoming.path); }
-      return { transferId, offset: statSync(incoming.path).size };
+      const retained = retainIncomingChunk(incoming.path, m.provenance.artifact.bytes, incoming.fileIdentity, offset, data);
+      return { transferId, offset: retained };
     }
     requireValue(action === 'artifact.finish', 'PEER_ACTION_UNSUPPORTED', 'Unknown artifact transfer action.', 2);
-    requireValue(statSync(incoming.path).size === m.provenance.artifact.bytes && artifactFileDigest(incoming.path) === m.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'Received bytes differ from the immutable artifact manifest.');
+    requireValue(incomingFileSize(incoming.path, m.provenance.artifact.bytes, incoming.fileIdentity) === m.provenance.artifact.bytes && artifactFileDigest(incoming.path) === m.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'Received bytes differ from the immutable artifact manifest.');
     const extraction = extractSignedAppArchive(incoming.path, join(incoming.directory, `materialized-${id()}`), m.appName);
     requireValue(appTreeDigest(extraction.appPath) === m.appDigest, 'ARTIFACT_CHANGED', 'The extracted signed app differs from its retained tree identity.');
     if (this.mode === 'observed') {

@@ -259,3 +259,21 @@ test('hook adoption alone cannot change canonical ownership, and unknown legacy 
     assert.equal(result.error.code, 'ADOPTED_AUTHORITY_MIGRATION_REQUIRED'); assert.equal(f.hosts.mini.store.record('authority', repositoryId), undefined);
   } finally { await f.cleanup(); }
 });
+
+test('Git incoming transfers retain file ownership and reserve bounded unfinished selections', async () => {
+  const f = await pairFixture(); try {
+    const repositoryId = f.config.repositoryId; commit(f.source, 'first.txt', 'selected');
+    await f.call('laptop', 'repos.pair', { repo: repositoryId, host: f.hosts.mini.store.hostId, requestId: randomUUID() });
+    const accepted = await f.call('laptop', 'repos.seed', { repo: repositoryId, requestId: randomUUID() });
+    const operation = f.hosts.laptop.store.get(accepted.operationId), original = operation.input.manifest;
+    const call = (action, body) => f.hosts.laptop.peers.call(f.hosts.mini.store.hostId, action, { repositoryId, ...body });
+    const manifests = Array.from({ length: 4 }, () => ({ ...original, requestId: randomUUID(), transferId: randomUUID() }));
+    for (const manifest of manifests.slice(0, 3)) assert.equal((await call('transfer.begin', { manifest })).offset, 0);
+    await assert.rejects(call('transfer.begin', { manifest: manifests[3] }), { code: 'TRANSFER_STORAGE_QUOTA' });
+    const manifest = manifests[0], incoming = f.hosts.mini.store.record('transfer', manifest.transferId);
+    renameSync(incoming.path, incoming.path + '-retained'); writeFileSync(incoming.path, '', { mode: 0o600 });
+    await assert.rejects(call('transfer.chunk', { transferId: manifest.transferId, offset: 0, data: Buffer.from('foreign append').toString('base64') }), { code: 'TRANSFER_FILE_CHANGED' });
+    await assert.rejects(call('transfer.begin', { manifest }), { code: 'TRANSFER_FILE_CHANGED' });
+    assert.equal(readFileSync(incoming.path).length, 0); assert.equal(f.hosts.mini.store.byRequest(manifest.requestId), undefined);
+  } finally { await f.cleanup(); }
+});

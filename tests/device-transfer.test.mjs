@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync, renameSync, symlinkSync, linkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -157,4 +157,30 @@ test('incoming quota is released by confirmed cleanup, not by a missing archive 
     storage.apply(preview.scopeToken, requestId); assert.equal((await begin()).offset, 0);
     assert.deepEqual(f.phoneCalls, []);
   } finally { await f.cleanup(); }
+});
+
+
+test('archive transfer refuses source replacement after acknowledgment and preserves foreign incoming files', async () => {
+  for (const change of ['source', 'replace', 'symbolic', 'hardlink']) {
+    const f = await fixture(); try {
+      let changed = false, foreign;
+      f.intercept(async (_alias, envelope) => {
+        if (changed || envelope.action !== 'artifact.chunk' || envelope.body.offset === 0) return;
+        changed = true;
+        if (change === 'source') { const bytes = readFileSync(f.path); renameSync(f.path, f.path + '-original'); writeFileSync(f.path, bytes); return; }
+        const incoming = f.hosts.mini.store.records('artifactIncoming')[0]; foreign = incoming.path;
+        if (change === 'hardlink') linkSync(incoming.path, incoming.path + '-shared');
+        else {
+          renameSync(incoming.path, incoming.path + '-original');
+          if (change === 'replace') writeFileSync(incoming.path, 'foreign', { mode: 0o600 });
+          else { writeFileSync(incoming.path + '-foreign', 'foreign'); symlinkSync(incoming.path + '-foreign', incoming.path); }
+        }
+      });
+      const accepted = await f.call('laptop', 'devices.artifacts.transfer', f.args), result = await f.wait('laptop', accepted.operationId);
+      assert.equal(changed, true); assert.notEqual(result.operationState, 'succeeded');
+      assert.equal(f.calls.filter(call => call.action === 'artifact.finish').length, 0);
+      assert.equal(f.hosts.mini.store.records('deviceArtifact').length, 0); assert.deepEqual(f.phoneCalls, []);
+      if (foreign && change !== 'hardlink') assert.equal(readFileSync(foreign, 'utf8'), 'foreign');
+    } finally { await f.cleanup(); }
+  }
 });
