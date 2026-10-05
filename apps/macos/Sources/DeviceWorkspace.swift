@@ -32,13 +32,22 @@ struct DeviceWorkspace: View {
     @State private var generation = UUID()
     @State private var pending: RetainedRequest?
     @State private var profileDraft: JSONValue = .null
-    private let actions = ["prepare", "connect", "install", "launch", "logs", "test", "ui", "debug", "screenshot", "screen_capture", "disconnect", "qualify"]
+    private let actions = ["prepare", "connect", "install", "install_and_launch", "launch", "logs", "test", "ui", "debug", "screenshot", "screen_capture", "disconnect", "qualify"]
     private var scope: String { host + ":" + device }
     private var base: [String: JSONValue] { ["repo": .string(repository), "host": .string(host), "device": .string(device)] }
     private var config: [String: JSONValue] { profile.object["config"]?.object ?? [:] }
     private var plans: [JSONValue] { config["qualificationPlans"]?.array ?? [] }
     private var selectedAction: String { action == "qualify" ? plans.first { $0.object["id"]?.text == plan }?.object["operation"]?.text ?? "" : action }
-    private var availability: JSONValue { status.object["availability"]?.array.first { $0.object["operation"]?.text == selectedAction } ?? .null }
+    private var availability: JSONValue {
+        let values = status.object["availability"]?.array ?? []
+        if selectedAction == "install_and_launch" {
+            let parts = values.filter { ["install", "launch"].contains($0.object["operation"]?.text ?? "") }
+            guard parts.count == 2 else { return .null }
+            return .object(["callable": .bool(parts.count == 2 && parts.allSatisfy { $0.object["callable"]?.boolean == true }),
+                "reasonCodes": .array(parts.flatMap { $0.object["reasonCodes"]?.array ?? [] })])
+        }
+        return values.first { $0.object["operation"]?.text == selectedAction } ?? .null
+    }
     private var journal: NativeRequestJournal { NativeRequestJournal(directory: client.directory) }
     private var selectedDeviceIDs: [String] {
         Array(Set(devices.compactMap { $0.object["deviceId"]?.text } + (config["eligibleDeviceRefs"]?.array.compactMap { $0.text } ?? []))).sorted()
@@ -47,7 +56,7 @@ struct DeviceWorkspace: View {
         guard !host.isEmpty, !device.isEmpty, profile != .null, !selectedAction.isEmpty else { return false }
         if action == "qualify", plan.isEmpty { return false }
         if selectedAction == "prepare", buildProfile.isEmpty || sourceTip.range(of: "^[0-9a-f]{40}$", options: .regularExpression) == nil { return false }
-        if selectedAction == "install", artifact.isEmpty { return false }
+        if ["install", "install_and_launch"].contains(selectedAction), artifact.isEmpty { return false }
         if selectedAction == "launch", appRef.isEmpty { return false }
         if ["test", "ui", "debug"].contains(selectedAction), sessionProfile.isEmpty { return false }
         if selectedAction != "prepare", action != "qualify", availability.object["callable"]?.boolean != true { return false }
@@ -130,7 +139,7 @@ struct DeviceWorkspace: View {
                 TextField("Exact committed source (40-character SHA)", text: $sourceTip)
                 Text("Prepares a signed artifact on the selected Mac. The phone is not contacted.").font(.caption).foregroundStyle(.secondary)
             }
-            if selectedAction == "install" {
+            if ["install", "install_and_launch"].contains(selectedAction) {
                 Picker("Prepared artifact", selection: $artifact) {
                     Text("Choose a verified artifact").tag("")
                     ForEach(Array(artifacts.enumerated()), id: \.offset) { _, row in
@@ -138,7 +147,7 @@ struct DeviceWorkspace: View {
                         Text("\(p["app"]?.object["bundleId"]?.text ?? "App") · build \(p["app"]?.object["buildVersion"]?.text ?? "?") · \(p["artifactId"]?.text ?? "")").tag(p["artifactId"]?.text ?? "")
                     }
                 }
-                Text("Updates the selected app in place. Launch is a separate action.").font(.caption).foregroundStyle(.secondary)
+                Text(selectedAction == "install_and_launch" ? "Updates the selected app in place, then explicitly requests a foreground launch. Each result is retained separately." : "Updates the selected app in place. Launch is a separate action.").font(.caption).foregroundStyle(.secondary)
             }
             if selectedAction == "launch" {
                 Picker("Observed installed app", selection: $appRef) {
@@ -206,14 +215,15 @@ struct DeviceWorkspace: View {
         } catch { self.error = error.localizedDescription }
     }
     private func permission(_ revoke: Bool) async {
-        var args = base; args["operations"] = .array([.string(selectedAction)])
+        var args = base; args["operations"] = .array((selectedAction == "install_and_launch" ? ["install", "launch"] : [selectedAction]).map(JSONValue.string))
         await submit(revoke ? "devices.revoke" : "devices.authorize", args: args)
     }
     private func runAction() async {
         var args = base, command = "devices.\(action)"
         if action == "qualify" { args["plan"] = .string(plan) }
         if selectedAction == "prepare" { args["buildProfile"] = .string(buildProfile); args["sourceTip"] = .string(sourceTip) }
-        if selectedAction == "install" { args["artifact"] = .string(artifact) }
+        if ["install", "install_and_launch"].contains(selectedAction) { args["artifact"] = .string(artifact) }
+        if action == "install_and_launch" { command = "devices.install"; args["launch"] = .bool(true) }
         if selectedAction == "launch" { args["appRef"] = .string(appRef) }
         if ["test", "ui", "debug"].contains(selectedAction) { args["sessionProfile"] = .string(sessionProfile) }
         if ["logs", "test", "ui", "debug", "screen_capture"].contains(selectedAction) { args["durationSeconds"] = .number(Decimal(duration)); args["maxBytes"] = .number(8_388_608) }
