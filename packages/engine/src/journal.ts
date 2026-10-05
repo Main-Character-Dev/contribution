@@ -59,6 +59,11 @@ export class Journal {
   }
   records<T>(namespace: string): T[] { return this.db.prepare('SELECT body FROM records WHERE namespace=?').all(namespace).map(row => JSON.parse(String(row['body'])) as T); }
   put(namespace: string, key: string, value: unknown): void { this.db.prepare('INSERT INTO records VALUES(?,?,?) ON CONFLICT(namespace,key) DO UPDATE SET body=excluded.body').run(namespace, key, canonical(value)); }
+  assertRepositoryAvailable(repositoryId: string, enrolling = false): void {
+    const removal = this.record<{ state: string }>('repositoryRemoval', repositoryId);
+    requireValue(!removal || removal.state === 'completed', 'REPOSITORY_REMOVAL_PENDING', 'Resume repos remove with the same repository ID to reconcile its retained removal before new work.', 3);
+    requireValue(!removal || enrolling || this.db.prepare('SELECT id FROM repositories WHERE id=?').get(repositoryId), 'REPOSITORY_NOT_ENROLLED', 'This repository left Contribution. Enroll it explicitly before starting new work.', 3);
+  }
   existing(requestId: string, kind: string, repositoryId: string, input: ObjectValue): Operation | undefined {
     const row = this.db.prepare('SELECT body,identity FROM operations WHERE request_id=?').get(requestId);
     if (!row) return undefined;
@@ -67,6 +72,7 @@ export class Journal {
   }
   admit(requestId: string, kind: string, repositoryId: string, input: ObjectValue, payload: string, state: State = 'queued', initialResult?: (op: Operation) => ObjectValue): Operation {
     const prior = this.existing(requestId, kind, repositoryId, input); if (prior) return prior;
+    this.assertRepositoryAvailable(repositoryId);
     requireValue(!this.records<{ state: string; completed: string[]; preview: { candidates: { owner: { repositoryId: string; attemptId: string } }[] } }>('worktreeCleanup')
       .some(cleanup => cleanup.state === 'removing' && cleanup.preview.candidates.some(value => value.owner.repositoryId === repositoryId && !cleanup.completed.includes(value.owner.attemptId))),
       'STORAGE_CLEANUP_PENDING', 'A retained worktree cleanup is in progress for this clone. Resume that cleanup before admitting new work.', 3);

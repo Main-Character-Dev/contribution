@@ -22,7 +22,7 @@ export class Repositories {
     }
   }
   all(): Enrolled[] { return this.store.db.prepare('SELECT body FROM repositories').all().map(row => JSON.parse(String(row['body'])) as Enrolled); }
-  save(repo: Enrolled): void { this.store.db.prepare('INSERT INTO repositories VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET common_dir=excluded.common_dir,body=excluded.body').run(repo.id, repo.commonDir, JSON.stringify(repo)); }
+  save(repo: Enrolled, enrolling = false): void { this.store.assertRepositoryAvailable(repo.id, enrolling); this.store.db.prepare('INSERT INTO repositories VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET common_dir=excluded.common_dir,body=excluded.body').run(repo.id, repo.commonDir, JSON.stringify(repo)); }
   async get(selector: string): Promise<Enrolled> {
     const direct = this.all().find(repo => repo.id === selector); if (direct) return direct;
     let common: string | undefined;
@@ -33,6 +33,7 @@ export class Repositories {
   async add(path: string, profile: 'local-development' | 'standard' = 'local-development', availability: 'this-mac' | 'both-macs' = 'this-mac', supplied?: Repository, expected?: { repositoryId: string; revision: string }): Promise<Enrolled> {
     const info = await identity(path); const existing = this.all().find(repo => repo.commonDir === info.commonDir);
     if (existing) {
+      this.store.assertRepositoryAvailable(existing.id);
       requireValue(!expected || (existing.id === expected.repositoryId && existing.revision === expected.revision), 'REGISTRY_MAPPING_CONFLICT', 'The selected enrolled clone belongs to another project or configuration revision.');
       if (expected) await this.current(existing);
       requireValue(existing.availability === availability, 'AUTHORITY_TRANSITION_REQUIRED', 'Re-enrollment cannot change canonical ownership.'); return existing;
@@ -58,7 +59,7 @@ export class Repositories {
     requireValue(!this.all().some(repo => repo.id === config.repositoryId), 'CLONE_IDENTITY_CONFLICT', 'This logical repository already has a different local clone. Reconcile its mapping explicitly.');
     const repo: Enrolled = { id: config.repositoryId, path: info.path, commonDir: info.commonDir, config, revision: digest(config),
       canonicalHostId: this.store.hostId, availability, policySource: existsSync(file) ? 'tracked' : 'generated', hookPath };
-    this.save(repo); return repo;
+    this.save(repo, true); return repo;
   }
   async create(inputPath: string, requestId: string): Promise<Enrolled> {
     const absolute = resolve(inputPath);
@@ -105,12 +106,14 @@ export class Repositories {
     const repo = await this.add(path); intent.repository = repo; this.store.put('creationIntent', intent.requestId, intent); return repo;
   }
   private migrationReady(repo: Enrolled): void {
+    this.store.assertRepositoryAvailable(repo.id);
     requireValue(!this.store.records<{ repositoryId: string; phase: string }>('adoptionPlan').some(plan => plan.repositoryId === repo.id && ['applying', 'applied', 'rolling_back'].includes(plan.phase)), 'MIGRATION_RECONCILIATION_REQUIRED', 'Finish or roll back the retained adoption before repository work or configuration changes.', 3);
   }
   async current(repo: Enrolled): Promise<void> {
     this.migrationReady(repo);
     requireValue(!this.store.records<ConfigurationIntent>('configurationIntent').some(intent => intent.previous.id === repo.id && intent.state === 'prepared'), 'CONFIGURATION_RECONCILIATION_REQUIRED', 'A retained policy change needs reconciliation before another writer can run.', 3);
     const info = await identity(repo.path);
+    this.store.assertRepositoryAvailable(repo.id);
     requireValue(info.commonDir === repo.commonDir, 'REPOSITORY_IDENTITY_CHANGED', 'The enrolled path now points to a different Git repository.');
     requireValue(info.branch === repo.config.integration.branch, 'ACTIVE_BRANCH_CHANGED', 'The primary checkout is no longer on its configured integration branch.');
     if (repo.policySource === 'tracked') {

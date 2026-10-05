@@ -185,10 +185,13 @@ export class Workflows {
     return { state: 'passed', checks: results, sourceTip: info.tip, inputDigest: before, reuse: 'never' };
   }
   async ensureHook(repo: Enrolled): Promise<void> {
+    this.store.assertRepositoryAvailable(repo.id);
     if (repo.config.integration.adapter !== 'generic-v1') { await this.adopted.verify(repo); return; }
     const config = await git(repo.path, ['config', '--get', 'core.hooksPath']);
     requireValue(config.code === 1, 'EXISTING_HOOK_OWNER', 'Preserve the configured hook dispatcher; adopt its adapter before publication.', 3);
     const path = await gitText(repo.path, ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push']);
+    this.store.assertRepositoryAvailable(repo.id);
+    requireValue(this.repos.all().some(row => row.id === repo.id && row.commonDir === repo.commonDir), 'REPOSITORY_NOT_ENROLLED', 'The repository left Contribution while hook installation was being inspected.', 3);
     const hookDirectory = join(path, '..');
     if (existsSync(hookDirectory)) requireValue(lstatSync(hookDirectory).isDirectory() && !lstatSync(hookDirectory).isSymbolicLink() && realpathSync(hookDirectory).startsWith(realpathSync(repo.commonDir) + '/'), 'EXISTING_HOOK_OWNER', 'The hook directory must remain inside this repository before Contribution can own its dispatcher.', 3);
     const content = `#!/bin/sh\n# Contribution managed pre-push v1\nexec ${quote(this.payload.node)} ${quote(this.payload.cli)} hook pre-push --repo ${quote(repo.id)} --state-dir ${quote(this.store.directory)} --remote "$1" --url "$2"\n`;

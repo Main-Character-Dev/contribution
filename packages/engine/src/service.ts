@@ -31,6 +31,7 @@ import type { Notice } from './notifications.js';
 import { Maintenance } from './maintenance.js';
 import { StorageRetention } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
+import { RepositoryRemoval } from './repository-removal.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
@@ -364,7 +365,7 @@ export class Engine {
         return completed({ notices: [...milestones.pending(this.store.hostId), ...remote].slice(0, 100) });
       }
       if (command === 'settings.apply') { assertContract('machine', args['config']); return this.admit(args['requestId'], command, this.store.hostId, { config: args['config'], expectedRevision: string(args['expectedRevision'], 'expectedRevision') }); }
-      if (command === 'repos.list') return completed({ repositories: this.repos.all(), peerProjects: this.peers.registry.view() });
+      if (command === 'repos.list') return completed({ repositories: this.repos.all(), peerProjects: this.peers.registry.view(), pendingRemovals: new RepositoryRemoval(this.store, this.repos).pending() });
       if (command === 'repos.resolve') {
         const repositoryId = string(args['repo'], 'repo'), expectedRevision = string(args['expectedRevision'], 'expectedRevision');
         this.peers.registry.offer(string(args['host'], 'host'), repositoryId, expectedRevision);
@@ -408,7 +409,13 @@ export class Engine {
         }
         return this.store.response(op);
       }
-      const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
+      const selector = typeof args['repo'] === 'string' ? args['repo'] : cwd;
+      if (command === 'repos.remove' && !this.repos.all().some(row => row.id === selector || row.path === selector)) {
+        const retained = new RepositoryRemoval(this.store, this.repos).completed(selector);
+        if (retained) return completed(retained);
+      }
+      const repo = await this.repos.get(selector);
+      if (!['repos.remove', 'repos.inspect', 'status'].includes(command)) this.store.assertRepositoryAvailable(repo.id);
       requireValue(!this.adoptions.isBusy(repo.id) || ['repos.inspect', 'status', 'repos.migration'].includes(command), 'REPOSITORY_BUSY', 'The reviewed adoption transaction is holding this repository.', 4);
       if (command === 'hook.adopted.begin' || command === 'hook.adopted.finish') {
         if (command === 'hook.adopted.finish') {
@@ -525,9 +532,7 @@ export class Engine {
       if (command === 'repos.inspect') return completed({ repository: repo.config, revision: repo.revision, path: repo.path, commonDirectory: repo.commonDir, availability: repo.availability, canonicalHostId: repo.canonicalHostId });
       if (command === 'repos.relocate') return completed({ repository: await this.repos.relocate(repo, string(args['path'], 'path')) });
       if (command === 'repos.remove') {
-        requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Retain enrollment while work or effects remain unresolved.');
-        requireValue(!this.store.record('hook', repo.id) && !this.store.record('adoptedHooks', repo.id) && !this.store.records<{ repositoryId: string; phase: string }>('adoptionPlan').some(plan => plan.repositoryId === repo.id && (['applying', 'applied', 'active', 'rolling_back'].includes(plan.phase) || (plan.phase === 'rolled_back' && (repo.availability === 'both-macs' || Boolean(this.store.record('authority', repo.id)))))), 'INTEGRATION_REMOVAL_REQUIRED', 'Remove the matching Contribution-owned hook through a reviewed integration removal before unenrollment.');
-        this.store.db.prepare('DELETE FROM repositories WHERE id=?').run(repo.id); return completed({ removed: repo.id, sourcePreserved: true });
+        return completed(await new RepositoryRemoval(this.store, this.repos).remove(repo));
       }
       if (command === 'repos.configure') {
         const requestId = string(args['requestId'], 'requestId'), config = args['config'] as unknown as Repository;
