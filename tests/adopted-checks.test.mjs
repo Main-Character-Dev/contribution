@@ -82,3 +82,24 @@ test('changed queued inputs and unsuccessful or mutating original checks never b
     }finally{await f.cleanup();}
   }
 });
+
+test('changes to additional primary coordination entry points invalidate retained adoption before dispatch', async () => {
+  for (const [adapter, file] of [
+    ['mathy-v1', 'scripts/start-active-branch.mjs'], ['mathy-v1', 'scripts/worktree-reconcile'],
+    ['mathy-v1', 'scripts/workflow-status.mjs'], ['mathy-v1', 'scripts/ios-testflight.mjs'],
+    ['maincharacter-v1', 'scripts/primary-checkout-lease.mjs'], ['maincharacter-v1', 'scripts/ios-testflight.mjs'],
+    ['roboty-v1', 'scripts/primary-checkout-lease.mjs'], ['roboty-v1', 'scripts/launch-pre-push.mjs']
+  ]) {
+    const f = await fixture(adapter);
+    try {
+      f.store.setMeta('paused', true);
+      const accepted = await f.call({}); assert.equal(accepted.error, null);
+      writeFileSync(join(f.path, file), '// Concurrent original writer-policy change; preserve for review.\n');
+      f.store.setMeta('paused', false); f.engine.kick();
+      const result = await f.wait(accepted.operationId);
+      assert.equal(result.state, 'waiting'); assert.equal(result.error.code, 'ADOPTED_POLICY_CHANGED');
+      assert.equal(existsSync(join(f.repo.commonDir, 'check-invocation')), false);
+      assert.match(readFileSync(join(f.path, file), 'utf8'), /Concurrent original writer-policy change/);
+    } finally { await f.cleanup(); }
+  }
+});

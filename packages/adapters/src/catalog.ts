@@ -10,11 +10,12 @@ export interface AdoptionPolicy {
 const common = ['AGENTS.md', 'package.json', '.nvmrc', 'scripts/worktree-land', 'scripts/worktree-landing-worker', 'scripts/pre-push-worktree-guard.mjs', 'scripts/lib/primary-checkout-lease.mjs', 'scripts/lib/worktree-landing-flight.mjs', 'scripts/lib/worktree-landing-state.mjs'];
 export const adoptionPolicies: readonly AdoptionPolicy[] = [
   { id: 'mathy-v1', packageName: 'mathy', gate: 'enabled', hookOwner: 'trusted-dispatcher', landing: 'policy-only', attributionDates: 'multiple', validation: 'cumulative',
-    policyFiles: [...common, '.githooks/pre-push', '.githooks/_/runtime-bootstrap.sh', 'scripts/prepare-push.mjs', 'scripts/lib/pre-push-reporting.mjs', 'scripts/validation-profile.mjs', 'scripts/lib/process-identity.mjs'] },
+    policyFiles: [...common, '.githooks/pre-push', '.githooks/_/runtime-bootstrap.sh', 'scripts/prepare-push.mjs', 'scripts/lib/pre-push-reporting.mjs', 'scripts/validation-profile.mjs', 'scripts/lib/process-identity.mjs',
+      'scripts/start-active-branch.mjs', 'scripts/worktree-reconcile', 'scripts/workflow-status.mjs', 'scripts/ios-testflight.mjs'] },
   { id: 'maincharacter-v1', packageName: 'maincharacter', gate: 'enabled', hookOwner: 'husky', landing: 'integration-only', attributionDates: 'one', validation: 'cumulative',
-    policyFiles: [...common, '.husky/pre-push', 'scripts/run-changed-checks.mjs', 'scripts/pre-push-exact-tree.mjs', 'scripts/pre-push-process-context.mjs'] },
+    policyFiles: [...common, '.husky/pre-push', 'scripts/run-changed-checks.mjs', 'scripts/pre-push-exact-tree.mjs', 'scripts/pre-push-process-context.mjs', 'scripts/primary-checkout-lease.mjs', 'scripts/ios-testflight.mjs'] },
   { id: 'roboty-v1', packageName: 'roboty', gate: 'enabled', hookOwner: 'husky', landing: 'integration-only', attributionDates: 'one', validation: 'local-safety',
-    policyFiles: [...common, '.husky/pre-push', 'scripts/local-pre-push.mjs', 'scripts/activation-command.mjs', 'scripts/config/activation-commands.json', 'scripts/ios-device.mjs'] },
+    policyFiles: [...common, '.husky/pre-push', 'scripts/local-pre-push.mjs', 'scripts/activation-command.mjs', 'scripts/config/activation-commands.json', 'scripts/ios-device.mjs', 'scripts/primary-checkout-lease.mjs', 'scripts/launch-pre-push.mjs'] },
   { id: 'glassalpha-v1', packageName: 'glassalpha', gate: 'inactive', hookOwner: 'husky', landing: 'integration-only', attributionDates: 'one', validation: 'inactive', policyFiles: common },
 ];
 function bounded(path: string, limit: number): Buffer {
