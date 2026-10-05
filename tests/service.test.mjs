@@ -11,6 +11,8 @@ test('installed service and CLI share durable jobs, paused queues, events and im
     const repo = repository(f.root); writeFileSync(join(repo, 'unrelated.txt'), 'leave untouched'); git(repo, 'add', 'unrelated.txt');
     const before = git(repo, 'ls-files', '--stage');
     const added = await f.call('repos.add', { path: repo }); const id = added.result.repository.id;
+    const rejected = await f.call('repos.initialize', { repo: id, requestId: randomUUID(), expectedRevision: 'stale-review' });
+    assert.equal(rejected.error.code, 'REVISION_CONFLICT'); assert.equal(rejected.operationId, null);
     assert.equal(git(repo, 'ls-files', '--stage'), before); assert.equal(existsSync(join(repo, 'contribution.json')), false);
     await f.call('service.pause');
     const requestId = randomUUID(), first = await f.call('repos.initialize', { repo: id, requestId });

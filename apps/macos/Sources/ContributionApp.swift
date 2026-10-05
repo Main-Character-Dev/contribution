@@ -179,6 +179,7 @@ struct NotificationContext: Identifiable { let id = UUID(); let value: JSONValue
 }
 private struct WorkspaceView: View {
     @Bindable var workspace: Workspace
+    @State private var newProject = false
     @State private var hostedRepository: HostedRepository?
     @State private var deviceRepository: HostedRepository?
     @Environment(\.openWindow) private var openWindow
@@ -210,7 +211,10 @@ private struct WorkspaceView: View {
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(workspace.paused ? "Processing paused" : workspace.service).font(.caption).foregroundStyle(.secondary)
-                    Button("Add repository", systemImage: "plus") { Task { await workspace.addRepository() } }
+                    Menu("Add repository", systemImage: "plus") {
+                        Button("Add existing repository…") { Task { await workspace.addRepository() } }
+                        Button("New project…") { newProject = true }
+                    }
                 }.padding()
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 230)
@@ -251,6 +255,7 @@ private struct WorkspaceView: View {
         .task(id: workspace.selectedRepository) { await workspace.loadRepository() }
         .onChange(of: workspace.devicesEnabled) { _, enabled in if !enabled { deviceRepository = nil } }
         .sheet(item: $workspace.preview) { preview in PublicationSheet(workspace: workspace, preview: preview) }
+        .sheet(isPresented: $newProject) { NewProjectSheet(workspace: workspace) }
         .sheet(item: $hostedRepository) { repository in HostedActivity(workspace: workspace, repository: repository.id) }
         .sheet(item: $deviceRepository) { repository in DeviceWorkspace(repository: repository.id, client: workspace.client) { workspace.selectedOperation = $0 } }
         .sheet(item: $workspace.notificationContext) { context in NotificationContextSheet(value: context.value) }
@@ -446,6 +451,7 @@ private struct ContributionSettings: View {
     @State private var notifyFailure = true
     @State private var notificationSave = ""
     @State private var devicesEnabled = false
+    @State private var newProject = false
     var body: some View {
         VStack(alignment: .leading) {
         TabView {
@@ -472,8 +478,10 @@ private struct ContributionSettings: View {
                         }
                     }
                     Button("Add existing repository…") { Task { await workspace.addRepository() } }
+                    Button("New project…") { newProject = true }.disabled(workspace.sending || workspace.pendingRequest != nil)
                 }
             }.formStyle(.grouped).tabItem { Label("Repositories", systemImage: "folder") }
+                .sheet(isPresented: $newProject) { NewProjectSheet(workspace: workspace) }
             Form { Section("Remote Devices") {
                 Toggle("Enable Remote Devices on this Mac", isOn: $devicesEnabled)
                 Button("Save device setting") { Task { await saveDeviceSetting() } }.disabled(notificationRevision.isEmpty || workspace.sending || workspace.pendingRequest != nil)

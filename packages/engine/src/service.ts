@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { assertContract, buildIdentity } from '@contribution/contracts';
 import type { Response, Machine, Repository, DeviceOperation } from '@contribution/contracts';
 import { completed, rejected, requireValue, string, object, digest, Fault, terminal, now, isGitJob } from './core.js';
@@ -43,7 +44,7 @@ const allowed: Record<string, string[]> = {
   'repos.resolve': ['repo', 'host', 'path', 'expectedRevision'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
   'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'prepareExistingAdoption', 'originalTip', 'migrationTip', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
-  'repos.initialize': ['repo', 'requestId'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
+  'repos.initialize': ['repo', 'requestId', 'expectedRevision'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata'],
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
@@ -258,6 +259,13 @@ export class Engine {
       // Even an early maintenance/version/usage refusal must not make the
       // native client forget a previously retained partial cleanup.
       const args = (value as Request | null)?.args;
+      if (command === 'repos.create' && response.error && typeof args?.['requestId'] === 'string' && typeof args['path'] === 'string') {
+        const requestId = args['requestId'], intent = this.store.record<{ requestedPath: string }>('creationIntent', requestId);
+        if (intent?.requestedPath === resolve(args['path']) && !this.store.byRequest(requestId)) {
+          response.result = { ...response.result, requestRetained: true, requestId, path: intent.requestedPath };
+          response.error.nextActions = [{ id: 'resume-creation', label: 'Resolve the reported condition and resume this project creation', argv: ['contribution', 'repos', 'create', intent.requestedPath, '--request-id', requestId, '--json'] }];
+        }
+      }
       if (command === 'service.storage' && response.error && typeof args?.['requestId'] === 'string') {
         const worktrees = args['worktrees'] === true, requestId = args['requestId'];
         const retained = this.store.record<{ state: string; token?: string; preview?: { token: string } }>(worktrees ? 'worktreeCleanup' : 'storageCleanup', requestId);
@@ -542,7 +550,10 @@ export class Engine {
         const result = { repository: this.repos.configure(repo, config, string(args['expectedRevision'], 'expectedRevision'), requestId) };
         this.store.put('configurationRequests', requestId, { digest: requestDigest, result }); return completed(result);
       }
-      if (command === 'repos.initialize') return this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
+      if (command === 'repos.initialize') {
+        requireValue(args['expectedRevision'] === undefined || args['expectedRevision'] === repo.revision, 'REVISION_CONFLICT', 'Repository configuration changed since initialization was reviewed. Review the current configuration first.', 3);
+        return this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
+      }
       if (command === 'status') {
         if (repo.canonicalHostId !== this.store.hostId) {
           if (args['refresh'] === true) {

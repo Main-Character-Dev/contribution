@@ -15,3 +15,13 @@ The activity projection and log controller have synthetic Swift tests; native co
 Settings now separates setup, repositories, devices, updates, notifications and storage into native tabs. Storage reports observed raw-log usage, protected/eligible logs and admission pressure. Log age and cap changes preserve unrelated machine settings through the expected configuration revision. Summary expiration is visibly unavailable while that implementation remains unfinished; the log cap does not imply a whole-service storage cap.
 
 The cleanup sheet binds its category and scope token to the returned review, lists eligible and protected directories, and requires the explicit Remove reviewed files action. Changing the category picker cannot change an open review. A changed file, pin or dependency is rechecked by the service. Interrupted removal retains its exact request instead of offering a new cleanup identity. Settings also exposes the shared reconciliation action. See [retention](STORAGE_RETENTION.md) for the removal boundaries.
+
+## Repository setup
+
+The sidebar Add repository menu and Settings → Repositories offer New project. A name and selected parent folder produce an exact destination review. The shared engine creates and enrolls the repository, then admits its bootstrap commit on `dev`. The review lists the two generated files and the configured Git identity requirement; source files and unrelated staged entries remain untouched.
+
+A repository overview offers Initialize history only when its current local-owner status explicitly reports an unborn checkout on the configured integration branch. Unknown, stale cross-project, mirrored or already committed status cannot enable the action. The confirmation binds the repository ID and reviewed configuration revision; a changed revision is rejected before admission.
+
+Both routes use the native retained request journal. A creation error after durable intent retains the original request even across an early maintenance refusal. The same request resumes the owned destination; changed user contents remain preserved and require reconciliation. Service acceptance selects the operation for progress and does not claim its bootstrap commit has already succeeded. These flows do not create a GitHub repository, publish, install a service or register a Codex project.
+
+`ProjectSetupTests.swift` checks the reviewed destination and explicit-unborn selection boundary. Creation, bootstrap-recovery and service fixtures cover filesystem ownership, partial restart, unchanged unrelated index entries and revision conflicts. Native build/model proof remains separate from visual and accessibility interaction.

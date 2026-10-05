@@ -128,3 +128,7 @@ Native settings now has focused tabs and a storage review flow showing raw-log u
 The cumulative storage UI checkpoint passed 218 Node tests, strict/generated/type and foundation checks with 242 local links, plus eleven Swift methods and a fresh unsigned app package. The package remains uninstalled.
 
 [Repository removal](REPOSITORY_REMOVAL.md) now removes a verified generic owned hook through a durable, restartable transaction. Eighteen focused removal/service/peer fixtures pass, preserving foreign hooks, dirty source/index, native task history and retained evidence. Pending removal fences new admissions and configuration; interrupted unlink resumes the same identity. Paired authority and adopted integration still require their explicit coordinated release or reviewed rollback. No live enrollment was removed.
+
+Native New project and explicit Initialize history now use reviewed destinations/configuration revisions and retained service requests. Creation continuation survives a partial error or maintenance refusal without discarding its immutable identity. Six focused engine fixture groups, thirteen Swift methods and the unsigned native build pass. GUI interaction remains unrun; these changes created no live repository.
+
+The cumulative repository-lifecycle checkpoint passed 224 Node tests, strict/generated/type checks and foundation preservation with 244 local links. Original schema/example bytes and all acceptance identities remain intact. Native tests and build also pass; no installation or real-host proof is inferred.

@@ -39,8 +39,17 @@ test('partial repository creation resumes only its retained owned directory and 
       await f.start(); const response = await f.call('repos.create', { path: requestedPath, requestId });
       if (boundary === 'owner_file') {
         assert.equal(response.error.code, 'DESTINATION_CHANGED'); assert.equal(readFileSync(join(path, 'owner.txt'), 'utf8'), 'preserved');
+        assert.equal(response.result.requestRetained, true); assert.equal(response.result.requestId, requestId);
+        const continued = f.cli(response.error.nextActions[0].argv.slice(1));
+        assert.equal(JSON.parse(continued.stdout).error.code, 'DESTINATION_CHANGED');
+        const held = await f.call('maintenance.begin', { requestId: randomUUID() });
+        assert.equal(held.error, null);
+        const retry = await f.call('repos.create', { path: requestedPath, requestId });
+        assert.equal(retry.result.requestRetained, true); assert.equal(retry.result.requestId, requestId);
       } else if (boundary === 'foreign_git') {
         assert.equal(response.error.code, 'CREATION_OWNERSHIP_UNCONFIRMED'); assert.equal(existsSync(join(path, '.git/HEAD')), false);
+        assert.equal(response.result.requestRetained, true);
+        assert.notEqual((await f.call('repos.create', { path: join(parent, 'different'), requestId })).result.requestRetained, true);
       } else {
         assert.equal(response.error, null, JSON.stringify(response)); assert.equal(response.operationState, 'queued');
         assert.equal((await f.call('repos.create', { path: requestedPath, requestId })).operationId, response.operationId);

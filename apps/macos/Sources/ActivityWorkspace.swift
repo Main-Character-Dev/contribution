@@ -81,6 +81,7 @@ private struct ActivityRow: View {
 private struct RepositoryOverview: View {
     @Bindable var workspace: Workspace
     let repository: JSONValue
+    @State private var initialization: ProjectSetup?
     private var publication: [String: JSONValue] { workspace.repositoryStatus.object["publication"]?.object ?? [:] }
     private var publicationText: String {
         switch publication["relation"]?.text {
@@ -106,6 +107,9 @@ private struct RepositoryOverview: View {
                 Text("Queued locally: \(pending["localSubmissions"]?.formatted ?? "0") · Landing: \(pending["landingJobs"]?.formatted ?? "0")").font(.caption).foregroundStyle(.secondary)
             }
             HStack {
+                if let setup = ProjectSetup.initialize(repository: repository, status: workspace.repositoryStatus, localHostID: workspace.localHostID) {
+                    Button("Initialize history…") { initialization = setup }.disabled(workspace.sending || workspace.pendingRequest != nil || workspace.repositoryLoading)
+                }
                 Button("Refresh remote status") { Task { await workspace.loadRepository(refresh: true) } }.disabled(workspace.repositoryLoading)
                 Button("Run local checks") {
                     guard let id = repository.object["id"]?.text else { return }
@@ -113,6 +117,7 @@ private struct RepositoryOverview: View {
                 }.disabled(workspace.sending || workspace.pendingRequest != nil)
             }.controlSize(.small)
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(item: $initialization) { selection in ProjectSetupReview(workspace: workspace, selection: selection) }
     }
 }
 

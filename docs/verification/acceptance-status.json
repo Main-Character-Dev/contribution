@@ -184,6 +184,11 @@
           "level": "fixture",
           "source": "tests/peers.test.mjs",
           "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/ProjectSetupTests.swift",
+          "scope": "Native setup review binds an absolute named destination or confirmed local unborn repository with its configuration revision. Creation continuation and generated-only bootstrap also pass engine fixtures; visual and paired hardware proof remain unrun."
         }
       ],
       "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
