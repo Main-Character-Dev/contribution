@@ -2,6 +2,25 @@ import XCTest
 @testable import ContributionPlatform
 
 final class RetainedRequestTests: XCTestCase {
+    @MainActor func testStorageRecoveryRetainsItsOwnReviewWithoutDiscardingAnUnresolvedOperation() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let operation = NativeRequestJournal(directory: directory), control = NativeRequestJournal(directory: directory, slot: .storageSettings)
+        let original = RetainedRequest(command: "repos.create", args: ["path": .string("/fixture/project")])
+        let recovery = RetainedRequest(command: "service.storage-policy", args: ["config": .object(["schemaVersion": .number(1), "maxStateBytes": .number(10_737_418_240)])])
+        try operation.retain(original); try control.retain(recovery)
+        XCTAssertEqual(try operation.pending(), original)
+        XCTAssertEqual(try NativeRequestJournal(directory: directory, slot: .storageSettings).pending(), recovery)
+        XCTAssertThrowsError(try control.retain(RetainedRequest(command: "devices.install", args: [:])))
+        XCTAssertThrowsError(try control.resolve(original))
+        try control.resolve(recovery)
+        XCTAssertEqual(try operation.pending(), original); XCTAssertNil(try control.pending())
+        XCTAssertThrowsError(try control.retain(RetainedRequest(command: "devices.install", args: [:])))
+        XCTAssertNil(try control.pending())
+        let logs = RetainedRequest(command: "settings.apply", args: [:]); try control.retain(logs)
+        XCTAssertEqual(try operation.pending(), original); XCTAssertEqual(try control.pending(), logs)
+    }
     @MainActor func testLostReplySurvivesReopeningAndCannotChangeScope() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])

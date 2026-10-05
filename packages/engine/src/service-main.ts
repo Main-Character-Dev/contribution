@@ -20,8 +20,9 @@ try {
   let closing = false;
   const monitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('maintenance')) void engine.github.tick(engine.repos.all()); }, 30000);
   const peerMonitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('paused') && !journal.getMeta('maintenance')) void engine.peers.tick(); }, 1500);
+  const storageMonitor = setInterval(() => { if (engine.storageHold && !engine.stopping && !journal.getMeta('maintenance')) engine.kick(); }, 30000);
   const close = (): void => {
-    if (closing) return; closing = true; engine.stopping = true; clearInterval(monitor); clearInterval(peerMonitor);
+    if (closing) return; closing = true; engine.stopping = true; clearInterval(monitor); clearInterval(peerMonitor); clearInterval(storageMonitor);
     // A maintenance stop drains instead of killing owned effects.
     const drain = setInterval(() => {
       if (engine.active.size || engine.backgroundBusy) return;

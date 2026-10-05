@@ -34,12 +34,14 @@ import { StorageRetention } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
 import { RepositoryRemoval } from './repository-removal.js';
 import { Diagnostics } from './diagnostics.js';
+import { ManagedStorage } from './managed-storage.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
   'service.storage': ['preview', 'scopeToken', 'requestId', 'worktrees'],
   'service.diagnostics': ['operationId'],
+  'service.storage-policy': ['config', 'expectedRevision', 'requestId'],
   'maintenance.begin': ['requestId'], 'maintenance.status': [], 'maintenance.stop': ['windowId'],
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
@@ -91,6 +93,7 @@ export class Engine {
   private readonly externalHooks = new Map<string, { lease: LegacyPrimaryLease; timer: NodeJS.Timeout }>();
   stopping = false;
   restartRequested = false;
+  storageHold: ObjectValue | null = null;
   private scheduled = false;
   private notificationRefresh = false;
   private notificationRefreshAt = 0;
@@ -153,13 +156,18 @@ export class Engine {
     } finally { this.notificationRefresh = false; }
   }
   kick(): void {
-    if (this.scheduled || this.stopping) return; this.scheduled = true;
+    if (this.scheduled || this.stopping || !this.store.db.isOpen) return; this.scheduled = true;
     setImmediate(() => { this.scheduled = false; void this.schedule(); });
   }
   private async schedule(): Promise<void> {
-    if (this.stopping || this.store.getMeta<boolean>('maintenance')) return;
-    for (const op of this.store.queue()) {
+    if (this.stopping || !this.store.db.isOpen || this.store.getMeta<boolean>('maintenance')) return;
+    const queue = this.store.queue();
+    if (!queue.length) { this.storageHold = null; return; }
+    try { this.store.assertAdmissionStorage(); this.storageHold = null; }
+    catch (error) { this.storageHold = { reason: error instanceof Fault ? error.code : 'STORAGE_INSPECTION_UNAVAILABLE', message: error instanceof Fault ? error.message : 'Storage inspection could not complete. Review storage diagnostics.', observedAt: now() }; }
+    for (const op of queue) {
       if (this.store.getMeta<boolean>('paused') && op.kind !== 'settings.apply') continue;
+      if (this.storageHold && op.kind !== 'settings.apply') continue;
       if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId) || this.adoptions.isBusy(op.repositoryId)) continue;
       const blocked = isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
       if (blocked) continue;
@@ -295,7 +303,7 @@ export class Engine {
         const reads = ['version', 'doctor', 'service.status', 'service.diagnostics', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
-        requireValue(reads.includes(command) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+        requireValue(reads.includes(command) || (command === 'service.storage-policy' && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
           'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
       }
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
@@ -315,6 +323,7 @@ export class Engine {
       }
       if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
+        storageHold: this.storageHold,
         maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
       if (command === 'service.storage') {
@@ -325,10 +334,16 @@ export class Engine {
           return completed(await storage.preview());
         }
         requireValue(args['preview'] === undefined, 'INVALID_USAGE', 'Use --preview or select its scope token and a request UUID.', 2);
-        return completed(await storage.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId')));
+        const result = await storage.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId')); this.kick(); return completed(result);
+      }
+      if (command === 'service.storage-policy') {
+        const storage = new ManagedStorage(this.store);
+        if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read storage policy without mutation arguments.', 2); return completed({ ...storage.policy(), usage: storage.usage() }); }
+        const result = storage.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')); this.kick(); return completed(result);
       }
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
         database: { version: 1, journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
+        managedStorage: new ManagedStorage(this.store).usage(),
         devices: { enabled: this.settings().remoteDevices?.enabled ?? false, physicalQualification: 'unverified' } });
       if (command === 'service.diagnostics') return completed({ diagnostics: new Diagnostics(this.store, this.repos).snapshot(args['operationId'] === undefined ? undefined : string(args['operationId'], 'operationId')) });
       if (command === 'service.pause' || command === 'service.resume') {

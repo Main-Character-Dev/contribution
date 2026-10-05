@@ -2,7 +2,7 @@ import Foundation
 import Darwin
 
 /// A lost admission reply must be retried with the original immutable identity.
-/// The native client retains one unresolved request before any service effect.
+/// The native client retains an unresolved request before any service effect.
 public struct RetainedRequest: Codable, Equatable, Sendable {
     public let command: String
     public let args: [String: JSONValue]
@@ -14,10 +14,17 @@ public struct RetainedRequest: Codable, Equatable, Sendable {
     }
 }
 
+public enum NativeRequestSlot: Equatable, Sendable {
+    case operation, storageSettings
+    fileprivate var fileName: String { self == .operation ? "native-pending-request.json" : "native-storage-settings-request.json" }
+    fileprivate func accepts(_ command: String) -> Bool { self == .operation || ["settings.apply", "service.storage-policy"].contains(command) }
+}
+
 @MainActor public final class NativeRequestJournal {
     private let directory: URL
-    private var url: URL { directory.appendingPathComponent("native-pending-request.json") }
-    public init(directory: URL) { self.directory = directory }
+    private let slot: NativeRequestSlot
+    private var url: URL { directory.appendingPathComponent(slot.fileName) }
+    public init(directory: URL, slot: NativeRequestSlot = .operation) { self.directory = directory; self.slot = slot }
     private func failure(_ message: String) -> NSError { NSError(domain: "Contribution.NativeRequest", code: 3, userInfo: [NSLocalizedDescriptionKey: message]) }
     private func verifyDirectory() throws {
         var value = stat()
@@ -40,11 +47,12 @@ public struct RetainedRequest: Codable, Equatable, Sendable {
             guard count > 0 else { throw failure("The retained request is incomplete. Preserve it for reconciliation.") }; offset += count
         }
         let result = try JSONDecoder().decode(RetainedRequest.self, from: Data(bytes))
-        guard UUID(uuidString: result.requestID) != nil, !result.command.isEmpty else { throw failure("The retained request identity is invalid.") }
+        guard UUID(uuidString: result.requestID) != nil, !result.command.isEmpty, slot.accepts(result.command) else { throw failure("The retained request identity or control scope is invalid.") }
         return result
     }
     public func retain(_ request: RetainedRequest) throws {
         try verifyDirectory()
+        guard slot.accepts(request.command) else { throw failure("This recovery slot only accepts storage setting changes.") }
         if let prior = try pending() {
             guard prior == request else { throw failure("An earlier request has an uncertain reply. Reconcile it before submitting another action.") }; return
         }

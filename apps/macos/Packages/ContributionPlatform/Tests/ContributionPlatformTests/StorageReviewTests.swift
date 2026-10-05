@@ -21,6 +21,9 @@ final class StorageReviewTests: XCTestCase {
             XCTAssertNil(StorageReview.retention(rawDays: "14", capMiB: bad, existing: existing))
         }
         XCTAssertNil(StorageReview.retention(rawDays: "0", capMiB: "2", existing: existing))
+        XCTAssertEqual(StorageReview.managedPolicy(capGiB: "10")?.object["maxStateBytes"], .number(10_737_418_240))
+        XCTAssertEqual(StorageReview.managedPolicy(capGiB: "0.0009765625")?.object["maxStateBytes"], .number(1_048_576))
+        for bad in ["0", "0.0001", "-1", "2junk", "1e3", "99999999999999999999", "0.00097656251"] { XCTAssertNil(StorageReview.managedPolicy(capGiB: bad)) }
     }
     @MainActor func testPartialCleanupErrorRetainsTheNativeRequestAcrossReopening() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

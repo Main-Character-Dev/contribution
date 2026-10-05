@@ -7,6 +7,7 @@ import type { Response } from '@contribution/contracts';
 import { canonical, digest, Fault, id, now, redact, requireValue, terminal } from './core.js';
 import type { ObjectValue, State } from './core.js';
 import { privateDirectory } from './private-files.js';
+import { ManagedStorage } from './managed-storage.js';
 
 export interface Operation {
   operationId: string; requestId: string; repositoryId: string; kind: string; input: ObjectValue;
@@ -72,6 +73,7 @@ export class Journal {
   }
   assertAdmissionStorage(kind?: string, repositoryId?: string, input: ObjectValue = {}): void {
     const storage = this.retention(true);
+    new ManagedStorage(this).assertAdmission();
     if (!storage.admissionBlocked) return;
     // A full cap must not prevent the owner from raising that cap. This
     // exception is restricted to one reviewed retention-only control request.

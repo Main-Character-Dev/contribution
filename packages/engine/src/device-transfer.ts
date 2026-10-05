@@ -95,6 +95,7 @@ export class DeviceArtifactTransfers {
         return { transferId, offset: previous.accepted ? previous.manifest.provenance.artifact.bytes : statSync(previous.path).size, accepted: previous.accepted ?? null };
       }
       const profile = this.profile(repo, m);
+      this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
       const request = this.store.records<Incoming>('artifactIncoming').find(item => item.manifest.senderHostId === from && item.manifest.requestId === m.requestId);
       requireValue(!request, 'REQUEST_ID_CONFLICT', 'This sender already retained a transfer for this request.');
       const pending = this.store.records<Incoming>('artifactIncoming').filter(item => !item.accepted || this.store.record<{ state: string }>('storageEviction', `incoming:${item.manifest.transferId}`)?.state !== 'removed');

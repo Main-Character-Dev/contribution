@@ -4,6 +4,7 @@ These are JSON Schema draft 2020-12 definitions for the proposed version-one int
 
 | Schema | Validates |
 |---|---|
+| [storage-policy.schema.json](storage-policy.schema.json) | Private managed-data cap, separate from the original raw-log policy |
 | [device-profile.schema.json](device-profile.schema.json) | Private project app identity and explicit offline Xcode build configurations |
 | [repository.schema.json](repository.schema.json) | Tracked repository configuration |
 | [machine.schema.json](machine.schema.json) | Private host configuration |
@@ -26,7 +27,7 @@ Check command arguments are arrays. The engine executes them directly and never 
 
 Version one includes the generic built-in IDs `clean-primary`, `source-ownership`, `safe-ref-update`, and `outgoing-secrets`. Their exact selected phase and enforcement are defined by the adapter, with applicability reported separately from pass/fail. `outgoing-secrets` requires a configured scanner and current input/rule identity. Selecting it without an available implementation is unavailable or a configuration error, never an implicit pass. An unrecognized built-in or adapter fails configuration. Existing repository adapters preserve their more specific policies and scan semantics.
 
-Resolve all thirteen schemas in one local registry. `device-capability.schema.json` also defines the shared context and network shapes referenced by the other device schemas. Validate the JSON examples through these definitions and test the behavioral contracts through the public service and CLI. [original package checks](../../../docs/SOURCE_PACKAGE.md) records validation performed while assembling this handoff and is not an application test result.
+Resolve all fourteen schemas in one local registry. `device-capability.schema.json` also defines the shared context and network shapes referenced by the other device schemas. Validate the JSON examples through these definitions and test the behavioral contracts through the public service and CLI. [original package checks](../../../docs/SOURCE_PACKAGE.md) records validation performed while assembling this handoff and is not an application test result.
 
 The original Git envelope, repository status, event, tracked repository, and submission-metadata schemas retain their existing meanings. Machine configuration adds only the optional `remoteDevices` object, whose two settings default to false. Existing configuration examples remain valid. Device details are additional contracts and do not add a new Git operation state or change canonical host ownership.
 

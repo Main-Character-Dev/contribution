@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:storage-policy:v1",
+  "title": "Private managed-data storage policy",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "maxStateBytes": { "type": "integer", "minimum": 1048576, "maximum": 9007199254740991, "default": 10737418240, "description": "Logical bytes under the private Contribution support directory. Source repository object stores and externally selected exports are outside this boundary." }
+  },
+  "required": ["schemaVersion", "maxStateBytes"],
+  "additionalProperties": false
+}

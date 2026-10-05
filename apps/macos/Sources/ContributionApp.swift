@@ -57,6 +57,7 @@ import ContributionPlatform
         guard !busy else { return }; busy = true; defer { busy = false }
         if let response = await call("service.status") {
             let result = response.fields["result"]?.object ?? [:]; service = result["state"]?.text ?? "Unknown"; paused = result["paused"]?.boolean ?? false
+            if case .object = result["storageHold"] { service = "Storage needs attention — open Settings → Storage" }
             localHostID = result["hostId"]?.text ?? ""; devicesEnabled = result["remoteDevicesEnabled"]?.boolean ?? false
         } else { service = "Service unavailable"; return }
         if let response = await call("repos.list") {

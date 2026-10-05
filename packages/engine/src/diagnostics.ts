@@ -3,6 +3,7 @@ import type { Journal, Operation } from './journal.js';
 import type { Repositories } from './repositories.js';
 import { now } from './core.js';
 import type { ObjectValue } from './core.js';
+import { ManagedStorage } from './managed-storage.js';
 
 const states = ['queued', 'queued_local', 'running', 'waiting', 'needs_attention', 'outcome_unknown', 'failed', 'interrupted', 'cancelled', 'succeeded'];
 const kinds = ['initialize', 'checks', 'submit', 'push', 'seed', 'mirror', 'transfer.seed', 'transfer.mirror', 'device', 'remote.device', 'remote.checks', 'remote.push', 'external_gate', 'artifact_transfer', 'device_transfer', 'settings.apply'];
@@ -26,7 +27,7 @@ export class Diagnostics {
       return aliases.get(key)!;
     };
     const project = (id: string): string => alias('project', id);
-    const settings = this.store.getMeta<ObjectValue>('settings') ?? {}, storage = this.store.retention();
+    const settings = this.store.getMeta<ObjectValue>('settings') ?? {}, storage = this.store.retention(), managed = new ManagedStorage(this.store).usage();
     const summarize = (op: Operation): ObjectValue => {
       const result = object(op.result), gate = object(result['gate']), receipt = object(result['deviceOperation']);
       const effects = Array.isArray(receipt['effects']) ? receipt['effects'].slice(0, 32) : [];
@@ -51,6 +52,7 @@ export class Diagnostics {
         remoteDevicesEnabled: object(settings['remoteDevices'])['enabled'] === true, databaseSchema: 1 },
       storage: { rawLogBytes: count(storage.totalBytes), protectedLogBytes: count(storage.protectedBytes), eligibleLogBytes: count(storage.eligibleBytes), maxLogBytes: count(storage.maxLogBytes), admissionBlocked: storage.admissionBlocked,
         accounting: 'raw_logs_only' },
+      managedData: { logicalBytes: managed.logicalBytes, maxStateBytes: managed.maxStateBytes, complete: managed.complete, admissionBlocked: managed.admissionBlocked, reason: managed.reason, categories: managed.categories },
       repositoryCoverage: { matching: repositories.length, included: Math.min(repositories.length, 1000), truncated: repositories.length > 1000 },
       repositories: repositories.slice(0, 1000).map(repo => ({ project: project(repo.id),
         adapter: choice(repo.config.integration.adapter, ['generic-v1', 'migration-required', 'mathy-v1', 'maincharacter-v1', 'roboty-v1', 'glassalpha-v1']),

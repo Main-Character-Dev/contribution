@@ -39,4 +39,11 @@ public struct StorageReview: Identifiable, Sendable {
         values["rawLogDays"] = .number(Decimal(days)); values["maxLogBytes"] = .number(bytes)
         return .object(values)
     }
+    public static func managedPolicy(capGiB: String) -> JSONValue? {
+        guard capGiB.range(of: "^[0-9]+(?:\\.[0-9]+)?$", options: .regularExpression) != nil,
+              let gib = Decimal(string: capGiB, locale: Locale(identifier: "en_US_POSIX")), !gib.isNaN else { return nil }
+        var bytes = gib * 1_073_741_824, whole = Decimal(); NSDecimalRound(&whole, &bytes, 0, .plain)
+        guard bytes == whole, bytes >= 1_048_576, bytes <= 9_007_199_254_740_991 else { return nil }
+        return .object(["schemaVersion": .number(1), "maxStateBytes": .number(bytes)])
+    }
 }

@@ -708,6 +708,11 @@
           "level": "fixture",
           "source": "tests/diagnostics.test.mjs",
           "scope": "General diagnostic sharing selects bounded known fields and report-local aliases, omitting injected private strings, stable identities, raw logs and arbitrary app/device evidence. Native sheet builds; physical and GUI sharing proof remains unrun."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/managed-storage.test.mjs",
+          "scope": "Private support-directory census, separate revisioned data cap, protected-state preservation, incomplete observations and pressure-held queued dispatch. Native setting recovery preserves the original operation continuation. Active producers and long-term compaction still need remaining implementation/proof."
         }
       ],
       "nextStep": "Summary/cache/artifact lifecycle completion remains open."

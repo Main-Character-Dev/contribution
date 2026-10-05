@@ -30,6 +30,29 @@ The native Settings → Storage view exposes both cleanup categories and raw-log
 
 Accepted incoming transfer reservations are released only after a confirmed removal tombstone. Missing archive files alone never release quota. Historical begin/finish replies still return the completion receipt after expiration; a new install or transfer using unavailable output returns `ARTIFACT_EXPIRED`. Artifact listings and operation output metadata make expiration visible without rewriting the original evidence.
 
-Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, remaining build products, Git retention release, payload and backup cleanup remain separate unfinished work. These commands do not imply that all service storage is capped or expired.
+Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, remaining build products, Git retention release, payload and backup cleanup remain separate unfinished work. Cleanup does not imply that all retained sources can expire; managed-data accounting below separately limits new admission and dispatch.
 
 `tests/storage.test.mjs`, `tests/retention.test.mjs`, `tests/owned-worktrees.test.mjs` and `tests/device-transfer.test.mjs` cover terminal/pinned/unresolved decisions, stale selections, links, partial recovery, receipt replay and quota release in disposable fixtures. They do not provide physical device evidence.
+
+## Managed-data accounting and admission
+
+The separate private [storage-policy contract](../packages/contracts/schemas/storage-policy.schema.json) adds a managed-data limit without changing the original machine schema or `maxLogBytes` semantics. Its initial limit is 10 GiB. Read the policy and current usage, then apply an explicit revision-bound change:
+
+```sh
+contribution service storage-policy --json
+contribution service storage-policy --file reviewed-storage-policy.json --expected-revision REVISION --request-id REQUEST_UUID --json
+```
+
+The policy file contains `schemaVersion: 1` and `maxStateBytes`, an exact integer from 1 MiB through the maximum safe JSON integer. A repeated request returns its original result; a changed request or stale revision is rejected. The settings write and receipt share one SQLite transaction. Raising this limit remains available when managed data is full. An update maintenance hold permits policy reads but prevents changes.
+
+The read-only census counts logical sizes under Contribution’s private support directory: the journal and WAL, logs, retained payloads, backups, Git bundles, generated build/checkouts and unknown files. Hard-linked paths each count their logical size, and directories and symlink entries count their own sizes. Symbolic-link targets are not traversed. This is conservative logical accounting, not APFS allocated-space measurement. Source repositories and their Git object stores, external link targets, external application bundles and user-selected external exports remain outside this boundary.
+
+A census is bounded to 200,000 entries, 32 directory levels and two seconds. Missing/replaced directories, inaccessible state or an exceeded bound produce an explicit incomplete observation and block new admissions. An incomplete observation never means zero usage, and raising the limit does not override an incomplete census. Unknown retained files count toward the cap but do not thereby become eligible for deletion.
+
+The shared journal checks this limit before new operations. New project creation, committed-source capture and incoming Git/artifact reservations check before creating their corresponding state. The scheduler also holds already queued repository/device work while storage pressure persists, preserving its identity and position. Settings controls can reconcile the limit while normal processing is paused; cleanup and a policy increase recheck the queue. A held queue also rechecks at a bounded 30-second interval. The main view explains that storage needs attention.
+
+This is an admission and dispatch limit, not an OS filesystem quota. Already running effects, already accepted bounded transfers and durable recovery/lifecycle records can add output beyond it. Their evidence remains protected. Eligible removal still uses the reviewed cleanup commands; the cap never authorizes deletion of unknown, pinned or unresolved state. Bounding remaining producers and summary/retention-reference compaction remain separate implementation work.
+
+Native Settings → Storage shows the managed-data policy and categorized usage separately from raw-log retention. Storage setting requests have a separate restricted native continuation slot, so a cap increase can be retained and reconciled while the original operation’s reply remains unresolved. Neither request overwrites the other. The slot accepts only the storage-policy and machine-settings control commands; repository and device operations cannot use it. The current controls change retention fields only.
+
+`tests/managed-storage.test.mjs` proves category accounting, external-link isolation, unknown/shared-file treatment, incomplete observations, strict policy/revision semantics, pressure recovery, immutable replay and queued dispatch. The original twelve schema imports remain unchanged; the maintained contract registry now contains fourteen schemas including the earlier device-profile extension.

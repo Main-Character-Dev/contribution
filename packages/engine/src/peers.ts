@@ -265,6 +265,7 @@ export class Peers {
     requireValue(m.kind === 'mirror' ? repo.canonicalHostId === from : repo.canonicalHostId === this.store.hostId, 'CANONICAL_OWNER_REQUIRED', 'Transfer direction does not match canonical authority.');
     const previous = this.store.record<Transfer>('transfer', m.transferId);
     if (previous) { requireValue(digest(previous.manifest) === digest(m), 'TRANSFER_ID_CONFLICT', 'Transfer ID is immutable.'); return { transferId: m.transferId, offset: statSync(previous.path).size, accepted: previous.accepted ?? null }; }
+    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
     const directory = join(this.store.directory, 'incoming'); privateDirectory(directory);
     const path = join(directory, `${m.transferId}.bundle`);
     if (!existsSync(path)) { writeFileSync(path, '', { flag: 'wx', mode: 0o600 }); sync(path); }
