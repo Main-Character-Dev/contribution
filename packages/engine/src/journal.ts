@@ -1,5 +1,6 @@
 import { DatabaseSync, backup } from 'node:sqlite';
-import { chmodSync, readFileSync, appendFileSync, openSync, closeSync, fsyncSync, statSync, existsSync, lstatSync, readdirSync, unlinkSync } from 'node:fs';
+import { chmodSync, readFileSync, appendFileSync, openSync, closeSync, fsyncSync, statSync, existsSync, lstatSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { assertContract } from '@contribution/contracts';
 import type { Response } from '@contribution/contracts';
@@ -22,6 +23,12 @@ export class Journal {
     for (const file of [path, `${path}-wal`, `${path}-shm`]) if (existsSync(file)) {
       const info = lstatSync(file);
       requireValue(info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.(), 'UNSAFE_JOURNAL', 'Journal files must be regular files owned by this user.', 3);
+    }
+    // Check compatibility read-only before changing journal mode or metadata.
+    if (existsSync(path) && statSync(path).size) {
+      const probe = new DatabaseSync(path, { readOnly: true, allowExtension: false });
+      try { requireValue(Number(probe.prepare('PRAGMA user_version').get()?.['user_version']) <= 1, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3); }
+      finally { probe.close(); }
     }
     this.db = new DatabaseSync(path, { enableForeignKeyConstraints: true, enableDoubleQuotedStringLiterals: false, allowExtension: false });
     chmodSync(path, 0o600);
@@ -152,5 +159,27 @@ export class Journal {
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
   }
   async backup(path: string): Promise<void> { await backup(this.db, path); chmodSync(path, 0o600); }
+  async checkpointBackup(payload: string, windowId: string): Promise<ObjectValue> {
+    const root = join(this.directory, 'backups'); privateDirectory(root);
+    const directory = join(root, id()); privateDirectory(directory);
+    const path = join(directory, 'journal.sqlite');
+    const fd = openSync(path, 'wx', 0o600); closeSync(fd);
+    await this.backup(path);
+    const probe = new DatabaseSync(path, { readOnly: true, allowExtension: false });
+    let schemaVersion: number, lastEvent: number, operations: number;
+    try {
+      requireValue(probe.prepare('PRAGMA quick_check').get()?.['quick_check'] === 'ok', 'BACKUP_INVALID', 'The update backup failed its integrity check.', 3);
+      schemaVersion = Number(probe.prepare('PRAGMA user_version').get()?.['user_version']);
+      lastEvent = Number(probe.prepare('SELECT COALESCE(MAX(sequence),0) AS n FROM events').get()?.['n']);
+      operations = Number(probe.prepare('SELECT COUNT(*) AS n FROM operations').get()?.['n']);
+    } finally { probe.close(); }
+    const receipt = { schemaVersion, payload, windowId, hostId: this.hostId, createdAt: now(), operations, lastEvent,
+      sha256: createHash('sha256').update(readFileSync(path)).digest('hex'), path, restoration: 'manual_compatibility_review_required' };
+    writeFileSync(join(directory, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    for (const target of [path, join(directory, 'receipt.json'), directory, root]) {
+      const handle = openSync(target, 'r'); try { fsyncSync(handle); } finally { closeSync(handle); }
+    }
+    return receipt;
+  }
   close(): void { this.db.close(); }
 }

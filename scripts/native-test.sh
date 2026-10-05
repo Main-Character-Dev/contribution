@@ -3,9 +3,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 bash scripts/dev.sh build
 python3 scripts/check-native-toolchain.py
+python3 scripts/bootstrap-sparkle.py
 node_path="$PWD/.tools/node/bin/node"
 "$node_path" scripts/prepare-swift-parity.mjs
 CONTRIBUTION_ROOT="$PWD" xcrun swift test \
   --package-path apps/macos/Packages/ContributionPlatform \
   --scratch-path "$PWD/.build/swift" --disable-sandbox \
+  --cache-path "$PWD/.build/swift-cache" \
   -Xswiftc -module-cache-path -Xswiftc "$PWD/.build/swift-module-cache"

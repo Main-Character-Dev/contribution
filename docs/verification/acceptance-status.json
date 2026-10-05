@@ -538,18 +538,30 @@
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
       "implementation": "partial",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Finish and exercise external/manual/scheduled activity discovery, historical PR transitions, hosted logs and notification delivery."
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/github-logs.test.mjs",
+          "scope": "Exact workflow-run attempt and job association, redirected log delivery, bounded redaction and missing/expired/auth states are fixture verified. Real project automation and native interaction remain unqualified."
+        }
+      ],
+      "nextStep": "Complete signed/native/live-host variants in the original acceptance case; fixture evidence is partial."
     },
     {
       "id": "AT-G06",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
       "implementation": "partial",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Finish and exercise external/manual/scheduled activity discovery, historical PR transitions, hosted logs and notification delivery."
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/github.test.mjs",
+          "scope": "Bounded idle workflow discovery, continued older active-run observation and monotonic reruns are fixture verified. Cross-host milestone claims have separate notification fixtures; real idle monitoring remains unqualified."
+        }
+      ],
+      "nextStep": "Complete signed/native/live-host variants in the original acceptance case; fixture evidence is partial."
     },
     {
       "id": "AT-O01",
@@ -676,9 +688,14 @@
           "level": "fixture",
           "source": "tests/integration/native-payload.mjs",
           "scope": "Compiled native launcher materializes verified immutable payloads and survives simulated bundle replacement. Signing, notarization and real updater paths remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/maintenance.test.mjs",
+          "scope": "Durable hold, crash recovery, helper exit and verified backup, cancellation, replacement payload activation, unchanged queued identities and attempt payload pinning are fixture verified. Actual Sparkle installation and signed engine replacement remain unqualified."
         }
       ],
-      "nextStep": "Signing, notarization and real updater paths remain open."
+      "nextStep": "Complete signed/native/live-host variants in the original acceptance case; fixture evidence is partial."
     },
     {
       "id": "AT-U03",
@@ -699,10 +716,16 @@
       "id": "AT-U04",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/maintenance.test.mjs",
+          "scope": "An older engine refuses a newer journal read-only without changing its bytes or restoring a backup. Compatible replacement and cancellation preserve queued work. Actual schema migration and signed rollback remain unqualified."
+        }
+      ],
+      "nextStep": "Complete signed/native/live-host variants in the original acceptance case; fixture evidence is partial."
     },
     {
       "id": "AT-U05",

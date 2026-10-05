@@ -6,6 +6,7 @@ import ContributionPlatform
 @MainActor @Observable private final class Workspace {
     let client = ServiceClient()
     let notifications = LocalNotifications()
+    let updater = ReleaseUpdater()
     @ObservationIgnored private var monitoring: Task<Void, Never>?
     var notificationContext: NotificationContext?
     var repositories: [JSONValue] = []
@@ -23,6 +24,7 @@ import ContributionPlatform
     func startMonitoring() {
         guard monitoring == nil else { return }
         monitoring = Task { [weak self] in
+            await self?.updater.reconcileInstalledUpdate()
             while !Task.isCancelled {
                 guard let self else { return }
                 await refresh(); await notifications.poll(client: client)
@@ -330,11 +332,20 @@ private struct ContributionSettings: View {
         Form {
             Section("Background service") {
                 LabeledContent("Registration", value: registration)
-                Button("Register bundled service") { do { try ServiceRegistration.register(); registration = ServiceRegistration.status } catch { workspace.error = error.localizedDescription } }
+                Button("Register bundled service") { do { try ServiceRegistration.register(); registration = ServiceRegistration.status } catch { workspace.error = error.localizedDescription } }.disabled(workspace.updater.recoveryRequired)
                 Button("Open Login Items settings") { ServiceRegistration.openSettings() }
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Version") { LabeledContent("Contribution", value: BuildIdentity.version); Text("Development build · Remote device capabilities remain unverified").foregroundStyle(.secondary) }
+            Section("Updates") {
+                Text(workspace.updater.message).textSelection(.enabled)
+                Button(workspace.updater.recoveryRequired ? "Continue signed update" : "Check for signed updates") { Task { await workspace.updater.check() } }
+                    .disabled(!workspace.updater.configured || workspace.updater.busy)
+                if workspace.updater.recoveryRequired {
+                    Button("Cancel maintenance before installation") { Task { await workspace.updater.cancelBeforeUpdate() } }
+                    Button("Reconcile installed update") { Task { await workspace.updater.reconcileInstalledUpdate() } }.disabled(workspace.updater.busy)
+                }
+            }
             Section("Notifications") {
                 LabeledContent("Permission", value: notificationPermission)
                 Button("Allow milestone notifications") { Task { do { try await workspace.notifications.requestPermission(); notificationPermission = await workspace.notifications.permission() } catch { workspace.error = error.localizedDescription } } }

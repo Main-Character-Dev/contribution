@@ -24,8 +24,8 @@ export async function fixture() {
   const build = spawnSync(process.execPath, [join(source, 'scripts/package-payload.mjs'), payload], { encoding: 'utf8' });
   assert.equal(build.status, 0, build.stderr);
   let child, stderr = '';
-  const start = async () => {
-    stderr = ''; child = spawn(join(payload, 'runtime/node'), [join(payload, 'node_modules/@contribution/engine/dist/service-main.js'), '--payload', payload, '--state-dir', state], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const start = async (selectedPayload = payload) => {
+    stderr = ''; child = spawn(join(selectedPayload, 'runtime/node'), [join(selectedPayload, 'node_modules/@contribution/engine/dist/service-main.js'), '--payload', selectedPayload, '--state-dir', state], { stdio: ['ignore', 'pipe', 'pipe'] });
     child.stderr.on('data', data => { stderr += data; });
     await Promise.race([once(child.stdout, 'data'), once(child, 'exit').then(() => { throw new Error(stderr || 'Service exited before readiness'); }),
       new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error(`Service readiness timeout: ${stderr}`)), 10000); timer.unref(); })]);

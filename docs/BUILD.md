@@ -1,6 +1,6 @@
 # Local development
 
-S0 targets Apple Silicon and macOS 14.0 using Xcode 27.0 build 27A266a, Swift 6.4 in Swift 6 language mode, and the macOS 27.0 SDK. The proof host runs macOS 27.0.1; runtime behavior on macOS 14 is not independently exercised. The app uses APIs available at its deployment target and its binary records `minos 14.0`.
+Contribution targets Apple Silicon and macOS 14.0 using Xcode 27.0 build 27A266a, Swift 6.4 in Swift 6 language mode, and the macOS 27.0 SDK. The proof host runs macOS 27.0.1; runtime behavior on macOS 14 is not independently exercised. The app uses APIs available at its deployment target and its binary records `minos 14.0`.
 
 `toolchain.json` pins Contribution's tools; `version.json` is the only application version source. Enrolled projects retain their own runtime selection through the adapter boundary. This workspace does not read or alter their pins.
 
@@ -10,9 +10,9 @@ S0 targets Apple Silicon and macOS 14.0 using Xcode 27.0 build 27A266a, Swift 6.
 bash scripts/setup.sh
 ```
 
-Prerequisites are the exact Xcode above (installed separately), Python 3.11 or newer with safe `tarfile` extraction support, and network access to the official Node distribution and npm registry. The bootstrap downloads Node 24.21.0 and pnpm 11.23.0 under `.tools`, compares Node's pinned SHA-256 to the official checksum manifest, verifies downloaded bytes, and verifies pnpm's pinned registry SHA-512. Dependencies use the committed pnpm lockfile with frozen installation. No global runtime selection, package-manager installation, shell profile, Git hooks, login item or service registration is changed.
+Prerequisites are the exact Xcode above (installed separately), Python 3.11 or newer with safe `tarfile` extraction support, and network access to the official Node distribution, npm registry and pinned Sparkle GitHub release. Native commands seed a checksum-verified repository-local SwiftPM artifact cache. The bootstrap downloads Node 24.21.0 and pnpm 11.23.0 under `.tools`, compares Node's pinned SHA-256 to the official checksum manifest, verifies downloaded bytes, and verifies pnpm's pinned registry SHA-512. Dependencies use the committed pnpm lockfile with frozen installation. No global runtime selection, package-manager installation, shell profile, Git hooks, login item or service registration is changed.
 
-If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global `xcode-select` as a setup side effect. Toolchain mismatches fail with a reason. The root TypeScript workspace is portable in principle, but this S0 bootstrap and native build are qualified only on Apple Silicon macOS.
+If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global `xcode-select` as a setup side effect. Toolchain mismatches fail with a reason. The root TypeScript workspace is portable in principle, but this bootstrap and native build are qualified only on Apple Silicon macOS.
 
 ## Commands
 
@@ -29,7 +29,9 @@ If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global
 | `bash scripts/dev.sh native:build` | Build/inspect an unsigned development `.app` with the shared Xcode scheme |
 | `bash scripts/dev.sh cli help` | Supported development command surface |
 | `bash scripts/dev.sh cli version --json` | One response envelope reporting shared development identity |
-| `bash scripts/dev.sh cli service status --json` | Rejected response, `SERVICE_NOT_INSTALLED`, exit 3 |
+| `bash scripts/dev.sh cli service status --json` | Inspect the user service, or report its absence with exit 3 |
+| `bash scripts/package-app.sh /absolute/new/Contribution.app` | Assemble a fresh unsigned app with immutable engine/runtime, service launcher and CLI |
+| `bash scripts/check-native-client.sh` | Compile the real Swift IPC client and exercise a disposable service |
 
 For pure JSON stdout without the pnpm script-runner prefix, invoke the compiled entry point directly:
 
@@ -37,20 +39,16 @@ For pure JSON stdout without the pnpm script-runner prefix, invoke the compiled 
 .tools/node/bin/node packages/cli/dist/main.js version --json
 ```
 
-The CLI is a private checkout artifact. It is not placed in a global command directory. Help and version work independently of a service. Known product commands fail with exit 3 and no operation identity; unknown usage fails with exit 2. `--jsonl` is unavailable. No command accepts a job, executes Git/device/update effects, or writes operation state.
+The development CLI is not globally installed. Help and version work without the service. Product commands use authenticated private IPC and report missing service readiness truthfully. Operation admission, retained results, logs and exit semantics are implemented by the shared engine; see [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the partial acceptance boundary.
 
-## Native shell
+## Native application
 
-```sh
-open .build/native/Build/Products/Debug/Contribution.app
-```
+The shared Xcode scheme builds an unsigned SwiftUI window and menu bar. It includes repositories, retained activity and logs, publication preview, GitHub activity, notification settings, explicit service/CLI setup actions, and the release updater boundary. Registration and CLI linking are user actions; builds do neither automatically. The development bundle identifier remains `dev.contribution.foundation`.
 
-Or open `apps/macos/Contribution.xcodeproj`, select the shared Contribution scheme and Run. The window and menu bar report service unavailability. “Open Contribution” opens the window; “Quit Contribution” quits this shell. There are no permissions, registration, pairing or updater actions.
+The native package owns the authenticated IPC client and platform integration. Workflow authority remains in the separate engine service. Build outputs, dependency stores and logs stay under ignored `.build`, `.cache`, `.tools` and `node_modules` directories. The artifact checker allows the app executable/plists, license notice and the exact checksum-pinned Sparkle runtime. Bundled engine assembly independently inventories hashes and rejects stale JavaScript without current source. Node's upstream license travels with its binary. [The payload allowlist](../config/payload-allowlist.json) constrains inputs; the checkout is never packaged wholesale.
 
-The local Swift package owns checked client representations and a minimal `ContributionClient` boundary. Its development implementation has no IPC transport. Scheduling and workflow authority remain with the future engine/service. Debug and Release project configurations disable App Sandbox and paid signing; hardened runtime is a future release qualification, not established by this unsigned build. The development bundle ID `dev.contribution.foundation` is provisional. Packaging an installed payload, bundled engine/CLI/runtime, helper registration, Developer ID/notarization and updates are deferred to M0/M6.
-
-Build outputs, dependency stores and logs stay under ignored `.build`, `.cache`, `.tools` and `node_modules` directories. The app contains only its executable, Info.plist and PkgInfo; the artifact checker rejects additional resources. [The explicit payload allowlist](../config/payload-allowlist.json) defines development inputs and disables release packaging pending M0. Never package the checkout wholesale.
+[UPDATE_LIFECYCLE.md](UPDATE_LIFECYCLE.md) describes durable maintenance, backups and the unqualified signing/notarization candidate pipeline. Actual registration, signed updates and physical restart behavior require the deferred installation setup. Opening a development UI is not installation or release qualification.
 
 ## Evidence limits
 
-These commands prove the S0 build and contract boundaries. They do not satisfy application acceptance, installed-service lifecycle, repository admission, durability, two-Mac behavior, signing, updates or physical device capability. See [VERIFICATION.md](VERIFICATION.md) and [D0_INVENTORY.md](D0_INVENTORY.md).
+Builds and disposable fixtures prove only their recorded boundaries. They do not replace installed-service, two-Mac, signing, update-path or physical-device acceptance. See [VERIFICATION.md](VERIFICATION.md) and [D0_INVENTORY.md](D0_INVENTORY.md).

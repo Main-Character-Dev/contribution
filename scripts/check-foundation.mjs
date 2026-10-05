@@ -43,7 +43,11 @@ assert.equal(pkg.engines.node, pins.node); assert.equal(read('.node-version').tr
 assert.equal(pkg.packageManager, 'pnpm@' + pins.pnpm);
 assert.equal(pkg.engines.pnpm, pins.pnpm); assert.equal(pkg.devDependencies.typescript, pins.typescript);
 const allowlist = json('config/payload-allowlist.json');
-assert.equal(allowlist.releasePackaging, 'unavailable'); assert.deepEqual(allowlist.releaseInputs, []);
+const sparkle = json('config/sparkle.json'), swiftPackage = read('apps/macos/Packages/ContributionPlatform/Package.swift');
+assert(swiftPackage.includes(sparkle.url) && swiftPackage.includes(sparkle.sha256), 'Sparkle pins drifted');
+assert.equal(hash('apps/macos/Packages/ContributionPlatform/Resources/Sparkle-LICENSE.txt'), '389a4e4e9a32f059775b13a06e25a591445ba229d2838d26dd3e7c0c45127cfe');
+assert.equal(allowlist.releasePackaging, 'candidate_pipeline_unqualified');
+assert.deepEqual(allowlist.releaseInputs, ['scripts/prepare-release.py', 'scripts/verify-update-signature.mjs', 'config/node-entitlements.plist', 'config/sparkle.json']);
 for (const input of [...allowlist.developmentAppInputs, ...allowlist.developmentCLIInputs]) {
   assert(!input.includes('..') && /^(apps\/macos\/|packages\/)/.test(input), input);
   assert(!/(private|docs|\.env|signing|pairing)/.test(input), input);

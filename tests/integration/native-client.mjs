@@ -19,5 +19,9 @@ try {
   const nodeOperation = await f.call('checks.run', { repo: repo.id, canonical: true, requestId: randomUUID() });
   await f.wait(nodeOperation.operationId);
   assert.equal(native('runs.get', { operationId: nodeOperation.operationId }).operationId, nodeOperation.operationId);
+  const window = native('maintenance.begin', { requestId: randomUUID() }).result.window;
+  assert.equal(native('maintenance.status').result.ready, true);
+  assert.equal(native('service.resume').error.code, 'SERVICE_MAINTENANCE');
+  assert.equal(native('maintenance.resume', { windowId: window.id, observedPayload: native('version').result.payload, outcome: 'cancelled' }).error, null);
   console.log('Swift native client and Node CLI/service share authenticated IPC, payload identity, admission and retained operation results.');
 } finally { await f.cleanup(); }

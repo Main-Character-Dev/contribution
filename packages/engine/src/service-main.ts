@@ -14,10 +14,11 @@ try {
   const directory = resolve(option('--state-dir') ?? defaultStateDirectory());
   const lock = new ServiceLock(directory), journal = new Journal(directory), engine = new Engine(journal, payload);
   const server = await listen(engine);
-  journal.setMeta('maintenance', false); await engine.recoverObservedEffects(); engine.kick();
+  journal.setMeta('maintenance', Boolean(engine.maintenance.current()));
+  if (!engine.maintenance.current()) { await engine.recoverObservedEffects(); engine.kick(); }
   process.stdout.write(JSON.stringify({ state: 'ready', hostId: journal.hostId, payload: payload.identity }) + '\n');
   let closing = false;
-  const monitor = setInterval(() => { if (!engine.stopping) void engine.github.tick(engine.repos.all()); }, 30000);
+  const monitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('maintenance')) void engine.github.tick(engine.repos.all()); }, 30000);
   const peerMonitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('paused') && !journal.getMeta('maintenance')) void engine.peers.tick(); }, 1500);
   const close = (): void => {
     if (closing) return; closing = true; engine.stopping = true; clearInterval(monitor); clearInterval(peerMonitor);
@@ -26,7 +27,7 @@ try {
       if (engine.active.size || engine.backgroundBusy) return;
       clearInterval(drain); server.close(() => {
         try { unlinkSync(socketPath(directory)); } catch { /* server may remove it */ }
-        journal.close(); lock.release();
+        engine.maintenance.stopped(); journal.close(); lock.release();
         if (engine.restartRequested) {
           // Replace this launchd-owned process only after every worker and peer
           // transfer drained and the database/socket/lock were closed.

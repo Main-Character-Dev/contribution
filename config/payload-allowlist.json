@@ -6,7 +6,8 @@
     "apps/macos/Config/Info.plist",
     "apps/macos/Config/Version.xcconfig",
     "apps/macos/ServiceLauncher.swift",
-    "apps/macos/Config/dev.contribution.service.plist"
+    "apps/macos/Config/dev.contribution.service.plist",
+    "apps/macos/Packages/ContributionPlatform/Resources/Sparkle-LICENSE.txt"
   ],
   "developmentCLIInputs": [
     "packages/cli/dist/*.js",
@@ -15,8 +16,8 @@
     "packages/contracts/dist/**/*.js",
     "packages/contracts/schemas/*.json"
   ],
-  "releasePackaging": "unavailable",
-  "releaseInputs": [],
+  "releasePackaging": "candidate_pipeline_unqualified",
+  "releaseInputs": ["scripts/prepare-release.py", "scripts/verify-update-signature.mjs", "config/node-entitlements.plist", "config/sparkle.json"],
   "developmentEngine": {
     "workspacePackages": [
       "contracts",
@@ -25,6 +26,7 @@
       "cli"
     ],
     "runtimeBinary": ".tools/node/bin/node",
+    "runtimeLicense": ".tools/node/LICENSE",
     "runtimeDependencies": [
       "ajv",
       "ajv-formats"

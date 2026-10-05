@@ -20,10 +20,13 @@ import { ProjectRuntimes } from './project-runtime.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
 import { Milestones } from './notifications.js';
 import type { Notice } from './notifications.js';
+import { Maintenance } from './maintenance.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
+  'maintenance.begin': ['requestId'], 'maintenance.status': [], 'maintenance.stop': ['windowId'],
+  'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
   'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter'],
@@ -51,6 +54,7 @@ export class Engine {
   readonly github: GitHubMonitor;
   readonly peers: Peers;
   readonly devices: Devices;
+  readonly maintenance: Maintenance;
   readonly active = new Map<string, AbortController>();
   readonly activeRepositories = new Set<string>();
   stopping = false;
@@ -58,8 +62,10 @@ export class Engine {
   private scheduled = false;
   private notificationRefresh = false;
   private notificationRefreshAt = 0;
-  get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy; }
+  private requests = 0;
+  get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy || this.requests > 0; }
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture' }) {
+    this.maintenance = new Maintenance(store, payload.identity);
     this.repos = new Repositories(store); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
     this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
     this.peers.cancelLocal = op => this.cancel(op);
@@ -93,7 +99,7 @@ export class Engine {
   }
   settings(): Machine { return this.store.getMeta<Machine>('settings')!; }
   async refreshNotifications(): Promise<void> {
-    if (this.notificationRefresh || this.stopping || Date.now() < this.notificationRefreshAt) return;
+    if (this.notificationRefresh || this.stopping || this.store.getMeta('maintenance') || Date.now() < this.notificationRefreshAt) return;
     this.notificationRefresh = true; this.notificationRefreshAt = Date.now() + 30000;
     try {
       await Promise.all(this.repos.all().filter(repo => repo.availability === 'both-macs').map(async repo => {
@@ -202,15 +208,48 @@ export class Engine {
     return { settings: config, revision: digest(config) };
   }
   async dispatch(value: unknown): Promise<Response> {
+    // Track the complete asynchronous request, including operations outside the
+    // scheduler (pairing, capture, observations and hooks), before any await.
+    const command = (value as Request | null)?.command;
+    const lifecycle = typeof command === 'string' && (command.startsWith('maintenance.') || ['service.restart', 'update.apply', 'service.status'].includes(command));
+    if (!lifecycle) this.requests++;
+    try { return await this.handle(value); } finally { if (!lifecycle) this.requests--; }
+  }
+  private async handle(value: unknown): Promise<Response> {
     try {
       const input = object(value); requireValue(input['schemaVersion'] === 1, 'SCHEMA_UNSUPPORTED', 'Only request schema version 1 is supported.', 2);
       requireValue(Object.keys(input).every(key => ['schemaVersion', 'command', 'args', 'cwd'].includes(key)), 'INVALID_REQUEST', 'Unexpected request fields.', 2);
       const command = string(input['command'], 'command'), args = object(input['args']), cwd = string(input['cwd'], 'cwd');
       const fields = allowed[command]; requireValue(fields, 'OPERATION_UNSUPPORTED', 'This command is not available in this payload.', 3);
       requireValue(Object.keys(args).every(key => fields.includes(key)), 'INVALID_USAGE', 'Unsupported argument combination.', 2);
-      if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, distribution: this.payload.distribution, service: 'running' });
+      requireValue(!this.maintenance.busy || ['version', 'service.status', 'maintenance.status'].includes(command), 'MAINTENANCE_BUSY', 'The final update checkpoint is being saved. Wait for it to finish.', 4);
+      requireValue(!this.stopping || ['version', 'service.status', 'maintenance.status'].includes(command), 'SERVICE_STOPPING', 'The service is stopping. Reconnect after the maintenance window is reconciled.', 3);
+      if (this.store.getMeta('maintenance') && !command.startsWith('maintenance.')) {
+        const reads = ['version', 'doctor', 'service.status', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list'];
+        // An existing managed Git child must finish its gate so the active job
+        // can drain. A new external push cannot start inside this window.
+        requireValue(reads.includes(command) || (command === 'hook.pre-push' && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+          'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
+      }
+      if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
+      if (command === 'maintenance.status') {
+        const blockers = this.maintenance.blockers(this.active.size, this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy, this.requests);
+        return completed({ window: this.maintenance.current() ?? null, ready: this.maintenance.isReady(blockers), blockers, payload: this.payload.identity });
+      }
+      if (command === 'maintenance.stop') {
+        const blockers = this.maintenance.blockers(this.active.size, this.notificationRefresh || this.github.busy || this.peers.busy, this.requests);
+        const window = await this.maintenance.stop(string(args['windowId'], 'windowId'), blockers);
+        this.stopping = true; return completed({ window, state: 'stop_requested', helperStopped: false });
+      }
+      if (command === 'maintenance.resume') {
+        requireValue(['cancelled', 'activated'].includes(String(args['outcome'])), 'INVALID_MAINTENANCE_OUTCOME', 'Select cancelled or activated.', 2);
+        const result = this.maintenance.resume(string(args['windowId'], 'windowId'), string(args['observedPayload'], 'observedPayload'), args['outcome'] as 'cancelled' | 'activated');
+        this.kick(); return completed(result);
+      }
+      if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
-        maintenance: this.store.getMeta('maintenance') ?? false, active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, payload: this.payload.identity });
+        maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
+        active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, payload: this.payload.identity, processId: process.pid });
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
         database: { version: 1, journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
         devices: { enabled: this.settings().remoteDevices?.enabled ?? false, physicalQualification: 'unverified' } });

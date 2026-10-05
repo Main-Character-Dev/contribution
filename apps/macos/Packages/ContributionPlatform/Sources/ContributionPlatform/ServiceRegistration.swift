@@ -3,6 +3,7 @@ import ServiceManagement
 
 @MainActor public enum ServiceRegistration {
     private static var service: SMAppService { .agent(plistName: "dev.contribution.service.plist") }
+    public static var isEnabled: Bool { service.status == .enabled }
     public static var status: String {
         switch service.status {
         case .enabled: "Enabled"
