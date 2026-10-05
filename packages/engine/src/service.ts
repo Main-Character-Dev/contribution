@@ -33,11 +33,13 @@ import { Maintenance } from './maintenance.js';
 import { StorageRetention } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
 import { RepositoryRemoval } from './repository-removal.js';
+import { Diagnostics } from './diagnostics.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
   'service.storage': ['preview', 'scopeToken', 'requestId', 'worktrees'],
+  'service.diagnostics': ['operationId'],
   'maintenance.begin': ['requestId'], 'maintenance.status': [], 'maintenance.stop': ['windowId'],
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
@@ -289,7 +291,7 @@ export class Engine {
       requireValue(!this.maintenance.busy || ['version', 'service.status', 'maintenance.status'].includes(command), 'MAINTENANCE_BUSY', 'The final update checkpoint is being saved. Wait for it to finish.', 4);
       requireValue(!this.stopping || ['version', 'service.status', 'maintenance.status'].includes(command), 'SERVICE_STOPPING', 'The service is stopping. Reconnect after the maintenance window is reconciled.', 3);
       if (this.store.getMeta('maintenance') && !command.startsWith('maintenance.')) {
-        const reads = ['version', 'doctor', 'service.status', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
+        const reads = ['version', 'doctor', 'service.status', 'service.diagnostics', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
         requireValue(reads.includes(command) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
@@ -327,6 +329,7 @@ export class Engine {
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
         database: { version: 1, journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
         devices: { enabled: this.settings().remoteDevices?.enabled ?? false, physicalQualification: 'unverified' } });
+      if (command === 'service.diagnostics') return completed({ diagnostics: new Diagnostics(this.store, this.repos).snapshot(args['operationId'] === undefined ? undefined : string(args['operationId'], 'operationId')) });
       if (command === 'service.pause' || command === 'service.resume') {
         this.store.setMeta('paused', command === 'service.pause'); this.kick(); return completed({ paused: command === 'service.pause' });
       }

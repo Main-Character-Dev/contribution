@@ -11,6 +11,7 @@ The S0 development foundation is recorded in [SETUP_STATUS.md](SETUP_STATUS.md).
 | [Requirements review](REQUIREMENTS_REVIEW.md) | Resolved gaps, clarifications, and remaining evidence |
 | [Repository setup](REPOSITORY_SETUP.md) | Exact scope and exit criteria for the next chat |
 | [Roadmap](ROADMAP.md) | S0, core milestones, device track, and dependencies |
+| [Diagnostic sharing](DIAGNOSTIC_SHARING.md) | Redacted summaries and controlled local details |
 | [Repository removal](REPOSITORY_REMOVAL.md) | Owned-hook removal, retained evidence and interrupted removal |
 | [Verification](VERIFICATION.md) | Evidence levels and current incomplete cases |
 | [Acceptance hardening](ACCEPTANCE_HARDENING.md) | Coverage of fifteen robustness checks and five focused additions |

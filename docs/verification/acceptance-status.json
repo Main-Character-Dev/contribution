@@ -703,6 +703,11 @@
           "level": "fixture",
           "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/StorageReviewTests.swift",
           "scope": "Native cleanup binds category and reviewed token; partial removal retains the same request across client reopen and early maintenance refusal. Log-policy editing preserves summary settings. Actual GUI qualification remains open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/diagnostics.test.mjs",
+          "scope": "General diagnostic sharing selects bounded known fields and report-local aliases, omitting injected private strings, stable identities, raw logs and arbitrary app/device evidence. Native sheet builds; physical and GUI sharing proof remains unrun."
         }
       ],
       "nextStep": "Summary/cache/artifact lifecycle completion remains open."

@@ -396,7 +396,7 @@ private struct OperationDetail: View {
                     .onChange(of: workspace.selectedOperation) { _, _ in followingLog = true }
                 Text("Showing up to 2,000 retained lines. Closing this window leaves accepted work running.").font(.caption).foregroundStyle(.secondary)
             }.padding()
-            .sheet(isPresented: $showDiagnostics) { DiagnosticsSheet(value: workspace.detail) }
+            .sheet(isPresented: $showDiagnostics) { DiagnosticsSheet(client: workspace.client, operationID: selected, localDetails: workspace.detail) }
         } else { ContentUnavailableView("Select an operation", systemImage: "list.bullet.rectangle", description: Text("Inspect its progress, delivery evidence, and retained output.")) }
     }
     private func exportLog() {
@@ -421,11 +421,6 @@ private struct PublicationSheet: View {
         }.padding(24).frame(width: 560)
     }
 }
-private struct DiagnosticsSheet: View {
-    let value: JSONValue
-    @Environment(\.dismiss) private var dismiss
-    var body: some View { VStack { ScrollView { Text(value.formatted).font(.body.monospaced()).textSelection(.enabled) }; Button("Done") { dismiss() } }.padding().frame(width: 650, height: 480) }
-}
 private struct ContributionMenu: View {
     @Bindable var workspace: Workspace
     @Environment(\.openWindow) private var openWindow
@@ -440,6 +435,7 @@ private struct ContributionMenu: View {
 }
 private struct ContributionSettings: View {
     @Bindable var workspace: Workspace
+    @State private var showServiceDiagnostics = false
     @State private var registration = ServiceRegistration.status
     @State private var cliStatus = CLIInstallation().status
     @State private var notificationPermission = "Checking…"
@@ -458,6 +454,7 @@ private struct ContributionSettings: View {
             Form {
             Section("Background service") {
                 LabeledContent("Registration", value: registration)
+                Button("Service diagnostics…") { showServiceDiagnostics = true }
                 Button("Register bundled service") { do { try ServiceRegistration.register(); registration = ServiceRegistration.status } catch { workspace.error = error.localizedDescription } }.disabled(workspace.updater.recoveryRequired)
                 Button("Open Login Items settings") { ServiceRegistration.openSettings() }
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
@@ -470,6 +467,7 @@ private struct ContributionSettings: View {
                 Text("Add ~/.local/bin to your shell PATH. This action preserves any unrelated executable already at that location.").font(.caption).foregroundStyle(.secondary)
             }
             }.formStyle(.grouped).tabItem { Label("Setup", systemImage: "gearshape") }
+                .sheet(isPresented: $showServiceDiagnostics) { DiagnosticsSheet(client: workspace.client) }
             Form {
                 Section("Repositories on this Mac") {
                     ForEach(workspace.repositories, id: \.identity) { repository in
