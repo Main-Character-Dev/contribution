@@ -1,4 +1,4 @@
-import { mkdirSync, lstatSync, readdirSync, readFileSync, writeFileSync, openSync, closeSync, fsyncSync, existsSync } from 'node:fs';
+import { mkdirSync, lstatSync, readdirSync, writeFileSync, openSync, closeSync, fsyncSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { reportingEnvironment, reportingPatch } from '@contribution/adapters';
 import { digest, requireValue, now, id } from './core.js';
@@ -6,6 +6,7 @@ import type { ObjectValue } from './core.js';
 import type { Journal, Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import { identity, gitText } from './git.js';
+import { readStableFile } from './bounded-file.js';
 
 interface AttemptPaths { directory: string; statusLog: string; summaryLog: string; repairJson: string; repairPrompt: string; archive: string }
 interface Attempt { operationId: string; attemptId: string; repositoryId: string; adapter: string; paths: AttemptPaths; createdAt: string }
@@ -44,7 +45,8 @@ export class LegacyReporting {
         if (info.isDirectory()) { requireValue(depth < 2 && (depth > 0 || path === attempt.paths.archive), 'ATTEMPT_EVIDENCE_INVALID', 'Unexpected nested reporting output.'); visit(path, depth + 1); continue; }
         total += info.size;
         requireValue(info.isFile() && info.nlink === 1 && info.size <= 8 * 1024 * 1024 && total <= 16 * 1024 * 1024 && entries.length < 100, 'ATTEMPT_EVIDENCE_LIMIT', 'Legacy reporting exceeded its retained evidence limit or uses shared files. Preserve it for inspection.');
-        const bytes = readFileSync(path); requireValue(bytes.length === info.size, 'ATTEMPT_EVIDENCE_CHANGED', 'Reporting output is still changing.');
+        const bytes = readStableFile(path, Math.min(info.size, 8 * 1024 * 1024), 'ATTEMPT_EVIDENCE_CHANGED');
+        requireValue(bytes.length === info.size, 'ATTEMPT_EVIDENCE_CHANGED', 'Reporting output is still changing.');
         entries.push({ relative: path.slice(attempt.paths.directory.length + 1), bytes });
       }
     };
@@ -84,7 +86,7 @@ export class LegacyReporting {
     let current = root;
     for (const segment of path.split('/')) { current = join(current, segment); requireValue(!lstatSync(current).isSymbolicLink(), 'MIGRATION_SOURCE_INVALID', 'Reporting sources must not traverse symbolic links.'); }
     const info = lstatSync(current); requireValue(info.isFile() && info.size <= 1024 * 1024 && resolve(current).startsWith(resolve(root) + '/'), 'MIGRATION_SOURCE_INVALID', 'Reporting source must be a bounded project file.');
-    return readFileSync(current, 'utf8');
+    return readStableFile(current, 1024 * 1024, 'MIGRATION_SOURCE_INVALID').toString('utf8');
   }
   private directory(path: string): void { const info = lstatSync(path); requireValue(info.isDirectory() && !info.isSymbolicLink() && info.uid === process.getuid?.() && (info.mode & 0o077) === 0, 'ATTEMPT_EVIDENCE_INVALID', 'The private attempt directory has changed.'); }
   private sync(path: string): void { const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); } }
