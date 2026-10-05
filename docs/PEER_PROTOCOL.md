@@ -10,6 +10,32 @@ The generic two-host implementation uses the installed `contribution peer --stdi
 
 The receiver verifies size, SHA-256, object format, the sole declared ref, prerequisites, complete ordinary Git history, attribution and policy before admission. It imports only into a dedicated incoming namespace. It never executes an incoming tree to inspect it. Shallow history, submodules and Git LFS remain explicit generic-adapter limitations. The canonical journal and source ref precede acknowledgment; duplicate receipt delivery returns the original operation.
 
+Completion has a separate acknowledgment exchange. A terminal success, failure
+or cancellation offers an exact operation/attempt/result digest. The sender
+retains that response and its acknowledgment outbox in one SQLite transaction
+before confirming receipt to the execution host. The receiver accepts only the
+original authenticated sender and exact current completed result. Uncertain,
+interrupted and unfinished results cannot release this protection.
+
+A lost acknowledgment reply leaves the sender's evidence protected. A bounded
+background retry resumes the same digest after journal reopening without
+repeating integration, publication or a device effect. Only twenty due
+acknowledgments are selected per pass, with backoff on failure. Normal pause and
+maintenance defer retries. Older compatible peers that do not offer completion
+receipts keep evidence protected until an explicit new observation through a
+compatible implementation. Operation responses expose `peerCompletion` state.
+
+The receiver keeps immutable acknowledgment history and binds retention to its
+current result. Log/output-expiration annotations do not change that result
+identity, so losing a reply cannot make the acknowledgment unrecoverable after
+eligible raw output expires. Changed actual results require a new observation.
+Canonical-owner transfer checks both hosts for pending receipt exchange before
+fencing. A frozen transition still permits the original authenticated sender to
+finish its retained acknowledgment; doing so grants no writer authority. This
+exchange makes otherwise eligible logs and owned output eligible for their
+existing retention policies. Git source refs and bundles remain retained until
+their separate release implementation is complete.
+
 Seed and mirror capture durably select their commit, clone, configuration, authority, destination and transfer identity before creating the source ref or bundle. An interrupted capture reuses that selection even if the primary has advanced. Source refs use compare-and-swap creation; unexpected replacement is preserved and stops recovery. Bundles are hashed in at most 1 MiB buffers and sent in 256 KiB chunks through one verified descriptor. Rewriting, replacement, new hard links or containing-path changes stop transfer before completion. The receiver also checks the imported ref against the declared tip after fetch.
 
 Bundle creation uses Git's documented binary stdout form, `git bundle create - REF`, with a 256 MiB sink and a five-minute deadline. Binary content is never decoded into logs. The private producer retains an attempt before writing, seals its size/digest, and publishes through an atomic no-replace link. Recovery verifies both names before removing only the owned partial name, including a crash on either side of link/unlink. Failed output retention stops the child and preserves the bounded partial and source ref. Same-source retries use separate retained partials and recheck managed-storage admission. Foreign destinations are preserved. See the [Git bundle documentation](https://git-scm.com/docs/git-bundle) for the stdout transport; larger bundles remain an explicit unsupported size, not truncated success.

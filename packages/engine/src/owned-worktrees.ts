@@ -64,7 +64,7 @@ export class OwnedWorktrees {
     const op = this.store.get(owner.operationId), days = this.store.getMeta<{ retention: { rawLogDays: number } }>('settings')?.retention.rawLogDays ?? 30;
     requireValue(owner.phase === 'ready' && owner.directory === this.path(owner.kind, op.attemptId) && owner.attemptId === op.attemptId && owner.repositoryId === op.repositoryId &&
       !op.pinned && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof op.result['completedAt'] === 'string' &&
-      Date.parse(op.result['completedAt']) <= Date.now() - days * 86400000 && !this.store.record('peerOperation', op.operationId),
+      Date.parse(op.result['completedAt']) <= Date.now() - days * 86400000 && !this.store.peerEvidenceProtected(op),
       'WORKTREE_PROTECTED', 'Recent, pinned, unfinished or unacknowledged work remains protected.', 3);
     const rows = this.store.list(10001);
     requireValue(rows.length <= 10000, 'STORAGE_CENSUS_LIMIT', 'A larger journal needs a paged dependency inspection.', 3);

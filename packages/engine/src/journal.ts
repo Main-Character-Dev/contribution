@@ -9,6 +9,7 @@ import { privateDirectory } from './private-files.js';
 import { ManagedStorage } from './managed-storage.js';
 import { BackupOutput } from './backup-output.js';
 import { stableFileDigest } from './bounded-file.js';
+import { peerEvidenceProtected, peerCompletionStatus } from './peer-receipts.js';
 
 export interface Operation {
   operationId: string; requestId: string; repositoryId: string; kind: string; input: ObjectValue;
@@ -117,6 +118,7 @@ export class Journal {
     return row ? JSON.parse(String(row['body'])) as Operation : undefined;
   }
   list(limit = 200): Operation[] { return this.db.prepare('SELECT body FROM operations ORDER BY sequence DESC LIMIT ?').all(limit).map(row => JSON.parse(String(row['body'])) as Operation); }
+  peerEvidenceProtected(op: Operation): boolean { return peerEvidenceProtected(this, op); }
   queue(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state='queued' ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
   unsettled(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state NOT IN ('succeeded','failed','cancelled','interrupted') ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
   update(op: Operation, patch: Partial<Operation>, type = 'operation.changed', mutation?: () => void): Operation {
@@ -171,7 +173,7 @@ export class Journal {
       const eligible = info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() && op && !op.pinned
         && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof completed === 'string'
         && Date.parse(completed) <= observedAt - policy.rawLogDays * 86400000
-        && !this.record('peerOperation', op.operationId);
+        && !this.peerEvidenceProtected(op);
       if (!eligible) { protectedBytes += bytes; continue; }
       eligibleBytes += bytes;
       if (prune) {
@@ -184,12 +186,15 @@ export class Journal {
       policy: { ...policy, summaries: 'Retained with immutable request identities; summary compaction pending', protects: ['pinned', 'active', 'unresolved', 'unacknowledged peer evidence'] } };
   }
   response(op: Operation): Response {
-    return { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
+    const response: Response = { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
         logRetention: { truncated: this.record('logTruncation', op.attemptId) ?? null, expired: this.record('logEviction', op.attemptId) ?? null },
         outputRetention: [...['legacy-working', 'legacy-sealed', 'build'].map(kind => this.record('storageEviction', `${kind}:${op.attemptId}`)), this.record('worktreeEviction', op.attemptId)].filter(Boolean),
         acceptance: ['device', 'remote.device', 'device_transfer'].includes(op.kind) ? op.result['acceptance'] : op.kind === 'artifact_transfer' ? { localDurable: true, executionHostAccepted: true, executionHostId: this.hostId, acceptedAt: op.createdAt } : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
+    const completion = peerCompletionStatus(this, op, response);
+    if (completion) response.result = { ...response.result, peerCompletion: completion };
+    return response;
   }
   async backup(path: string): Promise<void> { await backup(this.db, path); chmodSync(path, 0o600); }
   async checkpointBackup(payload: string, windowId: string): Promise<ObjectValue> {

@@ -16,6 +16,8 @@ import { StableFileReader, stableFileDigest } from './bounded-file.js';
 import { createBoundedBundle, MAX_GIT_BUNDLE } from './git-bundle.js';
 import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './incoming-file.js';
 import type { IncomingFileIdentity } from './incoming-file.js';
+import { completionReceipt } from './peer-receipts.js';
+import type { CompletionReceipt, CompletionOutbox } from './peer-receipts.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
 export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
@@ -112,8 +114,13 @@ export class Peers {
     requireValue(!authority || authority.phase === 'active', 'AUTHORITY_TRANSITION_PENDING', 'Both writers remain fenced until the retained authority transition is reconciled.', 3);
     requireValue(repo.canonicalHostId === this.store.hostId, 'CANONICAL_OWNER_REQUIRED', 'This host is a mirror; submit or publish through the canonical owner.');
   }
+  private receiptPending(repo: Enrolled): boolean {
+    const receipts = this.store.db.prepare('SELECT body FROM operations WHERE repository_id=? LIMIT 10001').all(repo.id).map(row => JSON.parse(String(row['body'])) as Operation);
+    return receipts.length > 10000 || receipts.some(op => this.store.peerEvidenceProtected(op));
+  }
   private idle(repo: Enrolled): void {
     requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Reconcile all retained work before transferring repository authority.');
+    requireValue(!this.receiptPending(repo), 'PEER_RECEIPT_PENDING', 'Complete the retained peer receipt exchange before changing canonical authority.', 3);
     requireValue(!['contribution-writer.lock', 'primary-checkout-mutation.lock', 'primary-checkout-mutation.lock.recovery'].some(path => existsSync(join(repo.commonDir, path))),
       'REPOSITORY_BUSY', 'A writer or unconfirmed recovery boundary remains retained. Reconcile it before transferring authority.');
   }
@@ -137,6 +144,7 @@ export class Peers {
       } else {
         this.assertWriter(repo); this.idle(repo); await this.repos.current(repo); await clean(repo.path);
         const remote = await this.call(hostId, 'repository.inspect', { repositoryId: repo.id });
+        requireValue(remote['completionPending'] !== true, 'PEER_RECEIPT_PENDING', 'The destination still needs its retained completion acknowledgment. Finish that exchange before transferring authority.', 3);
         requireValue(remote['policy'] === repo.revision && remote['branch'] === repo.config.integration.branch, 'PEER_POLICY_MISMATCH', 'Both enrollments must agree on the exact policy and branch.');
         const tip = (await identity(repo.path)).tip;
         requireValue(!tip || !remote['tip'] || tip === remote['tip'], 'DIVERGENT_HISTORY', 'Both hosts have different committed histories. Preserve and reconcile them before authority transfer.');
@@ -172,7 +180,7 @@ export class Peers {
     }
     const repositoryId = uuid(body['repositoryId'], 'repositoryId'), repo = await this.repos.get(repositoryId);
     const result = await this.serial(repositoryId, async (): Promise<ObjectValue> => {
-      if (action === 'repository.inspect') return { repositoryId, branch: repo.config.integration.branch, policy: repo.revision, tip: (await identity(repo.path)).tip, canonicalHostId: repo.canonicalHostId };
+      if (action === 'repository.inspect') return { repositoryId, branch: repo.config.integration.branch, policy: repo.revision, tip: (await identity(repo.path)).tip, canonicalHostId: repo.canonicalHostId, completionPending: this.receiptPending(repo) };
       if (action === 'authority.activate') {
         requireValue(repo.config.integration.adapter === 'generic-v1', 'ADOPTED_AUTHORITY_MIGRATION_REQUIRED',
           'The adopted project needs its complete cooperating-writer cutover before it can accept canonical ownership.', 3);
@@ -194,6 +202,9 @@ export class Peers {
         });
         return { transitionId, canonicalHostId: this.store.hostId };
       }
+      // An old authenticated sender can finish a receipt exchange while owner
+      // activation is frozen. This grants no repository mutation authority.
+      if (action === 'operation.acknowledge') return this.acceptCompletion(repo, from, body);
       const authority = this.store.record<Authority>('authority', repositoryId);
       requireValue(repo.availability === 'both-macs' && authority?.phase === 'active' && authority.peerHostId === from, 'REPOSITORY_PEER_UNAUTHORIZED', 'This peer is not associated with the repository authority.');
       if (action === 'device.ownership.accept') {
@@ -245,7 +256,7 @@ export class Peers {
       if (action === 'transfer.begin') return this.begin(repo, from, body);
       if (action === 'transfer.chunk') return this.chunk(from, body);
       if (action === 'transfer.finish') return this.finish(repo, from, body);
-      if (action === 'operation.get' || action === 'operation.cancel' || action === 'operation.reconcile') {
+      if (['operation.get', 'operation.cancel', 'operation.reconcile'].includes(action)) {
         const op = this.store.get(uuid(body['operationId'], 'operationId'));
         const association = this.store.record<{ from: string }>('peerOperation', op.operationId);
         requireValue(op.repositoryId === repo.id && (op.input['senderHostId'] === from || association?.from === from), 'PEER_OPERATION_UNAUTHORIZED', 'This operation does not belong to the peer.');
@@ -253,11 +264,26 @@ export class Peers {
           : action === 'operation.cancel' && this.cancelLocal ? this.cancelLocal(op) : this.store.response(op);
         let log = '';
         try { log = this.store.logs(op, 2000); } catch { /* Expose unavailable evidence without inventing output. */ }
-        return { response, log: Buffer.byteLength(log) > 131072 ? '[Earlier remote log output omitted]\n' + Buffer.from(log).subarray(-131072).toString('utf8') : log };
+        return { response, completionReceipt: completionReceipt(response), log: Buffer.byteLength(log) > 131072 ? '[Earlier remote log output omitted]\n' + Buffer.from(log).subarray(-131072).toString('utf8') : log };
       }
       throw new Fault('PEER_ACTION_UNSUPPORTED', 'The fixed peer endpoint does not support this action.', 2);
     });
     return { ...result, hostId: this.store.hostId, ...peerHello() };
+  }
+  private acceptCompletion(repo: Enrolled, from: string, body: ObjectValue): ObjectValue {
+    requireValue(Object.keys(body).every(key => ['repositoryId', 'operationId', 'receipt'].includes(key)), 'INVALID_PEER_REQUEST', 'Completion acknowledgment accepts only its retained operation receipt.', 2);
+    const op = this.store.get(uuid(body['operationId'], 'operationId')), association = this.store.record<{ from: string }>('peerOperation', op.operationId);
+    requireValue(op.repositoryId === repo.id && (op.input['senderHostId'] === from || association?.from === from), 'PEER_OPERATION_UNAUTHORIZED', 'This operation does not belong to the acknowledging peer.', 3);
+    const offered = completionReceipt(this.store.response(op));
+    requireValue(offered && digest(body['receipt']) === digest(offered), 'COMPLETION_RECEIPT_CHANGED', 'Only the exact current completed effect receipt can be acknowledged.', 3);
+    const prior = this.store.record<{ from: string; receipt: CompletionReceipt; acknowledgedAt: string }>('peerCompletionAcknowledgment', op.operationId);
+    requireValue(!prior || prior.from === from, 'PEER_OPERATION_UNAUTHORIZED', 'A different peer owns this completion receipt.', 3);
+    const retained = prior && digest(prior.receipt) === digest(offered) ? prior : { from, receipt: offered, acknowledgedAt: now() };
+    this.store.transaction(() => {
+      this.store.put('peerCompletionAcknowledgment', op.operationId, retained);
+      this.store.put('peerCompletionAcknowledgmentHistory', `${op.operationId}:${offered.digest}`, retained);
+    });
+    return { acknowledged: true, receipt: offered, acknowledgedAt: retained.acknowledgedAt };
   }
   private begin(repo: Enrolled, from: string, body: ObjectValue): ObjectValue {
     const m = object(body['manifest']) as unknown as TransferManifest;
@@ -325,7 +351,9 @@ export class Peers {
     requireValue(repo.config.integration.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Imported sources need an explicitly adopted repository adapter.', 3);
     file.verify();
     const input = { tip: m.tip, base: m.base, metadata: m.metadata, policy: m.policy, senderHostId: from, incomingRef: incoming };
-    const op = this.store.admit(m.requestId, m.kind === 'submit' ? 'submit' : m.kind, repo.id, input, this.payload);
+    const op = this.store.admit(m.requestId, m.kind === 'submit' ? 'submit' : m.kind, repo.id, input, this.payload, 'queued', operation => {
+      this.store.put('peerOperation', operation.operationId, { from, repositoryId: repo.id }); return {};
+    });
     const receipt = { transferId: m.transferId, requestId: m.requestId, sourceTip: m.tip, incomingRef: incoming, response: this.store.response(op), acceptedAt: now() };
     this.store.put('transfer', m.transferId, { ...transfer, accepted: receipt }); return receipt;
     } finally { file.close(); }
@@ -483,6 +511,11 @@ export class Peers {
         if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) break;
         await this.syncRegistry(peer.hostId);
       }
+      const acknowledgments = this.store.db.prepare("SELECT body FROM records WHERE namespace='peerCompletionOutbox' AND json_extract(body,'$.state')='pending' AND COALESCE(json_extract(body,'$.nextAttempt'),0)<=? ORDER BY json_extract(body,'$.retainedAt'),key LIMIT 20").all(Date.now());
+      for (const row of acknowledgments) {
+        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) break;
+        await this.acknowledgeCompletion(JSON.parse(String(row['body'])) as CompletionOutbox);
+      }
     } finally { this.busy = false; }
   }
   async observeOperation(op: Operation, reconcile = false): Promise<Operation> {
@@ -493,9 +526,39 @@ export class Peers {
     requireValue(response.operationId === remoteOperationId && response.operationState, 'PEER_OPERATION_MISMATCH', 'Peer response identifies different work.');
     const stopped = Boolean(response.error) || ['succeeded', 'failed', 'cancelled', 'interrupted', 'outcome_unknown', 'needs_attention', 'waiting'].includes(response.operationState);
     if (typeof observation['log'] === 'string' && Buffer.byteLength(observation['log']) <= 132000) this.store.put('remoteLog', op.operationId, { text: observation['log'], observedAt: now(), originHostId: hostId });
-    const latest = this.store.get(op.operationId);
-    return this.store.update(latest, { state: stopped ? response.operationState : 'queued_local', stage: stopped ? response.error ? device ? 'execution_attention_required' : 'canonical_attention_required' : device ? 'execution_completed' : 'canonical_completed' : device ? 'execution_host_accepted' : 'canonical_accepted',
+    const selected = completionReceipt(response), offered = observation['completionReceipt'];
+    requireValue(!offered || selected && digest(offered) === digest(selected), 'COMPLETION_RECEIPT_INVALID', 'The peer completion receipt does not match its observed response.', 3);
+    const latest = this.store.get(op.operationId), prior = this.store.record<CompletionOutbox>('peerCompletionOutbox', op.operationId);
+    const outbox: CompletionOutbox | undefined = selected && offered ? prior && prior.hostId === hostId && digest(prior.receipt) === digest(selected) ? prior :
+      { operationId: op.operationId, repositoryId: repo.id, hostId, receipt: selected, state: 'pending', retainedAt: now() } : undefined;
+    const updated = this.store.update(latest, { state: stopped ? response.operationState : 'queued_local', stage: stopped ? response.error ? device ? 'execution_attention_required' : 'canonical_attention_required' : device ? 'execution_completed' : 'canonical_completed' : device ? 'execution_host_accepted' : 'canonical_accepted',
       error: stopped ? response.error : null, result: { ...latest.result, ...(device ? { executionObservation: response, ...(response.result?.['deviceOperation'] ? { deviceOperation: response.result['deviceOperation'] } : {}) } : { canonicalObservation: response }),
-        peerObservedAt: now(), nextPeerAttempt: Date.now() + 1500, ...(stopped ? { completedAt: now() } : {}) } });
+        peerObservedAt: now(), nextPeerAttempt: Date.now() + 1500, ...(stopped ? { completedAt: now() } : {}) } }, 'peer.operation_observed', () => {
+          if (outbox) this.store.put('peerCompletionOutbox', op.operationId, outbox);
+        });
+    // Local response and immutable acknowledgment intent share a transaction.
+    // Losing either network reply cannot replay integration or an app effect.
+    if (outbox?.state === 'pending') await this.acknowledgeCompletion(outbox);
+    return updated;
+  }
+  private async acknowledgeCompletion(outbox: CompletionOutbox): Promise<void> {
+    if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) return;
+    await this.serial(`completion:${outbox.operationId}`, async () => {
+      const current = this.store.record<CompletionOutbox>('peerCompletionOutbox', outbox.operationId);
+      if (!current || current.state === 'acknowledged' || digest(current.receipt) !== digest(outbox.receipt)) return;
+      try {
+        const op = this.store.get(outbox.operationId), observed = (op.result['canonicalObservation'] ?? op.result['executionObservation']) as Response | undefined;
+        requireValue(observed && digest(completionReceipt(observed)) === digest(outbox.receipt), 'COMPLETION_RECEIPT_CHANGED', 'The retained local observation changed before acknowledgment.', 3);
+        const reply = await this.call(outbox.hostId, 'operation.acknowledge', { repositoryId: outbox.repositoryId, operationId: outbox.receipt.operationId, receipt: outbox.receipt });
+        requireValue(reply['acknowledged'] === true && digest(reply['receipt']) === digest(outbox.receipt), 'COMPLETION_RECEIPT_INVALID', 'The peer did not confirm the retained completion receipt.', 3);
+        const latest = this.store.record<CompletionOutbox>('peerCompletionOutbox', outbox.operationId);
+        if (latest && digest(latest.receipt) === digest(outbox.receipt)) this.store.put('peerCompletionOutbox', outbox.operationId, { ...latest, state: 'acknowledged', acknowledgedAt: now() });
+      } catch (error) {
+        const latest = this.store.record<CompletionOutbox>('peerCompletionOutbox', outbox.operationId);
+        if (!latest || digest(latest.receipt) !== digest(outbox.receipt)) return;
+        const failures = (latest.failures ?? 0) + 1;
+        this.store.put('peerCompletionOutbox', outbox.operationId, { ...latest, failures, reasonCode: error instanceof Fault ? error.code : 'PEER_UNAVAILABLE', nextAttempt: Date.now() + Math.min(300000, 1000 * 2 ** Math.min(failures, 8)) });
+      }
+    });
   }
 }

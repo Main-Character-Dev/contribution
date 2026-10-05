@@ -1,24 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync, readFileSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync, readFileSync, renameSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { Engine } from '../packages/engine/dist/service.js';
-import { Fault } from '../packages/engine/dist/core.js';
-import { compatiblePeer } from '../packages/engine/dist/peers.js';
+import { Fault, digest } from '../packages/engine/dist/core.js';
+import { compatiblePeer, Peers } from '../packages/engine/dist/peers.js';
+import { completionReceipt } from '../packages/engine/dist/peer-receipts.js';
 import { repository, commit, git } from './integration/service.mjs';
 
 async function pairFixture() {
   const root = mkdtempSync(join(tmpdir(), 'ct-peers-')), hosts = {}, stores = [];
-  let offline = false, loseActivation = false, loseReceipt = false;
+  let offline = false, loseActivation = false, loseReceipt = false, loseAcknowledgment = false, beforeAcknowledgment, legacyReceipt = false;
   const transport = async (alias, envelope) => {
     if (offline) throw new Fault('PEER_UNAVAILABLE', 'Fixture peer disconnected.', 3);
+    if (envelope.action === 'operation.acknowledge') beforeAcknowledgment?.(envelope);
     const result = await hosts[alias].dispatch({ schemaVersion: 1, command: 'peer.exchange', args: { envelope }, cwd: root });
+    if (legacyReceipt && envelope.action === 'operation.get' && result.result) delete result.result.completionReceipt;
     if ((loseActivation && envelope.action === 'authority.activate') || (loseReceipt && envelope.action === 'transfer.finish')) {
       loseActivation = false; loseReceipt = false; throw new Fault('PEER_UNAVAILABLE', 'Fixture reply lost after durable receipt.', 3);
     }
+    if (loseAcknowledgment && envelope.action === 'operation.acknowledge') { loseAcknowledgment = false; throw new Fault('PEER_UNAVAILABLE', 'Fixture completion acknowledgment reply lost.', 3); }
     if (result.error) throw new Fault(result.error.code, result.error.message, 3); return result.result;
   };
   const payload = { identity: 'fixture', distribution: 'fixture', root: root, node: process.execPath, cli: join(root, 'fixture-cli.js') };
@@ -40,6 +44,7 @@ async function pairFixture() {
     throw new Error('Fixture operation timed out: ' + JSON.stringify(await call(host, 'runs.get', { operationId })));
   };
   return { root, hosts, source, target, config, call, wait, offline: value => { offline = value; }, loseActivation: () => { loseActivation = true; }, loseReceipt: () => { loseReceipt = true; },
+    loseAcknowledgment: () => { loseAcknowledgment = true; }, beforeAcknowledgment: fn => { beforeAcknowledgment = fn; }, legacyReceipt: value => { legacyReceipt = value; }, transport,
     cleanup: async () => { for (const host of Object.values(hosts)) host.stopping = true; while (Object.values(hosts).some(host => host.active.size || host.peers.busy)) await new Promise(resolve => setTimeout(resolve, 20)); for (const store of stores) store.close(); rmSync(root, { recursive: true }); } };
 }
 
@@ -48,6 +53,84 @@ test('adjacent peer patch compatibility requires explicit stable protocol and re
   for (const version of ['0.1.2', '0.2.0', '1.0.0', '0.1.1-preview']) assert.equal(compatiblePeer({ version, protocolVersion: 1, requestSchemaVersion: 1 }), false);
   assert.equal(compatiblePeer({ version: '0.1.1' }), false);
   assert.equal(compatiblePeer({ version: '0.1.0', protocolVersion: 2, requestSchemaVersion: 1 }), false);
+});
+
+test('completed handoff is durable before acknowledgment and a lost reply retries after reopening without replaying history', async () => {
+  const f = await pairFixture(); try {
+    const tip = commit(f.source, 'first.txt', 'retained source'), repo = f.config.repositoryId;
+    assert.equal((await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() })).error, null);
+    f.loseAcknowledgment(); let observed = false;
+    f.beforeAcknowledgment(envelope => {
+      const local = f.hosts.laptop.store.list().find(op => op.result.remoteOperationId === envelope.body.operationId);
+      assert.equal(local.state, 'succeeded'); assert.equal(local.result.canonicalObservation.result.tip, tip);
+      const intent = f.hosts.laptop.store.record('peerCompletionOutbox', local.operationId);
+      assert.equal(intent.state, 'pending'); assert.deepEqual(intent.receipt, envelope.body.receipt); observed = true;
+    });
+    const accepted = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }), response = await f.wait('laptop', accepted.operationId);
+    assert.equal(response.operationState, 'succeeded'); assert.equal(observed, true);
+    const store = f.hosts.laptop.store, local = store.get(response.operationId), remoteStore = f.hosts.mini.store, remote = remoteStore.get(local.result.remoteOperationId);
+    assert.equal(store.peerEvidenceProtected(local), true); assert.equal(remoteStore.peerEvidenceProtected(remote), false);
+    const future = Date.now() + 31 * 86400000;
+    store.retention(true, future); assert.ok(existsSync(store.logPath(local)));
+    remoteStore.retention(true, future); assert.equal(existsSync(remoteStore.logPath(remote)), false);
+    assert.equal((await f.call('mini', 'repos.pair', { repo, host: store.hostId, requestId: randomUUID() })).error.code, 'PEER_RECEIPT_PENDING');
+    const frozen = { ...remoteStore.record('authority', repo), phase: 'frozen' };
+    remoteStore.put('authority', repo, frozen); // Crash window in a concurrent owner transition.
+    const pending = store.record('peerCompletionOutbox', local.operationId); store.put('peerCompletionOutbox', local.operationId, { ...pending, nextAttempt: 0 });
+    // Reopen a second connection and new peer client to exercise durable retry.
+    const recoveredStore = new Journal(store.directory);
+    try {
+      const resumed = new Peers(recoveredStore, f.hosts.laptop.repos, 'fixture', f.transport);
+      await resumed.tick(); assert.equal(recoveredStore.record('peerCompletionOutbox', local.operationId).state, 'acknowledged');
+    } finally { recoveredStore.close(); }
+    assert.equal(store.peerEvidenceProtected(store.get(local.operationId)), false);
+    assert.deepEqual(remoteStore.record('authority', repo), frozen); // Acknowledgment grants no writer authority.
+    store.retention(true, future); assert.equal(existsSync(store.logPath(local)), false);
+    assert.equal(git(f.target, 'rev-parse', 'HEAD'), tip); assert.equal(remoteStore.list().length, 1);
+    assert.equal(git(f.source, 'rev-parse', local.input.manifest.sourceRef), tip); assert.ok(existsSync(local.input.path));
+  } finally { await f.cleanup(); }
+});
+
+test('old peers without a completion receipt keep sender and imported receiver evidence protected', async () => {
+  const f = await pairFixture(); try {
+    commit(f.source); const repo = f.config.repositoryId;
+    await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() }); f.legacyReceipt(true);
+    const accepted = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); await f.wait('laptop', accepted.operationId);
+    const sender = f.hosts.laptop.store, local = sender.get(accepted.operationId), receiver = f.hosts.mini.store, remote = receiver.get(local.result.remoteOperationId);
+    assert.equal(sender.peerEvidenceProtected(local), true); assert.equal(receiver.peerEvidenceProtected(remote), true);
+    // Older imported requests without an explicit association are still bound by senderHostId.
+    receiver.db.prepare("DELETE FROM records WHERE namespace='peerOperation' AND key=?").run(remote.operationId);
+    assert.equal(receiver.peerEvidenceProtected(remote), true);
+    const future = Date.now() + 366 * 86400000;
+    sender.retention(true, future); receiver.retention(true, future);
+    assert.ok(existsSync(sender.logPath(local))); assert.ok(existsSync(receiver.logPath(remote)));
+    f.legacyReceipt(false); await f.hosts.laptop.peers.observeOperation(local);
+    assert.equal(sender.peerEvidenceProtected(sender.get(local.operationId)), false); assert.equal(receiver.peerEvidenceProtected(receiver.get(remote.operationId)), false);
+  } finally { await f.cleanup(); }
+});
+
+test('completion receipts reject forged or unresolved results and remain bound to later result changes', async () => {
+  const f = await pairFixture(); try {
+    commit(f.source); const repo = f.config.repositoryId;
+    await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() }); f.legacyReceipt(true);
+    const accepted = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); await f.wait('laptop', accepted.operationId);
+    const local = f.hosts.laptop.store.get(accepted.operationId), remoteStore = f.hosts.mini.store, remote = remoteStore.get(local.result.remoteOperationId), receipt = completionReceipt(remoteStore.response(remote));
+    const stranger = randomUUID(); remoteStore.put('peer', stranger, { hostId: stranger, alias: null, version: '0.1.0' });
+    await assert.rejects(f.hosts.mini.peers.receive({ fromHostId: stranger, expectedHostId: remoteStore.hostId, compatibility: { version: '0.1.0' }, action: 'operation.acknowledge',
+      body: { repositoryId: repo, operationId: remote.operationId, receipt } }), { code: 'PEER_OPERATION_UNAUTHORIZED' });
+    const ack = selected => f.hosts.laptop.peers.call(remoteStore.hostId, 'operation.acknowledge', { repositoryId: repo, operationId: remote.operationId, receipt: selected });
+    await assert.rejects(ack({ ...receipt, digest: '0'.repeat(64) }), { code: 'COMPLETION_RECEIPT_CHANGED' });
+    await assert.rejects(ack({ ...receipt, attemptId: randomUUID() }), { code: 'COMPLETION_RECEIPT_CHANGED' });
+    remoteStore.update(remote, { state: 'outcome_unknown' });
+    await assert.rejects(ack(receipt), { code: 'COMPLETION_RECEIPT_CHANGED' }); assert.equal(remoteStore.peerEvidenceProtected(remoteStore.get(remote.operationId)), true);
+    remoteStore.update(remoteStore.get(remote.operationId), { state: 'succeeded' });
+    const first = await ack(receipt), second = await ack(receipt); assert.deepEqual(first, second);
+    assert.equal(remoteStore.peerEvidenceProtected(remoteStore.get(remote.operationId)), false);
+    remoteStore.update(remoteStore.get(remote.operationId), { result: { ...remote.result, tip: 'changed-result' } });
+    assert.equal(remoteStore.peerEvidenceProtected(remoteStore.get(remote.operationId)), true);
+    await assert.rejects(ack(receipt), { code: 'COMPLETION_RECEIPT_CHANGED' });
+    assert.equal(remoteStore.records('peerCompletionAcknowledgmentHistory').length, 1);
+  } finally { await f.cleanup(); }
 });
 
 test('interrupted history capture freezes the original tip and transfer identity before creating or admitting its bundle', async t => {
@@ -148,6 +231,7 @@ test('first history reaches an unborn owner; detached dirty task handoff survive
     const request = { repo: f.config.repositoryId, sourcePath: task, sourceTip: tip, base, requestId: randomUUID() };
     const accepted = await f.call('laptop', 'submit', request);
     const result = await f.wait('laptop', accepted.operationId); assert.equal(result.operationState, 'succeeded', JSON.stringify(result));
+    assert.equal(result.result.peerCompletion.sent, 'acknowledged');
     assert.equal(git(f.target, 'rev-list', '--count', `${base}..HEAD`), '1'); assert.match(git(task, 'status', '--porcelain'), /unrelated/);
     assert.equal((await f.call('laptop', 'submit', request)).operationId, accepted.operationId);
     assert.equal(f.hosts.mini.store.list().filter(op => op.kind === 'submit').length, 1);

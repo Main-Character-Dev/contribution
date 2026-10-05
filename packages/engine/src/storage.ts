@@ -39,7 +39,7 @@ export class StorageRetention {
   }
   private settled(op: Operation | undefined, cutoff: number): boolean {
     return Boolean(op && !op.pinned && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof op.result['completedAt'] === 'string' &&
-      Date.parse(op.result['completedAt']) <= cutoff && !this.store.record('peerOperation', op.operationId));
+      Date.parse(op.result['completedAt']) <= cutoff && !this.store.peerEvidenceProtected(op));
   }
   private census(observedAt: number): { candidates: Candidate[]; protected: ObjectValue[]; policy: ObjectValue } {
     const operations = this.store.list(10001); requireValue(operations.length <= 10000, 'STORAGE_CENSUS_LIMIT', 'Large journals require a paged retention census before output can be removed.', 3);
@@ -128,7 +128,7 @@ export class StorageRetention {
       catch { return false; }
     });
     const backupIdle = !this.store.getMeta('maintenance') && !this.store.getMeta('maintenanceWindow') && !operations.some(op => op.pinned ||
-      !['succeeded', 'failed', 'cancelled'].includes(op.state) || this.store.record('peerOperation', op.operationId) ||
+      !['succeeded', 'failed', 'cancelled'].includes(op.state) || this.store.peerEvidenceProtected(op) ||
       (op.result['processes'] as { pid: number; start: string | null }[] | undefined)?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start)));
     for (const owner of backups) {
       const completed = completedBackup(owner), cutoff = observedAt - summaryDays * 86400000;

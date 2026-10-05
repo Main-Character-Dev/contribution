@@ -2,6 +2,15 @@
 
 The service retains immutable request identities, operation results, artifact provenance and transfer receipts even after their generated output expires. A repeated request can report its original outcome; it does not repeat an install or transfer to regenerate expired bytes.
 
+Peer evidence stays protected through the separate [completion receipt
+exchange](PEER_PROTOCOL.md). Imported operations are associated with their
+original sender at admission; older imported rows also preserve that authority
+through `senderHostId`. A receiver needs the sender's exact completed-result
+acknowledgment, and a sender needs confirmation of its retained acknowledgment
+outbox. Missing, stale or uncertain receipts preserve evidence. These checks
+apply to raw logs, owned checkout/output cleanup and old backup retirement.
+Acknowledgment itself removes no files and does not release Git source refs.
+
 Raw attempt logs use the configured `rawLogDays` (30 by default) and `maxLogBytes` admission cap. Completed, unpinned logs may expire automatically; uncertain, interrupted, active and unacknowledged peer work remains protected. `doctor` reports protected usage and blocked admission. Individual running logs are bounded as well. A full protected cap still permits one retention-only settings request that matches the current revision and raises the cap above observed usage. That control request can complete while ordinary processing is paused; repository jobs remain paused. Other settings changes, stale revisions and a second pending recovery cannot use this exception. New project creation and source/history capture check storage pressure before creating repository or outbox state.
 
 Generated signed artifacts and accepted incoming artifacts are eligible after 30 days. Original project gate output and its sealed private snapshots use `rawLogDays`. Cleanup requires an explicit review:

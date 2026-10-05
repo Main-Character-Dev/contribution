@@ -249,3 +249,30 @@ finalizes only the new backup copy in standalone mode before sealing, with the
 live journal remaining in WAL mode. No installed update or real backup cleanup
 occurred. Payload retirement, summary compaction and Git retention release
 remain separate implementation work.
+
+## Durable peer completion exchange
+
+Execution hosts now offer an exact completed-operation receipt. The sender
+atomically retains the completed response and acknowledgment outbox before
+sending its acknowledgment. Lost replies resume that same digest after journal
+reopening without repeating history promotion or another effect. The receiver
+accepts only the original authenticated sender, retains acknowledgment history
+and rechecks the result identity. Uncertain states, changed results and older
+peers without receipt support retain evidence. Operation responses expose the
+exchange state independently of execution success.
+
+Raw-log, owned-output, checkout and backup retention now consult this exchange.
+Imported Git operations retain their sender association at admission, including
+safe handling of older imported rows. Owner changes check outstanding receipts
+on both hosts; the original sender can still finish acknowledgment through a
+frozen transition without receiving writer authority. Source refs and bundles
+remain preserved pending their separate cleanup implementation.
+
+The full 323-test Node suite, generated/strict/type checks and foundation
+preservation with 260 local links passed (`.build/check-peer-completion.log`).
+The 32-test focused peer/retention suite passed, and the final added foreign-peer
+authorization check passed separately. A lost-reply fixture initially exposed
+an acknowledgment blocked behind frozen authority; explicit preflight and the
+narrow historical-receipt route corrected that recovery boundary. All traffic
+used injected local two-journal transport; no real SSH, live handoff or source
+cleanup occurred.
