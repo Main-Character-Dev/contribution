@@ -170,10 +170,11 @@ export class Engine {
       if (op.kind === 'settings.apply') result = this.applySettings(op);
       else {
         const repo = await this.repos.get(op.repositoryId);
-        if (isGitJob(op.kind)) lease = repo.config.integration.adapter === 'generic-v1' ? new Lease(repo.commonDir, op.attemptId) : new LegacyPrimaryLease(repo.commonDir, op.attemptId);
+        if (isGitJob(op.kind) && !(op.kind === 'submit' && repo.config.integration.adapter !== 'generic-v1'))
+          lease = repo.config.integration.adapter === 'generic-v1' ? new Lease(repo.commonDir, op.attemptId) : new LegacyPrimaryLease(repo.commonDir, op.attemptId);
         if (['initialize', 'submit', 'push', 'seed'].includes(op.kind)) this.peers.assertWriter(repo);
         if (op.kind === 'initialize') result = await this.workflows.initialize(op, repo);
-        else if (op.kind === 'submit') result = await this.workflows.landing(op, repo);
+        else if (op.kind === 'submit') result = await this.workflows.landing(op, repo, signal);
         else if (op.kind === 'push') result = await this.workflows.push(op, repo, signal, lease!);
         else if (op.kind === 'device') result = await this.devices.execute(op, repo, signal);
         else if (op.kind === 'artifact_transfer') result = await this.artifacts.execute(op, signal);
@@ -671,6 +672,11 @@ export class Engine {
           if (gateObserved) this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null, result });
           else this.store.update(op, { stage: 'gate_reconciliation_required', result });
         }
+      } else if (op.kind === 'submit' && repo.config.integration.adapter !== 'generic-v1') {
+        try {
+          const result = await this.workflows.adoptedLanding.reconcile(op, repo, { output: text => this.store.log(op, text) });
+          this.store.update(this.store.get(op.operationId), { state: 'succeeded', stage: 'reconciled', error: null, result: { ...this.store.get(op.operationId).result, ...result, completedAt: now() } });
+        } catch (error) { this.store.put('adoptedLandingReconciliation', op.operationId, { code: error instanceof Fault ? error.code : 'RECONCILIATION_FAILED', observedAt: now() }); }
       } else if (op.kind === 'submit' && typeof op.result['landedTip'] === 'string') {
         const current = await identity(repo.path);
         if (current.tip === op.result['landedTip']) {

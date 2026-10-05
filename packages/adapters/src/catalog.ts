@@ -7,7 +7,7 @@ export interface AdoptionPolicy {
   landing: 'policy-only' | 'integration-only'; attributionDates: 'one' | 'multiple';
   validation: 'cumulative' | 'local-safety' | 'inactive'; policyFiles: readonly string[];
 }
-const common = ['AGENTS.md', 'package.json', '.node-version', 'scripts/worktree-land', 'scripts/worktree-landing-worker', 'scripts/lib/primary-checkout-lease.mjs', 'scripts/lib/worktree-landing-flight.mjs', 'scripts/lib/worktree-landing-state.mjs'];
+const common = ['AGENTS.md', 'package.json', '.node-version', 'scripts/worktree-land', 'scripts/worktree-landing-worker', 'scripts/pre-push-worktree-guard.mjs', 'scripts/lib/primary-checkout-lease.mjs', 'scripts/lib/worktree-landing-flight.mjs', 'scripts/lib/worktree-landing-state.mjs'];
 export const adoptionPolicies: readonly AdoptionPolicy[] = [
   { id: 'mathy-v1', packageName: 'mathy', gate: 'enabled', hookOwner: 'trusted-dispatcher', landing: 'policy-only', attributionDates: 'multiple', validation: 'cumulative',
     policyFiles: [...common, '.githooks/pre-push', '.githooks/_/runtime-bootstrap.sh', 'scripts/prepare-push.mjs', 'scripts/lib/pre-push-reporting.mjs', 'scripts/validation-profile.mjs', 'scripts/lib/process-identity.mjs'] },

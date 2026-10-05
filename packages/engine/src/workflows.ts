@@ -13,12 +13,16 @@ import type { Payload } from './payload.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import { AdoptedHooks } from './adopted-hooks.js';
 import { LegacyPrimaryLease } from './legacy-lease.js';
+import { AdoptedLanding } from './adopted-landing.js';
 
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
 export class Workflows {
   readonly adopted: AdoptedHooks;
-  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: Payload) { this.adopted = new AdoptedHooks(store, payload, repo => this.scope(repo)); }
+  readonly adoptedLanding: AdoptedLanding;
+  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: Payload) {
+    this.adopted = new AdoptedHooks(store, payload, repo => this.scope(repo)); this.adoptedLanding = new AdoptedLanding(store, this.adopted);
+  }
   async scope(repo: Enrolled): Promise<PushScope> {
     await this.repos.current(repo);
     requireValue(repo.canonicalHostId === this.store.hostId, 'CANONICAL_OWNER_REQUIRED', 'Publish through the enrolled canonical owner.');
@@ -50,16 +54,17 @@ export class Workflows {
     const prior = this.store.existing(requestId, 'submit', repo.id, input); if (prior) return prior;
     const pending = this.store.record<{ identity: string }>('captureIntent', requestId);
     requireValue(!pending || pending.identity === digest({ repositoryId: repo.id, input }), 'REQUEST_ID_CONFLICT', 'This request already retained a different committed source.');
-    requireValue(repo.config.integration.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'This project requires its adopted source-ownership adapter before submission.', 3);
     const info = await identity(sourcePath); oid(tip, info.objectFormat); oid(base, info.objectFormat);
     requireValue(info.commonDir === repo.commonDir && info.tip === tip && info.path !== repo.path, 'SOURCE_OWNERSHIP_REQUIRED', 'Select the exact committed tip of a separate registered Git worktree in this enrolled clone.');
     await ordinaryHistory(sourcePath, tip);
     requireValue((await git(sourcePath, ['merge-base', '--is-ancestor', base, tip])).code === 0 && tip !== base, 'INVALID_SOURCE_RANGE', 'The declared base must precede the source tip.');
     requireValue((await gitText(sourcePath, ['rev-list', '--merges', `${base}..${tip}`])) === '', 'SOURCE_TOPOLOGY_UNSUPPORTED', 'This adapter requires a linear completed task range.');
     const commits = (await gitText(sourcePath, ['rev-list', '--reverse', `${base}..${tip}`])).split('\n');
-    const authors = new Set((await gitText(sourcePath, ['log', '--format=%an <%ae>', `${base}..${tip}`])).split('\n'));
-    requireValue(authors.size === 1, 'AUTHOR_POLICY_CONFLICT', 'The generic adapter requires one original source author.');
-    requireValue(commits.length === 1 || (typeof metadata['integrationMessage'] === 'string' && metadata['integrationMessage'].trim()), 'NEEDS_INPUT', 'A multi-commit task requires an explicit combined integration message.', 2);
+    if (repo.config.integration.adapter === 'generic-v1') {
+      const authors = new Set((await gitText(sourcePath, ['log', '--format=%an <%ae>', `${base}..${tip}`])).split('\n'));
+      requireValue(authors.size === 1, 'AUTHOR_POLICY_CONFLICT', 'The generic adapter requires one original source author.');
+      requireValue(commits.length === 1 || (typeof metadata['integrationMessage'] === 'string' && metadata['integrationMessage'].trim()), 'NEEDS_INPUT', 'A multi-commit task requires an explicit combined integration message.', 2);
+    } else await this.adoptedLanding.capture(repo, requestId, sourcePath, tip, base, metadata);
     this.store.put('captureIntent', requestId, { identity: digest({ repositoryId: repo.id, input }), repositoryId: repo.id, input });
     const retention = `refs/contribution/outbox/${digest({ requestId })}`;
     await gitText(sourcePath, ['update-ref', retention, tip]);
@@ -106,9 +111,10 @@ export class Workflows {
     this.repos.save({ ...repo, policySource: 'tracked' });
     return { bootstrapTip: tip, publication: 'not_requested' };
   }
-  async landing(op: Operation, repo: Enrolled): Promise<ObjectValue> {
+  async landing(op: Operation, repo: Enrolled, signal: AbortSignal): Promise<ObjectValue> {
     await this.repos.current(repo); await clean(repo.path);
     requireValue(op.input['policy'] === repo.revision, 'POLICY_CHANGED', 'Source policy changed after capture.');
+    if (repo.config.integration.adapter !== 'generic-v1') return this.adoptedLanding.land(op, repo, this.options(op, signal));
     const tip = string(op.input['tip'], 'tip'), base = string(op.input['base'], 'base'), metadata = object(op.input['metadata']);
     const sourceKey = digest({ repositoryId: repo.id, tip, base });
     const prior = this.store.record<ObjectValue>('landing', sourceKey); if (prior) return { ...prior, reused: true };
