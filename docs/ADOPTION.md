@@ -6,6 +6,18 @@ The existing dispatcher remains the owner: Mathy's trusted hook directory or Hus
 
 ## Review, apply, commit, activate
 
+The native project's **Project migration** sheet lists retained reviews, prepares a new source review or reconstructs an already committed second-clone migration, and shows each exact saved before/after file. It reads at most 32 KiB per page at UTF-8 boundaries and verifies the retained file digest for every page. These private source previews are local details, not sanitized diagnostics. An inactive gate remains visibly inactive. Each apply, activation or rollback has a separate revision-bound confirmation and retained client request. Interrupted steps resume through the existing Activity continuation; closing a sheet does not discard that identity. Actual GUI, keyboard and accessibility qualification remains outstanding.
+
+The equivalent read-only CLI inspection is:
+
+```sh
+contribution repos migration --repo ID --list-adoptions --json
+contribution repos migration --repo ID --adoption-plan PLAN \
+  --review-file PATH --review-side before --review-offset 0 --json
+```
+
+Use the returned `nextOffset` to read another page, or `after` for the proposed contents. File selection is restricted to that repository's retained proposal; arbitrary filesystem paths are refused. Review reads remain available during the ordinary update drain, while mutation stays blocked. The final checkpoint and stopping service still refuse requests. The list is bounded to fifty reviews, prioritizes active/interrupted migrations, reports truncation, and retains lookup by proposal ID for older reviews.
+
 After explicitly enrolling the correct primary, inspecting its current policy and configuring its intended publication destination/runtime:
 
 ```

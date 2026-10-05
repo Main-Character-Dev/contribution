@@ -49,6 +49,36 @@ async function fixture(adapter = 'maincharacter-v1') {
   } catch (error) { engine.stopping = true; await new Promise(r => server.close(r)); store.close(); rmSync(root, { recursive: true }); throw error; }
 }
 
+test('retained migration review pages are exact, bounded, read-only and repository scoped', async () => {
+  const f = await fixture(); try {
+    const source = '\ufeff' + readFileSync(join(f.path, f.guard), 'utf8') + '# ' + 'review café 😀 '.repeat(5000) + '\n';
+    writeFileSync(join(f.path, f.guard), source); git(f.path, 'add', f.guard); git(f.path, 'commit', '-m', 'Fixture long UTF-8 gate');
+    const { plan } = await f.prepare();
+    const listing = await f.call('repos.migration', { listAdoptions: true }); assert.equal(listing.error, null); assert.equal(listing.result.total, 1); assert.equal(listing.result.plans[0].proposalId, plan.proposalId);
+    const args = { adoptionPlan: plan.proposalId, reviewFile: f.guard, reviewSide: 'before', reviewOffset: 0 };
+    let offset = 0, text = '', pages = 0;
+    do {
+      const response = await f.call('repos.migration', { ...args, reviewOffset: offset }); assert.equal(response.error, null, JSON.stringify(response));
+      assert.equal(response.result.scope, 'private_retained_snapshot'); assert.equal(response.result.offset, offset); assert.equal(response.result.sha256, digest(Buffer.from(source)));
+      assert.ok(Buffer.byteLength(response.result.text) <= 32768); text += response.result.text; offset = response.result.nextOffset; pages++;
+    } while (offset !== null);
+    assert.ok(pages > 2); assert.equal(text, source);
+    for (const invalid of [{ reviewOffset: -1 }, { reviewOffset: 0.5 }, { reviewOffset: source.length * 9 }, { reviewOffset: Buffer.from(source).indexOf(Buffer.from('é')) + 1 }, { reviewFile: '../outside' }, { reviewSide: 'working' }])
+      assert.equal((await f.call('repos.migration', { ...args, ...invalid })).error.code, 'MIGRATION_REVIEW_INVALID');
+    assert.equal((await f.call('repos.migration', { ...args, requestId: randomUUID() })).error.code, 'INVALID_USAGE');
+    assert.equal((await f.call('repos.migration', { reviewFile: f.guard, reviewSide: 'after', reviewOffset: 0 })).error.code, 'INVALID_USAGE');
+    const other = { ...f.repo, id: randomUUID() }; assert.throws(() => f.engine.adoptions.reviewFile(other, plan.proposalId, f.guard, 'after', 0), /belonging to this repository/);
+    assert.equal(git(f.path, 'status', '--porcelain'), '');
+    f.store.setMeta('maintenance', { phase: 'draining' });
+    assert.equal((await f.call('repos.migration', args)).error, null);
+    assert.equal((await f.call('repos.migration', { listAdoptions: true })).error, null);
+    assert.equal((await f.call('repos.migration', { listAdoptions: true, prepareAdoption: true, requestId: randomUUID() })).error.code, 'SERVICE_MAINTENANCE');
+    f.store.setMeta('maintenance', null);
+    const snapshot = join(plan.privateReviewDirectory, '0-before'); chmodSync(snapshot, 0o600); writeFileSync(snapshot, 'changed retained source');
+    assert.equal((await f.call('repos.migration', args)).error.code, 'MIGRATION_SNAPSHOT_CHANGED');
+  } finally { await f.cleanup(); }
+});
+
 test('all four adoption proposals preserve hook ownership and require committed reviewed files before activation', async () => {
   for (const adapter of adoptionPolicies.map(policy => policy.id)) {
     const f = await fixture(adapter); try {

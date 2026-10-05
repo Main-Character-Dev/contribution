@@ -49,7 +49,7 @@ const allowed: Record<string, string[]> = {
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
   'repos.resolve': ['repo', 'host', 'path', 'expectedRevision'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
-  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'prepareExistingAdoption', 'originalTip', 'migrationTip', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
+  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'prepareExistingAdoption', 'originalTip', 'migrationTip', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision', 'listAdoptions', 'reviewFile', 'reviewSide', 'reviewOffset'],
   'repos.initialize': ['repo', 'requestId', 'expectedRevision'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId', 'resume'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata', 'resume'],
@@ -348,9 +348,11 @@ export class Engine {
       requireValue(!this.stopping || ['version', 'service.status', 'maintenance.status'].includes(command), 'SERVICE_STOPPING', 'The service is stopping. Reconnect after the maintenance window is reconciled.', 3);
       if (this.store.getMeta('maintenance') && !command.startsWith('maintenance.')) {
         const reads = ['version', 'doctor', 'service.status', 'service.diagnostics', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
+        const migrationRead = command === 'repos.migration' && (args['listAdoptions'] === true || typeof args['adoptionPlan'] === 'string') &&
+          Object.keys(args).every(key => ['repo', 'listAdoptions', 'adoptionPlan', 'reviewFile', 'reviewSide', 'reviewOffset'].includes(key));
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
-        requireValue(reads.includes(command) || (['service.storage-policy', 'service.power-policy'].includes(command) && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+        requireValue(reads.includes(command) || migrationRead || (['service.storage-policy', 'service.power-policy'].includes(command) && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
           'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
       }
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
@@ -550,8 +552,13 @@ export class Engine {
       }
       if (command === 'repos.runtime') return completed({ runtime: await new ProjectRuntimes(this.store).register(repo, string(args['node'], 'node'), string(args['pnpm'], 'pnpm')) });
       if (command === 'repos.migration') {
-        requireValue(['prepareReporting', 'prepareAdoption', 'prepareExistingAdoption', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan'].filter(key => args[key]).length <= 1, 'INVALID_USAGE', 'Choose one migration action.', 2);
+        requireValue(['prepareReporting', 'prepareAdoption', 'prepareExistingAdoption', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'listAdoptions'].filter(key => args[key]).length <= 1, 'INVALID_USAGE', 'Choose one migration action.', 2);
+        const reviewingFile = ['reviewFile', 'reviewSide', 'reviewOffset'].some(key => args[key] !== undefined);
+        requireValue(!reviewingFile || args['adoptionPlan'], 'INVALID_USAGE', 'File review requires its retained adoption plan.', 2);
         requireValue(args['prepareExistingAdoption'] || (!args['originalTip'] && !args['migrationTip']), 'INVALID_USAGE', 'History selectors require an existing-adoption review.', 2);
+        if (args['listAdoptions'] || args['adoptionPlan']) requireValue(Object.keys(args).every(key => ['repo', 'listAdoptions', 'adoptionPlan', 'reviewFile', 'reviewSide', 'reviewOffset'].includes(key)), 'INVALID_USAGE', 'Read migration reviews without mutation arguments.', 2);
+        if (args['listAdoptions']) return completed(this.adoptions.reviews(repo));
+        if (reviewingFile) return completed(this.adoptions.reviewFile(repo, string(args['adoptionPlan'], 'proposal'), string(args['reviewFile'], 'reviewFile'), string(args['reviewSide'], 'reviewSide'), args['reviewOffset']));
         if (args['prepareExistingAdoption']) return completed(await this.adoptions.prepareExisting(repo, string(args['originalTip'], 'originalTip'), string(args['migrationTip'], 'migrationTip'), string(args['requestId'], 'requestId')));
         if (args['adoptionPlan']) return completed(this.adoptions.inspect(repo, string(args['adoptionPlan'], 'proposal')));
         for (const [key, action] of [['applyAdoption', 'apply'], ['activateAdoption', 'activate'], ['rollbackAdoption', 'rollback']] as const) if (args[key]) return completed(await this.adoptions.change(repo, string(args[key], 'proposal'), action, string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));

@@ -83,6 +83,7 @@ private struct RepositoryOverview: View {
     let repository: JSONValue
     @State private var initialization: ProjectSetup?
     @State private var settingsDraft: RepositorySettingsDraft?
+    @State private var migrationReview = false
     private var publication: [String: JSONValue] { workspace.repositoryStatus.object["publication"]?.object ?? [:] }
     private var publicationText: String {
         switch publication["relation"]?.text {
@@ -112,6 +113,9 @@ private struct RepositoryOverview: View {
                     Button("Initialize history…") { initialization = setup }.disabled(workspace.sending || workspace.pendingRequest != nil || workspace.repositoryLoading)
                 }
                 if let draft = RepositorySettingsDraft(repository) { Button("Project settings…") { settingsDraft = draft }.disabled(workspace.sending || workspace.pendingRequest != nil) }
+                if ["migration-required", "mathy-v1", "maincharacter-v1", "roboty-v1", "glassalpha-v1"].contains(config["integration"]?.object["adapter"]?.text ?? "") {
+                    Button("Project migration…") { migrationReview = true }
+                }
                 Button("Refresh remote status") { Task { await workspace.loadRepository(refresh: true) } }.disabled(workspace.repositoryLoading)
                 Button("Run local checks") {
                     guard let id = repository.object["id"]?.text else { return }
@@ -123,6 +127,7 @@ private struct RepositoryOverview: View {
             if let settingsDraft { RepositorySettingsSheet(workspace: workspace, draft: settingsDraft) }
         }
         .sheet(item: $initialization) { selection in ProjectSetupReview(workspace: workspace, selection: selection) }
+        .sheet(isPresented: $migrationReview) { MigrationReviewSheet(workspace: workspace, repositoryID: repository.object["id"]!.text) }
     }
 }
 

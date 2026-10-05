@@ -58,11 +58,30 @@ export class Adoptions {
   }
   private view(plan: Plan): ObjectValue {
     return { proposalId: plan.id, repositoryId: plan.repositoryId, adapter: plan.adapter, phase: plan.phase, sourceTip: plan.sourceTip, sourceBranch: plan.sourceBranch,
-      expectedRevision: plan.before.revision, configurationRevision: digest(plan.config), gate: plan.config.validation.gate, hookOwner: plan.hooksPath,
+      expectedRevision: plan.before.revision, configurationRevision: digest(plan.config), gate: plan.config.validation.gate, hookOwner: plan.hooksPath, createdAt: plan.createdAt,
       files: plan.changes.map(change => ({ path: change.path, before: change.before, after: change.after })), privateReviewDirectory: this.directory(plan.id),
       sourceCommitted: plan.phase === 'active', registrationOnly: Boolean(plan.existingMigrationTip), migrationTip: plan.existingMigrationTip ?? null, landingAdapter: 'not_activated_by_hook_adoption', mutation: plan.existingMigrationTip || plan.phase === 'prepared' ? 'none' : 'reviewed_files_only' };
   }
   inspect(repo: Enrolled, planId: string): ObjectValue { return this.view(this.plan(repo, planId)); }
+  reviews(repo: Enrolled): ObjectValue {
+    const plans = this.store.records<Plan>('adoptionPlan').filter(plan => plan.repositoryId === repo.id)
+      .sort((a, b) => Number(['prepared', 'rolled_back'].includes(a.phase)) - Number(['prepared', 'rolled_back'].includes(b.phase)) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
+    return { repositoryId: repo.id, plans: plans.slice(0, 50).map(plan => this.view(plan)), total: plans.length, limited: plans.length > 50 };
+  }
+  reviewFile(repo: Enrolled, planId: string, path: string, side: string, offset: unknown): ObjectValue {
+    const plan = this.plan(repo, planId), change = plan.changes.find(value => value.path === path);
+    requireValue(change && (side === 'before' || side === 'after') && Number.isSafeInteger(offset) && Number(offset) >= 0,
+      'MIGRATION_REVIEW_INVALID', 'Select an exact reviewed file, before/after side and nonnegative byte offset.', 2);
+    const bytes = this.snapshot(plan, change, side), start = Number(offset), size = bytes?.length ?? 0;
+    requireValue(start <= size && (!bytes || start === size || (bytes[start]! & 0xc0) !== 0x80), 'MIGRATION_REVIEW_INVALID', 'The review offset must be inside the file at a UTF-8 boundary.', 2);
+    let end = Math.min(size, start + 32768);
+    if (bytes) while (end < size && (bytes[end]! & 0xc0) === 0x80) end--;
+    let text = '';
+    try { if (bytes) text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(start, end)); }
+    catch { requireValue(false, 'MIGRATION_REVIEW_ENCODING', 'This retained source is not UTF-8 text. Inspect it locally without treating a lossy preview as exact review.', 3); }
+    return { repositoryId: repo.id, proposalId: plan.id, path, side, offset: start, nextOffset: end < size ? end : null, size,
+      sha256: change[side], mode: side === 'before' ? change.beforeMode : change.mode, exists: bytes !== null, text, scope: 'private_retained_snapshot' };
+  }
   private plan(repo: Enrolled, planId: string): Plan {
     const plan = this.store.record<Plan>('adoptionPlan', planId); requireValue(plan?.repositoryId === repo.id, 'MIGRATION_PLAN_REQUIRED', 'Select a retained proposal belonging to this repository.', 3); return plan;
   }
