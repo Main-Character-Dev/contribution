@@ -252,7 +252,23 @@ export class Engine {
     const command = (value as Request | null)?.command;
     const lifecycle = typeof command === 'string' && (command.startsWith('maintenance.') || ['service.restart', 'update.apply', 'service.status'].includes(command));
     if (!lifecycle) this.requests++;
-    try { return await this.handle(value); } finally { if (!lifecycle) this.requests--; }
+    try {
+      const response = await this.handle(value);
+      // Even an early maintenance/version/usage refusal must not make the
+      // native client forget a previously retained partial cleanup.
+      const args = (value as Request | null)?.args;
+      if (command === 'service.storage' && response.error && typeof args?.['requestId'] === 'string') {
+        const worktrees = args['worktrees'] === true, requestId = args['requestId'];
+        const retained = this.store.record<{ state: string; token?: string; preview?: { token: string } }>(worktrees ? 'worktreeCleanup' : 'storageCleanup', requestId);
+        const token = retained?.token ?? retained?.preview?.token;
+        if (retained?.state === 'removing' && token) {
+          response.result = { ...response.result, requestRetained: true, requestId, scopeToken: token, worktrees };
+          response.error.nextActions = [{ id: 'resume-cleanup', label: 'Resume the same reviewed cleanup after resolving the reported condition', argv: ['contribution', 'service', 'storage',
+            ...(worktrees ? ['--worktrees'] : []), '--scope-token', token, '--request-id', requestId, '--json'] }];
+        }
+      }
+      return response;
+    } finally { if (!lifecycle) this.requests--; }
   }
   private async handle(value: unknown): Promise<Response> {
     try {

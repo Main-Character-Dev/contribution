@@ -68,6 +68,17 @@ public struct RetainedRequest: Codable, Equatable, Sendable {
         guard unlink(url.path) == 0 else { throw failure("The service replied, but its retained request still needs reconciliation.") }
         try synchronizeDirectory()
     }
+    /// Some synchronous operations can return an actionable error after
+    /// partial effects. Their durable continuation still owns this identity.
+    @discardableResult public func resolveIfComplete(_ request: RetainedRequest, response: ResponseEnvelope) throws -> Bool {
+        if response.fields["result"]?.object["requestRetained"] == .bool(true) {
+            guard try pending() == request, response.fields["result"]?.object["requestId"]?.text == request.requestID else {
+                throw failure("The service's retained continuation does not match this request. Preserve it for reconciliation.")
+            }
+            return false
+        }
+        try resolve(request); return true
+    }
     private func synchronizeDirectory() throws {
         let fd = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw failure("The private request directory is unavailable.") }; defer { close(fd) }

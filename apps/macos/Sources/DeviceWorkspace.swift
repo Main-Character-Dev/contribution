@@ -240,7 +240,7 @@ struct DeviceWorkspace: View {
         sending = true; error = ""; defer { sending = false }
         do {
             let response = try await client.request(value.command, args: value.args)
-            try journal.resolve(value); pending = nil
+            if try journal.resolveIfComplete(value, response: response) { pending = nil }
             if let failure = response.fields["error"], failure != .null { error = failure.object["message"]?.text ?? "Request declined." }
             else {
                 if let id = response.operationID { onAccepted(id); message = "Request retained. Follow its result in Activity." }

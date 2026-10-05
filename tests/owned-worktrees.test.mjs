@@ -90,6 +90,14 @@ test('lost cleanup completion resumes its exact identity and fences new jobs wit
     assert.equal(f.store.admit(one.op.requestId, one.op.kind, f.repo.id, one.op.input, 'new').operationId, one.op.operationId);
     writeFileSync(join(two.directory, 'user-work'), 'preserve');
     await assert.rejects(() => f.owned.apply(preview.scopeToken, request)); assert.equal(readFileSync(join(two.directory, 'user-work'), 'utf8'), 'preserve');
+    const engine = new Engine(f.store, { identity: 'fixture', node: process.execPath, cli: 'unused' });
+    const pending = await engine.dispatch({ schemaVersion: 1, command: 'service.storage', args: { worktrees: true, scopeToken: preview.scopeToken, requestId: request }, cwd: f.root });
+    assert.equal(pending.result.requestRetained, true); assert.equal(pending.result.requestId, request);
+    assert.deepEqual(pending.error.nextActions[0].argv.slice(-3), ['--request-id', request, '--json']);
+    f.store.setMeta('maintenance', true);
+    const maintenance = await engine.dispatch({ schemaVersion: 1, command: 'service.storage', args: { worktrees: true, scopeToken: preview.scopeToken, requestId: request }, cwd: f.root });
+    assert.equal(maintenance.error.code, 'SERVICE_MAINTENANCE'); assert.equal(maintenance.result.requestRetained, true);
+    f.store.setMeta('maintenance', false);
     await assert.rejects(() => f.owned.apply(preview.scopeToken, randomUUID()), { code: 'STORAGE_CLEANUP_PENDING' });
     unlinkSync(join(two.directory, 'user-work')); // Fixture represents explicit owner reconciliation.
     const result = await f.owned.apply(preview.scopeToken, request); assert.equal(result.removed.length, 2);

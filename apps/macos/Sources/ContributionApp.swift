@@ -95,24 +95,28 @@ import ContributionPlatform
         guard !Task.isCancelled, repositoryGeneration == generation, self.selectedRepository == selectedRepository else { return }
         if let response { repositoryStatus = response.fields["result"] ?? .null }
     }
-    func submit(_ command: String, args: [String: JSONValue]) async {
-        guard !sending else { return }
+    @discardableResult func submit(_ command: String, args: [String: JSONValue]) async -> ResponseEnvelope? {
+        guard !sending else { return nil }
         let journal = NativeRequestJournal(directory: client.directory)
         do {
             let retained = RetainedRequest(command: command, args: args); try journal.retain(retained); pendingRequest = retained
-            await reconcilePending()
+            return await reconcilePending()
         } catch { self.error = error.localizedDescription; pendingRequest = try? journal.pending() }
+        return nil
     }
-    func reconcilePending() async {
-        guard let retained = pendingRequest, !sending else { return }
+    @discardableResult func reconcilePending() async -> ResponseEnvelope? {
+        guard let retained = pendingRequest, !sending else { return nil }
         sending = true; defer { sending = false }
+        var completed: ResponseEnvelope?
         do {
             let response = try await client.request(retained.command, args: retained.args)
-            try NativeRequestJournal(directory: client.directory).resolve(retained); pendingRequest = nil
+            if try NativeRequestJournal(directory: client.directory).resolveIfComplete(retained, response: response) { pendingRequest = nil }
+            completed = response
             if case .object(let failure) = response.fields["error"] { error = failure["message"]?.text }
             if let operation = response.operationID { selectedOperation = operation }
         } catch { self.error = error.localizedDescription }
         await refresh()
+        return completed
     }
     func addRepository() async {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
@@ -443,7 +447,9 @@ private struct ContributionSettings: View {
     @State private var notificationSave = ""
     @State private var devicesEnabled = false
     var body: some View {
-        Form {
+        VStack(alignment: .leading) {
+        TabView {
+            Form {
             Section("Background service") {
                 LabeledContent("Registration", value: registration)
                 Button("Register bundled service") { do { try ServiceRegistration.register(); registration = ServiceRegistration.status } catch { workspace.error = error.localizedDescription } }.disabled(workspace.updater.recoveryRequired)
@@ -451,12 +457,29 @@ private struct ContributionSettings: View {
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Version") { LabeledContent("Contribution", value: BuildIdentity.version); Text("Development build · Remote device capabilities remain unverified").foregroundStyle(.secondary) }
-            Section("Remote Devices") {
-                Toggle("Enable Remote Devices on this Mac", isOn: $devicesEnabled)
-                Button("Save device setting") { Task { await saveDeviceSetting() } }.disabled(notificationRevision.isEmpty)
-                Text("Enabling the module permits explicit setup and requests. Each project, phone and action still needs its own authorization and qualification.").font(.caption).foregroundStyle(.secondary)
+            Section("Command line") {
+                Text(cliStatus)
+                Button("Install bundled CLI") { do { try CLIInstallation().install(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
+                Button("Remove owned CLI link") { do { try CLIInstallation().uninstallOwnedLink(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
+                Text("Add ~/.local/bin to your shell PATH. This action preserves any unrelated executable already at that location.").font(.caption).foregroundStyle(.secondary)
             }
-            Section("Updates") {
+            }.formStyle(.grouped).tabItem { Label("Setup", systemImage: "gearshape") }
+            Form {
+                Section("Repositories on this Mac") {
+                    ForEach(workspace.repositories, id: \.identity) { repository in
+                        LabeledContent(repository.object["config"]?.object["name"]?.text ?? "Repository") {
+                            Text(repository.object["path"]?.text ?? "Path unavailable").font(.caption).textSelection(.enabled)
+                        }
+                    }
+                    Button("Add existing repository…") { Task { await workspace.addRepository() } }
+                }
+            }.formStyle(.grouped).tabItem { Label("Repositories", systemImage: "folder") }
+            Form { Section("Remote Devices") {
+                Toggle("Enable Remote Devices on this Mac", isOn: $devicesEnabled)
+                Button("Save device setting") { Task { await saveDeviceSetting() } }.disabled(notificationRevision.isEmpty || workspace.sending || workspace.pendingRequest != nil)
+                Text("Enabling the module permits explicit setup and requests. Each project, phone and action still needs its own authorization and qualification.").font(.caption).foregroundStyle(.secondary)
+            } }.formStyle(.grouped).tabItem { Label("Devices", systemImage: "iphone") }
+            Form { Section("Updates") {
                 Text(workspace.updater.message).textSelection(.enabled)
                 Button(workspace.updater.recoveryRequired ? "Continue signed update" : "Check for signed updates") { Task { await workspace.updater.check() } }
                     .disabled(!workspace.updater.configured || workspace.updater.busy)
@@ -464,8 +487,8 @@ private struct ContributionSettings: View {
                     Button("Cancel maintenance before installation") { Task { await workspace.updater.cancelBeforeUpdate() } }
                     Button("Reconcile installed update") { Task { await workspace.updater.reconcileInstalledUpdate() } }.disabled(workspace.updater.busy)
                 }
-            }
-            Section("Notifications") {
+            } }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }
+            Form { Section("Notifications") {
                 LabeledContent("Permission", value: notificationPermission)
                 Button("Allow milestone notifications") { Task { do { try await workspace.notifications.requestPermission(); notificationPermission = await workspace.notifications.permission() } catch { workspace.error = error.localizedDescription } } }
                 Toggle("Successful milestones", isOn: $notifySuccess)
@@ -473,17 +496,26 @@ private struct ContributionSettings: View {
                 Picker("Deliver milestones from this Mac to", selection: $preferredHost) {
                     ForEach(Array(notificationHosts.enumerated()), id: \.offset) { _, host in Text(host.object["label"]?.text ?? host.object["alias"]?.text ?? "Paired Mac").tag(host.object["hostId"]?.text ?? "") }
                 }
-                Button("Save notification preferences") { Task { await saveNotifications() } }.disabled(notificationRevision.isEmpty || preferredHost.isEmpty)
+                Button("Save notification preferences") { Task { await saveNotifications() } }.disabled(notificationRevision.isEmpty || preferredHost.isEmpty || workspace.sending || workspace.pendingRequest != nil)
                 if !notificationSave.isEmpty { Text(notificationSave).font(.caption) }
                 Text("Notification permission never changes workflow results. Offline delivery remains in the activity view.").font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Command line") {
-                Text(cliStatus)
-                Button("Install bundled CLI") { do { try CLIInstallation().install(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
-                Button("Remove owned CLI link") { do { try CLIInstallation().uninstallOwnedLink(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
-                Text("Add ~/.local/bin to your shell PATH. This action preserves any unrelated executable already at that location.").font(.caption).foregroundStyle(.secondary)
-            }
-        }.formStyle(.grouped).padding().frame(width: 540).task {
+            } }.formStyle(.grouped).tabItem { Label("Notifications", systemImage: "bell") }
+            StorageSettings(workspace: workspace).tabItem { Label("Storage", systemImage: "internaldrive") }
+        }
+        if workspace.pendingRequest != nil {
+            HStack {
+                Label("An earlier request still needs reconciliation.", systemImage: "exclamationmark.circle")
+                Spacer()
+                Button("Reconcile same request") { Task { await workspace.reconcilePending() } }.disabled(workspace.sending)
+            }.font(.caption)
+        }
+        if let error = workspace.error {
+            HStack { Text(error).font(.caption).textSelection(.enabled); Spacer(); Button("Dismiss") { workspace.error = nil } }
+        }
+        Button("Reload saved settings") { Task { await loadSettings() } }.disabled(workspace.sending)
+        }.padding().frame(width: 680, height: 580).task { await loadSettings() }
+    }
+    private func loadSettings() async {
             notificationPermission = await workspace.notifications.permission()
             if let result = await workspace.call("settings.get") {
                 notificationMachine = result.fields["result"]?.object["settings"]?.object ?? [:]
@@ -493,12 +525,11 @@ private struct ContributionSettings: View {
                 preferredHost = preferences["preferredHostId"]?.text ?? ""; notifySuccess = preferences["success"]?.boolean ?? true; notifyFailure = preferences["failure"]?.boolean ?? true
             }
             if let result = await workspace.call("hosts.list") { notificationHosts = result.fields["result"]?.object["hosts"]?.array ?? [] }
-        }
     }
     private func saveNotifications() async {
         var updated = notificationMachine
         updated["notifications"] = .object(["preferredHostId": .string(preferredHost), "success": .bool(notifySuccess), "failure": .bool(notifyFailure)])
-        if let response = await workspace.call("settings.apply", ["config": .object(updated), "expectedRevision": .string(notificationRevision), "requestId": .string(UUID().uuidString)]) {
+        if let response = await workspace.submit("settings.apply", args: ["config": .object(updated), "expectedRevision": .string(notificationRevision)]), response.fields["error"] == .null {
             notificationSave = "Preference change accepted. Follow its result in Activity."
             notificationRevision = ""; workspace.selectedOperation = response.operationID
         }
@@ -507,7 +538,7 @@ private struct ContributionSettings: View {
         var updated = notificationMachine
         var settings = updated["remoteDevices"]?.object ?? ["maintainSession": .bool(false)]
         settings["enabled"] = .bool(devicesEnabled); updated["remoteDevices"] = .object(settings)
-        if let response = await workspace.call("settings.apply", ["config": .object(updated), "expectedRevision": .string(notificationRevision), "requestId": .string(UUID().uuidString)]) {
+        if let response = await workspace.submit("settings.apply", args: ["config": .object(updated), "expectedRevision": .string(notificationRevision)]), response.fields["error"] == .null {
             notificationRevision = ""; workspace.selectedOperation = response.operationID
             notificationSave = "Device setting accepted. Follow its result in Activity."
         }

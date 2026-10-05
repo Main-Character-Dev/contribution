@@ -693,6 +693,11 @@
           "level": "fixture",
           "source": "tests/owned-worktrees.test.mjs",
           "scope": "Reviewed non-force Git removal of positively owned checkouts preserves native tasks, local files, retained refs, pins and unresolved work. Interrupted cleanup retains identity and fences new clone jobs."
+        },
+        {
+          "level": "fixture",
+          "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/StorageReviewTests.swift",
+          "scope": "Native cleanup binds category and reviewed token; partial removal retains the same request across client reopen and early maintenance refusal. Log-policy editing preserves summary settings. Actual GUI qualification remains open."
         }
       ],
       "nextStep": "Summary/cache/artifact lifecycle completion remains open."
