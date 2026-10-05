@@ -15,7 +15,8 @@ import { git, gitText } from './git.js';
 import type { LegacyHookInvocation } from './legacy-hook-borrow.js';
 
 export interface PublicationScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
-/** Created only by the reconciled adoption transaction. A policy setting alone
+/** Created by reconciled adoption; reviewed name/publication changes may bind
+ * the same verified registration to a new policy revision. A policy setting alone
  * cannot enable a pre-existing project writer or replace its hook owner. */
 export interface AdoptedHookRegistration {
   schemaVersion: 1; phase: 'active'; adoptionId: string; repositoryId: string; adapter: string; policyRevision: string;

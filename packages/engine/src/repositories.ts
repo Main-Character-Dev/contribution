@@ -6,13 +6,14 @@ import { identifyAdoption } from '@contribution/adapters';
 import { Journal } from './journal.js';
 import { digest, id, now, requireValue } from './core.js';
 import type { ObjectValue } from './core.js';
+import type { AdoptedHookRegistration } from './adopted-hooks.js';
 import { git, gitText, identity } from './git.js';
 
 export interface Enrolled {
   id: string; path: string; commonDir: string; config: Repository; revision: string; canonicalHostId: string;
   availability: 'this-mac' | 'both-macs'; policySource: 'generated' | 'tracked'; hookPath: string | null;
 }
-interface ConfigurationIntent { requestId: string; identity: string; previous: Enrolled; updated: Enrolled; state: 'prepared' | 'completed' }
+interface ConfigurationIntent { requestId: string; identity: string; previous: Enrolled; updated: Enrolled; state: 'prepared' | 'completed'; adoption?: { before: AdoptedHookRegistration; after: AdoptedHookRegistration } }
 interface CreationIntent { requestId: string; requestedPath: string; path: string; directory?: { dev: number; ino: number }; repository?: Enrolled }
 export class Repositories {
   private readonly creating = new Map<string, Promise<Enrolled>>();
@@ -121,7 +122,7 @@ export class Repositories {
       requireValue(existsSync(file) && digest(JSON.parse(readFileSync(file, 'utf8'))) === repo.revision, 'POLICY_CHANGED', 'Tracked configuration changed; apply and review it through repos configure.');
     }
   }
-  configure(repo: Enrolled, config: Repository, expectedRevision: string, requestId: string): Enrolled {
+  configure(repo: Enrolled, config: Repository, expectedRevision: string, requestId: string, verifiedAdoption?: AdoptedHookRegistration): Enrolled {
     this.migrationReady(repo); assertContract('repository', config);
     const requestIdentity = digest({ repo: repo.id, config, expectedRevision });
     const retained = this.store.record<ConfigurationIntent>('configurationIntent', requestId);
@@ -132,12 +133,31 @@ export class Repositories {
       'AUTHORITY_TRANSITION_REQUIRED', 'Identity, branch and adapter changes require an explicit reconciled migration.');
     requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Reconcile queued or uncertain operations before changing effective policy.');
     const updated = { ...repo, config, revision: digest(config) };
-    const intent: ConfigurationIntent = { requestId, identity: requestIdentity, previous: repo, updated, state: 'prepared' };
+    const adopted = this.store.record<AdoptedHookRegistration>('adoptedHooks', repo.id);
+    let adoption: ConfigurationIntent['adoption'];
+    if (adopted || !['generic-v1', 'migration-required'].includes(repo.config.integration.adapter)) {
+      requireValue(adopted && verifiedAdoption && digest(adopted) === digest(verifiedAdoption) && adopted.policyRevision === repo.revision,
+        'ADOPTED_CONFIGURATION_REVIEW_REQUIRED', 'The existing adapter must be verified before changing this project configuration.', 3);
+      requireValue(digest({ ...config, name: repo.config.name, publication: repo.config.publication }) === digest(repo.config),
+        'ORIGINAL_POLICY_PRESERVATION_REQUIRED', 'This reviewed adapter permits name and publication settings changes only. Validation, runtime and integration remain owned by the original project policy.', 3);
+      adoption = { before: adopted, after: { ...adopted, policyRevision: updated.revision } };
+    }
+    const intent: ConfigurationIntent = { requestId, identity: requestIdentity, previous: repo, updated, state: 'prepared', ...(adoption ? { adoption } : {}) };
     if (repo.policySource === 'tracked') requireValue(digest(JSON.parse(readFileSync(join(repo.path, 'contribution.json'), 'utf8'))) === repo.revision, 'POLICY_CHANGED', 'Resolve concurrent tracked configuration changes before applying.');
     this.store.put('configurationIntent', requestId, intent); return this.finishConfiguration(intent);
   }
   private finishConfiguration(intent: ConfigurationIntent): Enrolled {
     const { previous, updated } = intent;
+    const enrollment = this.all().find(repo => repo.id === previous.id);
+    requireValue(digest(enrollment ?? null) === digest(previous) || digest(enrollment ?? null) === digest(updated),
+      'CONFIGURATION_ENROLLMENT_CHANGED', 'Enrollment or canonical ownership changed during configuration. Preserve the retained selection for reconciliation.', 3);
+    if (intent.adoption) {
+      const current = this.store.record<AdoptedHookRegistration>('adoptedHooks', previous.id);
+      requireValue(digest(current ?? null) === digest(intent.adoption.before) || digest(current ?? null) === digest(intent.adoption.after),
+        'ADOPTED_CONFIGURATION_CHANGED', 'The reviewed adapter registration changed during configuration. Preserve the original intent for reconciliation.', 3);
+      requireValue(digest(intent.adoption.after) === digest({ ...intent.adoption.before, policyRevision: updated.revision }),
+        'ADOPTED_CONFIGURATION_CHANGED', 'Configuration recovery cannot replace original adapter ownership or evidence.', 3);
+    }
     if (previous.policySource === 'tracked') {
       const path = join(previous.path, 'contribution.json'), info = lstatSync(path);
       requireValue(info.isFile() && !info.isSymbolicLink(), 'POLICY_PATH_CHANGED', 'The tracked policy is no longer a regular file.');
@@ -153,7 +173,7 @@ export class Repositories {
         const parent = openSync(previous.path, 'r'); try { fsyncSync(parent); } finally { closeSync(parent); }
       }
     }
-    this.store.transaction(() => { this.save(updated); this.store.put('configurationIntent', intent.requestId, { ...intent, state: 'completed' });
+    this.store.transaction(() => { this.save(updated); if (intent.adoption) this.store.put('adoptedHooks', previous.id, intent.adoption.after); this.store.put('configurationIntent', intent.requestId, { ...intent, state: 'completed' });
       this.store.put('configurationRequests', intent.requestId, { digest: intent.identity, result: { repository: updated } }); }); return updated;
   }
   async relocate(repo: Enrolled, path: string): Promise<Enrolled> {

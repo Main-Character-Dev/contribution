@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { Engine } from '../packages/engine/dist/service.js';
+import { Repositories } from '../packages/engine/dist/repositories.js';
 import { listen } from '../packages/engine/dist/ipc.js';
 import { LegacyPrimaryLease } from '../packages/engine/dist/legacy-lease.js';
 import { LegacyLandingFlight } from '../packages/engine/dist/legacy-flight.js';
@@ -230,6 +231,63 @@ test('partial adoption and rollback replies retain the exact native continuation
       const finished = await f.change(action, plan, f.repo.revision, requestId); assert.equal(finished.error, null, JSON.stringify(finished));
       assert.equal(finished.result.phase, action === 'applyAdoption' ? 'applied' : 'rolled_back'); assert.equal(readFileSync(join(f.path, 'unrelated-draft'), 'utf8'), 'preserve');
       assert.deepEqual((await f.change(action, plan, f.repo.revision, requestId)).result, finished.result);
+    } finally { t.mock.restoreAll(); await f.cleanup(); }
+  }
+});
+
+
+test('adopted project name and publication changes preserve the verified original gate and reject policy replacement', async () => {
+  for (const adapter of adoptionPolicies.map(policy => policy.id)) {
+    const f = await fixture(adapter); try {
+      const { plan } = await f.prepare(); await f.change('applyAdoption', plan); git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Fixture adoption');
+      assert.equal((await f.change('activateAdoption', plan)).error, null);
+      const before = await f.engine.repos.get(f.repo.id), registration = f.store.record('adoptedHooks', f.repo.id), config = structuredClone(before.config);
+      config.name = 'Reviewed project name'; config.publication.pullRequestBase = 'main';
+      const args = { config, expectedRevision: before.revision, requestId: randomUUID() };
+      const configured = await f.call('repos.configure', args); assert.equal(configured.error, null, JSON.stringify(configured));
+      const updated = configured.result.repository; assert.equal(updated.revision, digest(config));
+      assert.deepEqual(f.store.record('adoptedHooks', f.repo.id), { ...registration, policyRevision: updated.revision });
+      assert.equal((await f.engine.workflows.adopted.verify(updated)).originalHookDigest, registration.originalHookDigest);
+      assert.equal(updated.config.validation.gate, before.config.validation.gate);
+      assert.deepEqual((await f.call('repos.configure', args)).result, configured.result);
+      for (const field of ['gate', 'profile']) {
+        const replaced = structuredClone(config); replaced.validation[field] = field === 'gate' ? (config.validation.gate === 'enabled' ? 'inactive' : 'enabled') : 'standard';
+        const refused = await f.call('repos.configure', { config: replaced, expectedRevision: updated.revision, requestId: randomUUID() });
+        assert.equal(refused.error.code, 'ORIGINAL_POLICY_PRESERVATION_REQUIRED');
+        assert.deepEqual(JSON.parse(readFileSync(join(f.path, 'contribution.json'), 'utf8')), config);
+      }
+      git(f.path, 'add', 'contribution.json'); git(f.path, 'commit', '-m', 'Fixture reviewed publication setting');
+      assert.equal((await f.call('push', { preview: true })).error, null);
+    } finally { await f.cleanup(); }
+  }
+});
+
+test('adopted configuration recovers its file and registration atomically and preserves a changed registration', async t => {
+  for (const changed of ['none', 'registration', 'enrollment']) {
+    const f = await fixture(); try {
+      const { plan } = await f.prepare(); await f.change('applyAdoption', plan); git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Fixture adoption'); await f.change('activateAdoption', plan);
+      const before = await f.engine.repos.get(f.repo.id), registration = f.store.record('adoptedHooks', f.repo.id), config = { ...before.config, name: 'Retained reviewed name' }, requestId = randomUUID();
+      const save = f.engine.repos.save.bind(f.engine.repos), mock = t.mock.method(f.engine.repos, 'save', (...args) => { save(...args); throw new Fault('FIXTURE_STOPPED', 'Stopped inside configuration transaction.'); });
+      const stopped = await f.call('repos.configure', { config, expectedRevision: before.revision, requestId }); mock.mock.restore();
+      assert.equal(stopped.error.code, 'FIXTURE_STOPPED'); assert.equal(stopped.result.requestRetained, true);
+      assert.deepEqual(f.store.record('adoptedHooks', f.repo.id), registration); assert.equal((await f.engine.repos.get(f.repo.id)).revision, before.revision);
+      assert.deepEqual(JSON.parse(readFileSync(join(f.path, 'contribution.json'), 'utf8')), config);
+      if (changed === 'registration') f.store.put('adoptedHooks', f.repo.id, { ...registration, guardDigest: 'changed-owner-record' });
+      const otherOwner = randomUUID();
+      if (changed === 'enrollment') f.engine.repos.save({ ...before, canonicalHostId: otherOwner });
+      new Repositories(f.store);
+      if (changed === 'registration') {
+        assert.equal(f.store.record('configurationIntent', requestId).state, 'prepared'); assert.equal(f.store.record('adoptedHooks', f.repo.id).guardDigest, 'changed-owner-record');
+        f.store.put('adoptedHooks', f.repo.id, registration);
+      }
+      if (changed === 'enrollment') {
+        assert.equal(f.store.record('configurationIntent', requestId).state, 'prepared'); assert.equal((await f.engine.repos.get(f.repo.id)).canonicalHostId, otherOwner);
+        f.engine.repos.save(before);
+      }
+      const recovered = await f.call('repos.configure', { resume: true, requestId }); assert.equal(recovered.error, null, JSON.stringify(recovered));
+      assert.equal(f.store.record('configurationIntent', requestId).state, 'completed');
+      assert.deepEqual(f.store.record('adoptedHooks', f.repo.id), { ...registration, policyRevision: digest(config) });
+      assert.equal((await f.engine.workflows.adopted.verify(recovered.result.repository)).adoptionId, registration.adoptionId);
     } finally { t.mock.restoreAll(); await f.cleanup(); }
   }
 });

@@ -627,7 +627,11 @@ export class Engine {
         const requestDigest = digest({ repo: repo.id, config, expectedRevision: selection['expectedRevision'] });
         const prior = this.store.record<{ digest: string; result: ObjectValue }>('configurationRequests', requestId);
         if (prior) { requireValue(prior.digest === requestDigest, 'REQUEST_ID_CONFLICT', 'Configuration request ID was reused with different inputs.'); return completed(prior.result); }
-        const result = { repository: this.repos.configure(repo, config, string(selection['expectedRevision'], 'expectedRevision'), requestId) };
+        const adopted = !['generic-v1', 'migration-required'].includes(repo.config.integration.adapter) ? await this.workflows.adopted.verify(repo) : undefined;
+        // Verification can await Git. Recheck the effective enrollment before
+        // binding its existing adapter to the reviewed new policy revision.
+        requireValue(this.repos.all().some(current => current.id === repo.id && digest(current) === digest(repo)), 'REVISION_CONFLICT', 'Enrollment changed during configuration review.', 3);
+        const result = { repository: this.repos.configure(repo, config, string(selection['expectedRevision'], 'expectedRevision'), requestId, adopted) };
         this.store.put('configurationRequests', requestId, { digest: requestDigest, result }); return completed(result);
       }
       if (command === 'repos.initialize') {

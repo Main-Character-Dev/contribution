@@ -1,0 +1,13 @@
+# Reviewed project settings
+
+The native repository context offers **Project settings** for generic and active adopted adapters. It edits the project name, existing Git publication remote, destination branch and optional pull-request base. Generic projects may also select the configured validation profile. The gate's enabled/inactive state is displayed unchanged. An incomplete migration must be reconciled before this settings flow is available.
+
+Review captures exact before/after values and the original configuration revision. Saving calls the shared `repos configure` service route using the native retained request journal. A changed revision is rejected; uncertain or partially applied replies preserve the original selection. Editing the draft after opening review cannot widen the reviewed request. Saving does not create a Git remote, commit source, run checks or publish history.
+
+For tracked policy, the reviewed `contribution.json` changes remain in the existing checkout for its normal commit workflow. Generated local policy stays in the service registration. Existing checks, built-ins, adapter identity, integration branch and runtime values survive the focused form.
+
+An active adopted project permits name and publication settings through this route. Its original hook dispatcher, guard, policy fingerprints and retained gate are independently verified before the unchanged adapter registration is bound to the new policy revision. Configuration and registration commit in one database transaction. The durable file intent resumes either side of that transaction after restart. Concurrent enrollment, canonical-owner or adapter-registration changes are preserved and require reconciliation. This route cannot alter original validation, runtime or integration policy.
+
+A partial configuration may also resume through `contribution repos configure --repo ID --resume --request-id UUID --json`. Resume reads the previously reviewed configuration from private service state and rejects replacement fields. Completed replay returns its original outcome even after later changes. Original adoption snapshots remain immutable; their rollback cannot silently overwrite later project configuration edits.
+
+Synthetic fixture proof covers all four policy families, the inactive gate, rejected policy replacement, file/database interruption and preserved concurrent registration/owner changes. Swift model tests cover exact review scope, null destination fields, untouched check/runtime data and restricted adopted profiles. Native compilation and fixture success do not establish GUI, keyboard or VoiceOver qualification. No real project configuration was changed during development.

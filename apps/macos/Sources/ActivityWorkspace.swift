@@ -82,6 +82,7 @@ private struct RepositoryOverview: View {
     @Bindable var workspace: Workspace
     let repository: JSONValue
     @State private var initialization: ProjectSetup?
+    @State private var settingsDraft: RepositorySettingsDraft?
     private var publication: [String: JSONValue] { workspace.repositoryStatus.object["publication"]?.object ?? [:] }
     private var publicationText: String {
         switch publication["relation"]?.text {
@@ -110,6 +111,7 @@ private struct RepositoryOverview: View {
                 if let setup = ProjectSetup.initialize(repository: repository, status: workspace.repositoryStatus, localHostID: workspace.localHostID) {
                     Button("Initialize history…") { initialization = setup }.disabled(workspace.sending || workspace.pendingRequest != nil || workspace.repositoryLoading)
                 }
+                if let draft = RepositorySettingsDraft(repository) { Button("Project settings…") { settingsDraft = draft }.disabled(workspace.sending || workspace.pendingRequest != nil) }
                 Button("Refresh remote status") { Task { await workspace.loadRepository(refresh: true) } }.disabled(workspace.repositoryLoading)
                 Button("Run local checks") {
                     guard let id = repository.object["id"]?.text else { return }
@@ -117,7 +119,10 @@ private struct RepositoryOverview: View {
                 }.disabled(workspace.sending || workspace.pendingRequest != nil)
             }.controlSize(.small)
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .sheet(item: $initialization) { selection in ProjectSetupReview(workspace: workspace, selection: selection) }
+            .sheet(isPresented: Binding(get: { settingsDraft != nil }, set: { if !$0 { settingsDraft = nil } })) {
+            if let settingsDraft { RepositorySettingsSheet(workspace: workspace, draft: settingsDraft) }
+        }
+        .sheet(item: $initialization) { selection in ProjectSetupReview(workspace: workspace, selection: selection) }
     }
 }
 
