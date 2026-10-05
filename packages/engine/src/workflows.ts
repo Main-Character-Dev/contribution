@@ -11,11 +11,14 @@ import { Lease, executable, processIdentity, descendantOf, run } from './process
 import type { RunOptions } from './process.js';
 import type { Payload } from './payload.js';
 import { ProjectRuntimes } from './project-runtime.js';
+import { AdoptedHooks } from './adopted-hooks.js';
+import { LegacyPrimaryLease } from './legacy-lease.js';
 
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
 export class Workflows {
-  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: Payload) {}
+  readonly adopted: AdoptedHooks;
+  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: Payload) { this.adopted = new AdoptedHooks(store, payload, repo => this.scope(repo)); }
   async scope(repo: Enrolled): Promise<PushScope> {
     await this.repos.current(repo);
     requireValue(repo.canonicalHostId === this.store.hostId, 'CANONICAL_OWNER_REQUIRED', 'Publish through the enrolled canonical owner.');
@@ -26,7 +29,8 @@ export class Workflows {
     const urls = (await gitText(repo.path, ['remote', 'get-url', '--push', '--all', remote])).split('\n');
     requireValue(urls.length === 1 && urls[0] && !urls[0].startsWith('-') && !urls[0].includes('::') && !/^https?:\/\/[^/]+:[^/]+@/.test(urls[0]),
       'UNSUPPORTED_DESTINATION', 'Use one credential-free Git destination with a supported credential helper.', 2);
-    return { repositoryId: repo.id, branch: repo.config.integration.branch, tip: info.tip, remote, destination: urls[0], ref: `refs/heads/${branch}`, policy: repo.revision };
+    const policy = repo.config.integration.adapter === 'generic-v1' ? repo.revision : digest({ configuration: repo.revision, adoption: this.store.record('adoptedHooks', repo.id) ?? null });
+    return { repositoryId: repo.id, branch: repo.config.integration.branch, tip: info.tip, remote, destination: urls[0], ref: `refs/heads/${branch}`, policy };
   }
   async preview(repo: Enrolled): Promise<ObjectValue> {
     const scope = await this.scope(repo), scopeToken = id();
@@ -163,7 +167,7 @@ export class Workflows {
     return { state: 'passed', checks: results, sourceTip: info.tip, inputDigest: before, reuse: 'never' };
   }
   async ensureHook(repo: Enrolled): Promise<void> {
-    requireValue(repo.config.integration.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Existing hook ownership must be adopted before managed publication.', 3);
+    if (repo.config.integration.adapter !== 'generic-v1') { await this.adopted.verify(repo); return; }
     const config = await git(repo.path, ['config', '--get', 'core.hooksPath']);
     requireValue(config.code === 1, 'EXISTING_HOOK_OWNER', 'Preserve the configured hook dispatcher; adopt its adapter before publication.', 3);
     const path = await gitText(repo.path, ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push']);
@@ -174,7 +178,7 @@ export class Workflows {
     else { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, content, { mode: 0o755, flag: 'wx' }); }
     this.store.put('hook', repo.id, { path, digest: digest(content) });
   }
-  async push(op: Operation, repo: Enrolled, signal: AbortSignal, lease: Lease): Promise<ObjectValue> {
+  async push(op: Operation, repo: Enrolled, signal: AbortSignal, lease: Lease | LegacyPrimaryLease): Promise<ObjectValue> {
     const scope = op.input['scope'] as unknown as PushScope;
     requireValue(digest(await this.scope(repo)) === digest(scope), 'STALE_PUSH_SELECTION', 'Publication scope changed while queued. A new preview is required.');
     await clean(repo.path); await this.ensureHook(repo);
@@ -183,17 +187,19 @@ export class Workflows {
     if (publication['relation'] === 'equal') return { delivery: 'up_to_date', gate: { state: 'not_run' }, remoteTip: scope.tip };
     requireValue(!['behind', 'diverged'].includes(String(publication['relation'])), 'REMOTE_DIVERGED', 'Reconcile destination history before publication.');
     const hookToken = id();
-    this.store.put('hookInvocation', op.operationId, { hookToken, lease: lease.owner, scope, remoteBefore: publication['remoteTip'], invoked: false });
+    const adoptedEnvironment = lease instanceof LegacyPrimaryLease ? await this.adopted.prepare(op, repo, scope, typeof publication['remoteTip'] === 'string' ? publication['remoteTip'] : null, lease) : null;
+    if (!adoptedEnvironment) this.store.put('hookInvocation', op.operationId, { hookToken, lease: lease.owner, scope, remoteBefore: publication['remoteTip'], invoked: false });
     this.store.update(this.store.get(op.operationId), { stage: 'git_push', effectDispatched: true });
     const options = this.options(op, signal);
     const result = await git(repo.path, ['push', '--porcelain', scope.remote, `refs/heads/${scope.branch}:${scope.ref}`], {
       ...options, timeoutMs: 60 * 60 * 1000,
       started: (pid, start) => {
         options.started?.(pid, start);
+        if (adoptedEnvironment) { this.adopted.started(op, pid, start); return; }
         const invocation = this.store.record<ObjectValue>('hookInvocation', op.operationId)!;
         this.store.put('hookInvocation', op.operationId, { ...invocation, process: { pid, start } });
       },
-      env: { CONTRIBUTION_OPERATION_ID: op.operationId, CONTRIBUTION_HOOK_TOKEN: hookToken } });
+      env: adoptedEnvironment as NodeJS.ProcessEnv ?? { CONTRIBUTION_OPERATION_ID: op.operationId, CONTRIBUTION_HOOK_TOKEN: hookToken } });
     const gate = this.store.record<ObjectValue>('gate', op.operationId) ?? { state: 'not_run' };
     const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
     const remoteTip = observed.code === 0 ? observed.stdout.split('\t')[0]?.trim() : null;

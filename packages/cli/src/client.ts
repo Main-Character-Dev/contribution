@@ -5,6 +5,7 @@ import { Fault, object, rejected, terminal } from '@contribution/engine/core';
 import type { ObjectValue } from '@contribution/engine/core';
 import { helpResponse, versionResponse } from '@contribution/engine';
 import type { Response } from '@contribution/contracts';
+import { executeAdoptedGate } from './adopted-hook.js';
 
 const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--profile': 'profile', '--availability': 'availability', '--request-id': 'requestId',
   '--expected-revision': 'expectedRevision', '--source-path': 'sourcePath', '--source-tip': 'sourceTip', '--base': 'base', '--expected-tip': 'expectedTip', '--scope-token': 'scopeToken',
@@ -91,17 +92,24 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     if (wait && command !== 'push') throw new Fault('INVALID_USAGE', '--wait is supported on push; use runs wait for other operations.', 2);
     if (follow && command !== 'logs') throw new Fault('INVALID_USAGE', '--follow is supported on logs; use runs follow for events.', 2);
     if (jsonl && command !== 'runs.follow') throw new Fault('INVALID_USAGE', '--jsonl is only supported on runs follow.', 2);
-    if (['hook.pre-push', 'hook.borrow', 'hook.release-borrow'].includes(command)) {
+    if (['hook.pre-push', 'hook.adopted', 'hook.borrow', 'hook.release-borrow'].includes(command)) {
       args['operationId'] = process.env['CONTRIBUTION_OPERATION_ID'] ?? '';
       args['hookToken'] = process.env['CONTRIBUTION_HOOK_TOKEN'] ?? '';
       args['caller'] = callerIdentity();
     }
-    if (command === 'hook.pre-push') {
+    if (command === 'hook.pre-push' || command === 'hook.adopted') {
       const chunks: Buffer[] = []; let bytes = 0;
       for await (const chunk of process.stdin) { const data = Buffer.from(chunk); bytes += data.length; if (bytes > 65536) throw new Fault('REF_TRANSACTION_UNSUPPORTED', 'Hook input exceeds its bound.', 2); chunks.push(data); }
       args['stdin'] = Buffer.concat(chunks).toString('utf8');
     }
     const call = (name: string, input: ObjectValue = args, timeout = 15000): Promise<Response> => request(directory, { schemaVersion: 1, command: name, args: input, cwd: process.cwd() }, timeout);
+    if (command === 'hook.adopted') {
+      const begun = await call('hook.adopted.begin');
+      if (begun.error || !begun.result) { write(render(begun, json)); return exitCode(begun); }
+      const gateExit = await executeAdoptedGate(begun.result);
+      const response = await call('hook.adopted.finish', { repo: args['repo'], operationId: args['operationId'], hookToken: args['hookToken'], caller: args['caller'], gateExit });
+      write(render(response, json)); return exitCode(response);
+    }
     if (command === 'version') {
       let response: Response; try { response = await call(command); } catch { response = versionResponse(); }
       write(render(response, json)); return exitCode(response);

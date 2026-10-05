@@ -22,6 +22,7 @@ import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import { LegacyReporting } from './legacy-reporting.js';
 import { LegacyHookBorrow } from './legacy-hook-borrow.js';
+import { LegacyPrimaryLease } from './legacy-lease.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
 import { Milestones } from './notifications.js';
 import type { Notice } from './notifications.js';
@@ -44,6 +45,7 @@ const allowed: Record<string, string[]> = {
   'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
   'hook.borrow': ['repo', 'operationId', 'hookToken', 'caller'], 'hook.release-borrow': ['repo', 'operationId', 'hookToken', 'caller', 'borrowToken'],
+  'hook.adopted.begin': ['repo', 'operationId', 'hookToken', 'caller', 'remote', 'url', 'stdin'], 'hook.adopted.finish': ['repo', 'operationId', 'hookToken', 'caller', 'gateExit'],
   'github.jobs': ['repo', 'runId', 'attempt'], 'github.logs': ['repo', 'runId', 'attempt', 'jobId'],
   'notifications.pending': [], 'notifications.context': ['repo', 'originHostId', 'noticeId'],
   'notifications.claim': ['repo', 'originHostId', 'noticeId', 'revision', 'requestId'],
@@ -153,7 +155,7 @@ export class Engine {
     }
   }
   private async execute(op: Operation, signal: AbortSignal): Promise<void> {
-    let lease: Lease | undefined;
+    let lease: Lease | LegacyPrimaryLease | undefined;
     try {
       // This schema-v1 payload understands these immutable requests; individual
       // handlers revalidate accepted policy/source before dispatching effects.
@@ -162,7 +164,7 @@ export class Engine {
       if (op.kind === 'settings.apply') result = this.applySettings(op);
       else {
         const repo = await this.repos.get(op.repositoryId);
-        if (isGitJob(op.kind)) lease = new Lease(repo.commonDir, op.attemptId);
+        if (isGitJob(op.kind)) lease = repo.config.integration.adapter === 'generic-v1' ? new Lease(repo.commonDir, op.attemptId) : new LegacyPrimaryLease(repo.commonDir, op.attemptId);
         if (['initialize', 'submit', 'push', 'seed'].includes(op.kind)) this.peers.assertWriter(repo);
         if (op.kind === 'initialize') result = await this.workflows.initialize(op, repo);
         else if (op.kind === 'submit') result = await this.workflows.landing(op, repo);
@@ -255,7 +257,7 @@ export class Engine {
         const reads = ['version', 'doctor', 'service.status', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
-        requireValue(reads.includes(command) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+        requireValue(reads.includes(command) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
           'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
       }
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
@@ -355,6 +357,11 @@ export class Engine {
         return this.store.response(op);
       }
       const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
+      if (command === 'hook.adopted.begin' || command === 'hook.adopted.finish') {
+        this.peers.assertWriter(repo);
+        requireValue(typeof args['operationId'] === 'string' && this.active.has(args['operationId']), 'HOOK_LEASE_INVALID', 'Adopted publication requires a currently managed push.', 3);
+        return completed(command === 'hook.adopted.begin' ? await this.workflows.adopted.begin(repo, args) : await this.workflows.adopted.finish(repo, args));
+      }
       if (command === 'hook.borrow' || command === 'hook.release-borrow') {
         this.peers.assertWriter(repo);
         const bridge = new LegacyHookBorrow(this.store);
