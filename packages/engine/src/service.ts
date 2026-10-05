@@ -17,12 +17,15 @@ import type { PeerTransport } from './peers.js';
 import { Devices } from './devices.js';
 import type { DeviceBackend } from './devices.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
+import { ProjectRuntimes } from './project-runtime.js';
+import { policyInventory, identifyAdoption } from '@contribution/adapters';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
+  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter'],
   'repos.initialize': ['repo', 'requestId'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata'],
@@ -233,6 +236,14 @@ export class Engine {
         return this.store.response(op);
       }
       const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
+      if (command === 'repos.runtime') return completed({ runtime: await new ProjectRuntimes(this.store).register(repo, string(args['node'], 'node'), string(args['pnpm'], 'pnpm')) });
+      if (command === 'repos.migration') {
+        const adapter = typeof args['adapter'] === 'string' ? args['adapter'] : identifyAdoption(repo.path)?.id;
+        requireValue(adapter, 'ADAPTER_UNKNOWN', 'Select an installed repository adapter for parity inspection.', 3);
+        const inventory = policyInventory(repo.path, adapter);
+        return completed({ inventory, sourceTip: (await identity(repo.path)).tip, branch: repo.config.integration.branch, hookOwner: repo.hookPath,
+          mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });
+      }
       if (command === 'devices.status') return this.devices.status(repo, string(args['device'], 'device'), args['refresh'] === true);
       if (command === 'devices.authorize' || command === 'devices.revoke') {
         requireValue(Array.isArray(args['operations']) && args['operations'].every(value => typeof value === 'string'), 'INVALID_DEVICE_SCOPE', 'Supply named operations.', 2);

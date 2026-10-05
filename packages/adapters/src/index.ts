@@ -1,4 +1,6 @@
-// Interfaces only: no scheduler, process execution, Git mutation or device backend.
+export { adoptionPolicies, identifyAdoption, policyInventory, projectPins } from './catalog.js';
+export type { AdoptionPolicy } from './catalog.js';
+// Adapters describe project policy. The shared engine owns execution.
 export interface ProjectRuntimeSelection {
   readonly executable: string;
   readonly version: string;

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readd
 import { basename, join } from 'node:path';
 import { assertContract } from '@contribution/contracts';
 import type { Repository } from '@contribution/contracts';
+import { identifyAdoption } from '@contribution/adapters';
 import { Journal } from './journal.js';
 import { digest, id, now, requireValue } from './core.js';
 import type { ObjectValue } from './core.js';
@@ -37,9 +38,10 @@ export class Repositories {
     else if (existsSync(file)) { config = JSON.parse(readFileSync(file, 'utf8')) as Repository; assertContract('repository', config); }
     else {
       requireValue(info.branch, 'DETACHED_PRIMARY', 'Enrollment needs a configured primary branch. Task worktrees may remain detached.', 2);
-      config = { schemaVersion: 1, repositoryId: id(), name: basename(info.path), integration: { branch: info.branch, adapter: hookPath ? 'migration-required' : 'generic-v1' },
+      const adopted = identifyAdoption(info.path);
+      config = { schemaVersion: 1, repositoryId: id(), name: basename(info.path), integration: { branch: info.branch, adapter: hookPath || adopted ? 'migration-required' : 'generic-v1' },
         publication: { remote: null, branch: null, pullRequestBase: null, mode: 'explicit' },
-        validation: { profile, gate: hookPath ? 'enabled' : 'inactive', adapter: hookPath ? 'migration-required' : 'generic-v1', builtins: [], checks: [] },
+        validation: { profile, gate: adopted?.gate ?? (hookPath ? 'enabled' : 'inactive'), adapter: hookPath || adopted ? 'migration-required' : 'generic-v1', builtins: [], checks: [] },
         runtime: { node: 'repository', packageManager: 'repository' } };
     }
     requireValue(!this.all().some(repo => repo.id === config.repositoryId), 'CLONE_IDENTITY_CONFLICT', 'This logical repository already has a different local clone. Reconcile its mapping explicitly.');

@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, fsyncSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { Journal } from './journal.js';
 import type { Operation } from './journal.js';
 import { Repositories } from './repositories.js';
@@ -10,6 +10,7 @@ import { clean, git, gitText, identity, oid, ordinaryHistory, contained, inputFi
 import { Lease, executable, processIdentity, run } from './process.js';
 import type { RunOptions } from './process.js';
 import type { Payload } from './payload.js';
+import { ProjectRuntimes } from './project-runtime.js';
 
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
@@ -129,18 +130,15 @@ export class Workflows {
     requireValue(repo.config.validation.builtins.length === 0, 'BUILTIN_UNSUPPORTED', 'An unrecognized built-in must be implemented before this gate can run.', 3);
     requireValue(selected.length > 0, 'CHECKS_UNCONFIGURED', 'No checks are configured for this source/profile.', 3);
     const results: ObjectValue[] = [];
+    const runtimes = new ProjectRuntimes(this.store);
+    const needsRuntime = existsSync(join(sourcePath, '.node-version')) || selected.some(check => ['node', 'pnpm', 'npm', 'npx'].includes(basename(check.argv[0]!)));
+    const runtime = needsRuntime ? await runtimes.resolve(repo, sourcePath) : null;
     for (const check of selected) {
       const name = check.argv[0]!;
-      let command = executable(name);
-      // Never inherit the bundled runtime as the project runtime.
-      if (['node', 'pnpm', 'npm', 'npx'].includes(name)) {
-        const runtime = this.store.record<{ executable: string; version: string }>('projectRuntime', `${repo.id}:${name}`);
-        requireValue(runtime, 'PROJECT_RUNTIME_REQUIRED', 'Register the project-pinned runtime through its adapter before running JavaScript checks.', 3);
-        command = runtime.executable;
-        requireValue((await run(command, ['--version'])).stdout.trim().replace(/^v/, '') === runtime.version, 'PROJECT_RUNTIME_CHANGED', 'The selected project runtime no longer matches its verified pin.', 3);
-      }
+      const command = ['node', 'pnpm'].includes(basename(name)) ? (basename(name) === 'node' ? runtime!.node : runtime!.pnpm) : executable(name);
+      requireValue(!['npm', 'npx'].includes(basename(name)), 'PACKAGE_MANAGER_UNPINNED', 'Use the selected pinned pnpm command or its exec route.', 3);
       this.store.log(op, `\n[${check.id}] started\n`);
-      const result = await run(command, check.argv.slice(1), { ...this.options(op, signal), cwd: contained(sourcePath, check.cwd), timeoutMs: Math.min(check.timeoutSeconds, 86400) * 1000 });
+      const result = await run(command, check.argv.slice(1), { ...this.options(op, signal), ...(runtime ? { env: runtimes.environment(runtime) } : {}), cwd: contained(sourcePath, check.cwd), timeoutMs: Math.min(check.timeoutSeconds, 86400) * 1000 });
       const state = result.cancelled ? 'cancelled' : result.timedOut ? 'timed_out' : result.code === 0 ? 'passed' : 'failed';
       results.push({ id: check.id, state, exitCode: result.code });
       const latest = this.store.get(op.operationId); this.store.update(latest, { result: { ...latest.result, checks: results } }, 'check.completed');

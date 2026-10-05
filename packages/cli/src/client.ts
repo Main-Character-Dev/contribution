@@ -9,7 +9,7 @@ import type { Response } from '@contribution/contracts';
 const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--profile': 'profile', '--availability': 'availability', '--request-id': 'requestId',
   '--expected-revision': 'expectedRevision', '--source-path': 'sourcePath', '--source-tip': 'sourceTip', '--base': 'base', '--expected-tip': 'expectedTip', '--scope-token': 'scopeToken',
   '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId', '--ssh-alias': 'sshAlias', '--host': 'host',
-  '--device': 'device', '--artifact': 'artifact', '--app-ref': 'appRef', '--build-profile': 'buildProfile', '--plan': 'plan', '--session-profile': 'sessionProfile', '--duration-seconds': 'durationSeconds', '--max-bytes': 'maxBytes', '--kind': 'kind' };
+  '--device': 'device', '--artifact': 'artifact', '--app-ref': 'appRef', '--build-profile': 'buildProfile', '--plan': 'plan', '--session-profile': 'sessionProfile', '--duration-seconds': 'durationSeconds', '--max-bytes': 'maxBytes', '--kind': 'kind', '--node': 'node', '--pnpm': 'pnpm', '--adapter': 'adapter' };
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch' };
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
@@ -44,7 +44,10 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'submit --repo ID --source-path PATH --source-tip OID --base OID --request-id ID [--metadata-file PATH]',
         'push --repo ID --preview', 'push --repo ID --expected-tip OID --scope-token TOKEN --request-id ID [--wait]',
         'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',
-        'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'hosts list', 'update check|apply --when-idle', 'codex open --repo ID'],
+        'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',
+        'repos pair --repo ID --host HOST --request-id UUID', 'repos seed|mirror --repo ID --request-id UUID',
+        'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID]',
+        'devices list|status|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile'],
         waitSeconds: 30, eventPollMilliseconds: 500, json: 'One response envelope; --jsonl for runs follow.',
         unavailable: ['Live host pairing and adopted project migration need qualification.', 'Device operations require configured identity and evidence.', 'Signed updates need a configured verified feed.'] };
       write(render(response, json)); return 0;
