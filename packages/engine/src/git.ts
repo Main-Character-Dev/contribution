@@ -1,4 +1,4 @@
-import { realpathSync, existsSync, readdirSync, lstatSync, readlinkSync, openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
+import { realpathSync, existsSync, opendirSync, lstatSync, readlinkSync, openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
 import { Fault, requireValue, digest, redact } from './core.js';
@@ -14,13 +14,13 @@ export async function gitText(path: string, args: readonly string[], options: Ru
   return result.stdout.trim();
 }
 export interface GitIdentity { path: string; commonDir: string; branch: string | null; tip: string | null; objectFormat: string }
-export async function identity(path: string): Promise<GitIdentity> {
-  const root = await gitText(path, ['rev-parse', '--show-toplevel']);
-  const common = await gitText(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  const branch = await git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-  const tip = await git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);
+export async function identity(path: string, options: RunOptions = {}): Promise<GitIdentity> {
+  const root = await gitText(path, ['rev-parse', '--show-toplevel'], options);
+  const common = await gitText(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'], options);
+  const branch = await git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], options);
+  const tip = await git(root, ['rev-parse', '--verify', 'HEAD^{commit}'], options);
   return { path: realpathSync(root), commonDir: realpathSync(common), branch: branch.code === 0 ? branch.stdout.trim() : null,
-    tip: tip.code === 0 ? tip.stdout.trim() : null, objectFormat: await gitText(root, ['rev-parse', '--show-object-format']) };
+    tip: tip.code === 0 ? tip.stdout.trim() : null, objectFormat: await gitText(root, ['rev-parse', '--show-object-format'], options) };
 }
 export function oid(value: string, format: string): void {
   requireValue(new RegExp(`^[0-9a-f]{${format === 'sha256' ? 64 : 40}}$`).test(value), 'INVALID_OID', 'Expected a full commit object ID.', 2);
@@ -39,17 +39,54 @@ export async function ordinaryHistory(path: string, tip: string): Promise<void> 
   const lfs = await git(path, ['grep', '-l', '-F', 'version https://git-lfs.github.com/spec/v1', tip, '--']);
   requireValue(lfs.code === 1, lfs.code === 0 ? 'LFS_UNSUPPORTED' : 'HISTORY_INSPECTION_FAILED', 'Complete Git LFS content support is unavailable in this adapter.');
 }
-export async function discover(root: string, maxDepth = 3, maxDirectories = 250): Promise<GitIdentity[]> {
-  const found = new Map<string, GitIdentity>(); let count = 0;
+export interface DiscoveryReport {
+  repositories: GitIdentity[];
+  scan: { root: string; directoriesVisited: number; entriesInspected: number; limitsReached: string[]; unreadableDirectories: string[]; invalidRepositories: string[] };
+  limits: { maxDepth: number; maxDirectories: number; maxEntries: number; timeoutMs: number };
+}
+export async function discoverReport(root: string, maxDepth = 3, maxDirectories = 250, timeoutMs = 10000, maxEntries = 10000): Promise<DiscoveryReport> {
+  requireValue(Number.isInteger(maxDepth) && maxDepth >= 0 && maxDepth <= 3 && Number.isInteger(maxDirectories) && maxDirectories > 0 && maxDirectories <= 250 &&
+    Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 10000 && Number.isInteger(maxEntries) && maxEntries > 0 && maxEntries <= 10000,
+    'DISCOVERY_LIMIT_INVALID', 'Repository discovery requires finite directory, depth, entry and time bounds.', 2);
+  const canonical = realpathSync(root); requireValue(lstatSync(canonical).isDirectory(), 'DISCOVERY_ROOT_INVALID', 'Choose an existing folder to scan.', 2);
+  const found = new Map<string, GitIdentity>(), reached = new Set<string>(); let count = 0, entries = 0;
+  const unreadable: string[] = [], invalid: string[] = [], deadline = Date.now() + timeoutMs, signal = AbortSignal.timeout(timeoutMs);
+  const elapsed = (): boolean => { if (!signal.aborted && Date.now() < deadline) return false; reached.add('deadline'); return true; };
   const visit = async (path: string, depth: number): Promise<void> => {
-    if (++count > maxDirectories) return;
-    if (existsSync(join(path, '.git'))) { try { const repo = await identity(path); found.set(repo.commonDir, repo); } catch { /* a discovered folder is not necessarily a repository */ } return; }
-    if (depth >= maxDepth) return;
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      if (entry.isDirectory() && !entry.isSymbolicLink() && !entry.name.startsWith('.') && !['node_modules', 'Library'].includes(entry.name)) await visit(join(path, entry.name), depth + 1);
-      if (count >= maxDirectories) break;
+    if (elapsed()) return;
+    if (count >= maxDirectories) { reached.add('directories'); return; }
+    count++;
+    // Never follow an entry that changed from a directory into a symbolic link.
+    try { const info = lstatSync(path); if (!info.isDirectory() || info.isSymbolicLink()) { unreadable.push(path); return; } }
+    catch { unreadable.push(path); return; }
+    if (existsSync(join(path, '.git'))) {
+      try {
+        const repo = await identity(path, { signal, timeoutMs, maxBytes: 16384 });
+        const prior = found.get(repo.commonDir); if (!prior || (!prior.branch && repo.branch)) found.set(repo.commonDir, repo);
+      } catch { if (!elapsed()) invalid.push(path); }
+      return;
     }
-  }; await visit(realpathSync(root), 0); return [...found.values()];
+    if (depth >= maxDepth) { reached.add('depth'); return; }
+    let directory;
+    try { directory = opendirSync(path); } catch { unreadable.push(path); return; }
+    try {
+      while (!elapsed()) {
+        if (entries >= maxEntries) { reached.add('entries'); break; }
+        const entry = directory.readSync(); if (!entry) break; entries++;
+        if (entry.isDirectory() && !entry.isSymbolicLink() && !entry.name.startsWith('.') && !['node_modules', 'Library'].includes(entry.name)) {
+          if (count >= maxDirectories) { reached.add('directories'); break; }
+          await visit(join(path, entry.name), depth + 1);
+        }
+      }
+    } catch { unreadable.push(path); } finally { directory.closeSync(); }
+  };
+  await visit(canonical, 0);
+  return { repositories: [...found.values()].sort((a, b) => a.path.localeCompare(b.path)),
+    scan: { root: canonical, directoriesVisited: count, entriesInspected: entries, limitsReached: [...reached].sort(), unreadableDirectories: unreadable, invalidRepositories: invalid },
+    limits: { maxDepth, maxDirectories, maxEntries, timeoutMs } };
+}
+export async function discover(root: string, maxDepth = 3, maxDirectories = 250): Promise<GitIdentity[]> {
+  return (await discoverReport(root, maxDepth, maxDirectories)).repositories;
 }
 export function contained(root: string, subpath: string): string {
   requireValue(!isAbsolute(subpath), 'INVALID_CHECK_DIRECTORY', 'Check directories must be relative to the selected checkout.', 2);

@@ -9,7 +9,7 @@ import type { Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import { Repositories } from './repositories.js';
 import { Workflows } from './workflows.js';
-import { discover, identity, git, gitText, inputFingerprint } from './git.js';
+import { discoverReport, identity, git, gitText, inputFingerprint } from './git.js';
 import { Lease, alive, processIdentity, gitPushAncestor } from './process.js';
 import type { Payload } from './payload.js';
 import { GitHubMonitor } from './github.js';
@@ -423,7 +423,7 @@ export class Engine {
         const repository = await this.repos.add(string(args['path'], 'path'), undefined, undefined, undefined, { repositoryId, revision: expectedRevision });
         return completed({ repository, authorityChanged: false, setupPerformed: false, peerProjects: this.peers.registry.view() });
       }
-      if (command === 'repos.discover') return completed({ repositories: await discover(string(args['root'], 'root')), limits: { maxDepth: 3, maxDirectories: 250 } });
+      if (command === 'repos.discover') return completed({ ...await discoverReport(string(args['root'], 'root')) });
       if (command === 'repos.add') {
         requireValue(args['profile'] === undefined || ['local-development', 'standard'].includes(String(args['profile'])), 'INVALID_PROFILE', 'Unknown profile.', 2);
         requireValue(args['availability'] === undefined || ['this-mac', 'both-macs'].includes(String(args['availability'])), 'INVALID_AVAILABILITY', 'Unknown availability.', 2);
