@@ -5,7 +5,7 @@ import type { Response } from '@contribution/contracts';
 export type ObjectValue = Record<string, unknown>;
 export type State = NonNullable<Response['operationState']>;
 export const terminal = new Set<State>(['succeeded', 'failed', 'cancelled', 'interrupted', 'outcome_unknown', 'needs_attention']);
-export const isGitJob = (kind: string): boolean => !['device', 'remote.device', 'artifact_transfer'].includes(kind);
+export const isGitJob = (kind: string): boolean => !['device', 'remote.device', 'artifact_transfer', 'device_transfer'].includes(kind);
 export class Fault extends Error {
   constructor(readonly code: string, message: string, readonly exit = 4, readonly details: ObjectValue = {}, readonly retryable = false) { super(message); }
 }

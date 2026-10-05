@@ -17,6 +17,7 @@ import { Devices } from './devices.js';
 import type { DeviceBackend } from './devices.js';
 import type { DeviceBuildDriver } from './device-builds.js';
 import { DeviceArtifactTransfers } from './device-transfer.js';
+import { DeviceOwnershipTransfers } from './device-ownership.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
@@ -55,6 +56,7 @@ allowed['devices.artifacts.transfer'] = ['repo', 'host', 'fromHost', 'artifact',
 allowed['devices.list'] = ['repo', 'host']; allowed['devices.status'] = ['repo', 'host', 'device', 'refresh'];
 allowed['devices.authorize'] = ['repo', 'host', 'device', 'operations', 'requestId']; allowed['devices.revoke'] = allowed['devices.authorize']!;
 allowed['devices.reconcile'] = ['host', 'operationId', 'requestId'];
+allowed['devices.transfer-host'] = ['repo', 'device', 'fromHost', 'host', 'expectedRevision', 'requestId', 'releaseRef'];
 export class Engine {
   readonly repos: Repositories;
   readonly workflows: Workflows;
@@ -62,6 +64,7 @@ export class Engine {
   readonly peers: Peers;
   readonly devices: Devices;
   readonly artifacts: DeviceArtifactTransfers;
+  readonly deviceOwnership: DeviceOwnershipTransfers;
   readonly maintenance: Maintenance;
   readonly active = new Map<string, AbortController>();
   readonly activeRepositories = new Set<string>();
@@ -82,6 +85,8 @@ export class Engine {
     this.devices = new Devices(store, deviceRuntime?.backend ?? new CoreDeviceBackend(store), payload.identity, deviceRuntime?.mode ?? 'observed', deviceRuntime?.buildDriver);
     this.artifacts = new DeviceArtifactTransfers(store, deviceRuntime?.mode ?? 'observed', (host, action, body) => this.peers.call(host, action, body));
     this.peers.receiveArtifact = (repo, from, action, body) => this.artifacts.receive(repo, from, action, body);
+    this.deviceOwnership = new DeviceOwnershipTransfers(store, this.devices, (host, action, body) => this.peers.call(host, action, body));
+    this.peers.receiveDeviceOwnership = (repo, from, release) => this.deviceOwnership.receive(repo, from, release);
     if (!store.getMeta('settings')) {
       const settings: Machine = { schemaVersion: 1, hostId: store.hostId, label: 'This Mac', role: 'standalone', primaryHostId: store.hostId,
         primarySshAlias: null, projectRoots: [], repositories: [], notifications: { preferredHostId: store.hostId, success: true, failure: true },
@@ -150,13 +155,14 @@ export class Engine {
       if (op.kind === 'settings.apply') result = this.applySettings(op);
       else {
         const repo = await this.repos.get(op.repositoryId);
-        if (!['device', 'artifact_transfer'].includes(op.kind)) lease = new Lease(repo.commonDir, op.attemptId);
+        if (isGitJob(op.kind)) lease = new Lease(repo.commonDir, op.attemptId);
         if (['initialize', 'submit', 'push', 'seed'].includes(op.kind)) this.peers.assertWriter(repo);
         if (op.kind === 'initialize') result = await this.workflows.initialize(op, repo);
         else if (op.kind === 'submit') result = await this.workflows.landing(op, repo);
         else if (op.kind === 'push') result = await this.workflows.push(op, repo, signal, lease!);
         else if (op.kind === 'device') result = await this.devices.execute(op, repo, signal);
         else if (op.kind === 'artifact_transfer') result = await this.artifacts.execute(op, signal);
+        else if (op.kind === 'device_transfer') result = await this.deviceOwnership.execute(op, repo, signal);
         else if (op.kind === 'seed' || op.kind === 'mirror') result = await this.peers.applyHistory(op, repo);
         else if (op.kind === 'checks') {
           requireValue(op.input['policy'] === repo.revision, 'POLICY_CHANGED', 'Check policy changed after admission.');
@@ -282,10 +288,15 @@ export class Engine {
       if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list()] });
       if (command === 'hosts.pair') return completed(await this.peers.pair(string(args['sshAlias'], 'sshAlias')));
       if (command === 'peer.exchange') { const result = await this.peers.receive(object(args['envelope'])); this.kick(); return completed(result); }
-      if (command.startsWith('devices.') && command !== 'devices.artifacts.transfer' && command !== 'devices.reconcile' && !remoteDeviceCommands.has(command) && !remoteDeviceReads.has(command)) requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke this configuration or authorization command on the selected host service.', 3);
+      if (command.startsWith('devices.') && !['devices.artifacts.transfer', 'devices.reconcile', 'devices.transfer-host'].includes(command) && !remoteDeviceCommands.has(command) && !remoteDeviceReads.has(command)) requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke this configuration or authorization command on the selected host service.', 3);
       if (command === 'devices.list') return completed({ executionHostId: this.store.hostId, devices: await this.devices.backend.inventory(), discoveryGrantsAuthority: false });
       if (command === 'devices.reconcile') {
         const op = this.store.get(string(args['operationId'], 'operationId'));
+        if (op.kind === 'device_transfer') {
+          requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'DEVICE_IDENTITY_MISMATCH', 'Reconcile ownership through the service that retained this transfer.', 2);
+          if (['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'reconciling_retained_ownership', error: null });
+          this.kick(); return this.store.response(this.store.get(op.operationId));
+        }
         if (op.kind === 'remote.device') {
           requireValue(args['host'] === undefined || args['host'] === op.input['destinationHostId'], 'DEVICE_IDENTITY_MISMATCH', 'Reconcile this operation on its original selected host.', 2);
           requireValue(op.result['remoteOperationId'], 'EXECUTION_ACCEPTANCE_UNCONFIRMED', 'The remote acceptance reply is unresolved; retain the outbox and query its original request.', 3);
@@ -317,7 +328,7 @@ export class Engine {
       if (['runs.get', 'runs.cancel', 'runs.pin', 'runs.unpin', 'runs.reconcile', 'logs', 'repair-context'].includes(command)) {
         let op = this.store.get(string(args['operationId'], 'operationId'));
         if (command === 'runs.reconcile') {
-          if (op.kind === 'artifact_transfer' && ['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'resuming_retained_transfer', error: null });
+          if (['artifact_transfer', 'device_transfer'].includes(op.kind) && ['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'resuming_retained_transfer', error: null });
           else if (op.result['remoteOperationId']) await this.peers.observeOperation(op, true);
           else await this.recoverObservedEffects(op.operationId);
           this.kick(); op = this.store.get(op.operationId);
@@ -374,6 +385,9 @@ export class Engine {
           mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });
       }
       if (command === 'devices.configure') return completed(this.devices.builds.configure(repo, args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
+      if (command === 'devices.transfer-host') {
+        const op = this.deviceOwnership.admit(repo, args, this.payload.identity); this.kick(); return this.store.response(op);
+      }
       if (command === 'devices.profile') return completed({ ...this.devices.builds.inspect(repo), policyRevision: this.devices.profile(repo).revision });
       if (command === 'devices.artifacts.list' || command === 'devices.artifacts.get') return completed(this.devices.builds.artifacts(repo, command === 'devices.artifacts.get' ? string(args['artifact'], 'artifact') : undefined));
       if (command === 'devices.artifacts.transfer') {

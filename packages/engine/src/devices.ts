@@ -34,6 +34,7 @@ export interface DeviceBackend {
   reconcile(effect: Effect, receipt: DeviceOperation): Promise<Partial<Effect>>;
   verifyArtifact(artifact: RetainedDeviceArtifact, receipt: DeviceOperation): Promise<void>;
   verifyInstalledApp(receipt: DeviceOperation): Promise<void>;
+  releaseOwnedSession?(deviceId: string, profile: DeviceProfile, signal: AbortSignal): Promise<{ released: boolean; evidenceRefs: string[] }>;
 }
 interface Grant { hostId: string; deviceId: string; repositoryId: string; appIdentity: string; policyRevision: string; operations: string[]; revision: string; updatedAt: string }
 export interface RetainedDeviceArtifact { provenance: ArtifactProvenance; path: string; appPath: string; appDigest?: string }

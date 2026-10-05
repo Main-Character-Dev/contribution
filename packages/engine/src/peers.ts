@@ -52,6 +52,7 @@ export class Peers {
   prepareFence?: (repo: Enrolled) => Promise<void>;
   dispatchLocal?: (command: string, args: ObjectValue) => Promise<Response>;
   receiveArtifact?: (repo: Enrolled, from: string, action: string, body: ObjectValue) => Promise<ObjectValue>;
+  receiveDeviceOwnership?: (repo: Enrolled, from: string, release: unknown) => Promise<ObjectValue>;
   constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: string, readonly transport: PeerTransport = sshTransport) {}
   list(): Peer[] { return this.store.records<Peer>('peer'); }
   private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -152,6 +153,10 @@ export class Peers {
       }
       const authority = this.store.record<Authority>('authority', repositoryId);
       requireValue(repo.availability === 'both-macs' && authority?.phase === 'active' && authority.peerHostId === from, 'REPOSITORY_PEER_UNAUTHORIZED', 'This peer is not associated with the repository authority.');
+      if (action === 'device.ownership.accept') {
+        requireValue(this.receiveDeviceOwnership, 'PEER_ACTION_UNSUPPORTED', 'This peer has no device ownership receiver.', 3);
+        return this.receiveDeviceOwnership(repo, from, body['release']);
+      }
       if (action === 'operation.cancel-request') {
         const requestId = string(body['requestId'], 'requestId'), op = this.store.byRequest(requestId);
         if (op) {
