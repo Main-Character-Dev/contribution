@@ -205,3 +205,24 @@ Offline preparation now records output creation before creating its build direct
 The shared output census uses incremental directory reads, bounded entries/depth/bytes and a final identity recheck. File lookup and ancestor verification avoid quadratic work on large output inventories. `bash scripts/dev.sh check` passed 306 Node tests, generated drift, strict compilation and foundation preservation checks. Six new build-output groups cover prerequisite checkout removal, modified/new/linked output, stale review, partial recovery, unconfirmed creation and pins on later artifact-dependent attempts; the offline preparation fixture verifies the actual seal. The 25-test focused build/storage/worktree run also passed before the final associated-pin case was added. All deletion targets were generated disposable fixture data. No real project output was cleaned.
 
 Summary compaction, Git retention release, unconfirmed old build output, and retained payload/backup cleanup remain open. Limits and ownership requirements are recorded in `STORAGE_RETENTION.md`.
+
+## Native launch observation
+
+The CoreDevice adapter now retains the selected app before launch, supplies an
+explicit empty child environment, validates the returned process identity and
+performs a separate live process query between two app identity observations.
+Lost replies and journal reopening observe the retained selection without
+redispatch. Only a unique main-app process can confirm a running state; app
+extensions, changed versions/paths, malformed results and ambiguous matches
+remain uncertain. Backend preflight is followed by a synchronous engine guard
+for current authorization, ownership, context, policy and cancellation.
+
+`bash scripts/dev.sh check` passed all 313 Node tests, generated drift, strict
+TypeScript, contract type regressions and original foundation preservation with
+258 local links (`.build/check-coredevice-launch.log`). Eighteen focused device
+tests also passed. A new test initially wrote its changed observation under the
+wrong fixture key; using the actual host/repository/device digest exercised and
+confirmed the dispatch guard. No native UI changed and no physical device
+command ran. Response parsers follow documented command help and primary tool
+consumers; real response-schema, initial ownership and physical launch proof
+remain required as recorded in `DEVICE_EXECUTION.md`.

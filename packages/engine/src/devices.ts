@@ -33,7 +33,10 @@ export interface DeviceBackend {
   readonly supportedOperations?: readonly string[];
   inventory(): Promise<{ deviceId: string; label: string }[]>;
   observe(deviceId: string, profile: DeviceProfile): Promise<DeviceObservation>;
-  perform(action: Effect['operation'], receipt: DeviceOperation, parameters: ObjectValue, signal: AbortSignal): Promise<Partial<Effect>>;
+  /** Backends must call beforeDispatch immediately before each external effect,
+   * after any asynchronous backend preflight. Observation/reconciliation never
+   * receives permission to repeat an effect. */
+  perform(action: Effect['operation'], receipt: DeviceOperation, parameters: ObjectValue, signal: AbortSignal, beforeDispatch: () => void): Promise<Partial<Effect>>;
   reconcile(effect: Effect, receipt: DeviceOperation): Promise<Partial<Effect>>;
   verifyArtifact(artifact: RetainedDeviceArtifact, receipt: DeviceOperation): Promise<void>;
   verifyInstalledApp(receipt: DeviceOperation): Promise<void>;
@@ -345,7 +348,13 @@ export class Devices {
             const prepared = await this.builds.perform(op, repo, receipt, bounded.signal);
             const latest = this.store.get(op.operationId); this.store.update(latest, { result: { ...latest.result, ...prepared } });
             result = { state: 'succeeded', certainty: 'confirmed', evidenceRefs: prepared['evidenceRefs'] as string[] };
-          } else result = await this.backend.perform(effect.operation, receipt, object(op.input['parameters']), bounded.signal);
+          } else result = await this.backend.perform(effect.operation, receipt, object(op.input['parameters']), bounded.signal, () => {
+            requireValue(!bounded.signal.aborted, 'CANCELLED', 'Device work was cancelled before dispatch.', 130);
+            const latest = this.store.record<DeviceObservation>('deviceObservation', this.key(repo, receipt.deviceId));
+            requireValue(latest && digest(latest.context) === digest(receipt.context), 'CAPABILITY_CONTEXT_CHANGED', 'The observed device context changed before backend dispatch.', 3);
+            this.guard(repo, latest, [effect.operation], receipt.intent.qualification, op.operationId);
+            requireValue(this.profile(repo).revision === receipt.intent.policyRevision, 'POLICY_CHANGED', 'Project policy changed before backend dispatch.', 3);
+          });
         }
         catch (error) {
           if (effect.operation === 'prepare') { effect.state = error instanceof Fault && error.exit === 130 ? 'cancelled' : 'failed'; effect.certainty = 'confirmed'; effect.completedAt = now(); throw error; }

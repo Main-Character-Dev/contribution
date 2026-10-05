@@ -159,6 +159,26 @@ test('revocation during asynchronous artifact preflight stops the physical effec
   } finally { await f.cleanup(); }
 });
 
+test('backend final dispatch guard rejects authority changes during backend preflight', async () => {
+  for (const drift of ['authorization', 'policy', 'ownership', 'context']) {
+    const f = await deviceFixture(); let dispatched = false;
+    try {
+      f.backend.perform = async (_action, _receipt, _args, _signal, beforeDispatch) => {
+        if (drift === 'authorization') await f.call('devices.revoke', { repo: f.repo.id, device: f.device, operations: ['install'], requestId: randomUUID() });
+        if (drift === 'policy') f.journal.put('deviceProfile', f.repo.id, { ...f.profile, revision: 'changed' });
+        if (drift === 'ownership') f.engine.devices.saveOwnership({ ...f.engine.devices.ownership(f.device), mutationsPermitted: false });
+        if (drift === 'context') {
+          const observation = structuredClone(f.observation); observation.context.device.iOSBuild = 'changed';
+          f.journal.put('deviceObservation', digest({ repo: f.repo.id, device: f.device, host: f.journal.hostId }), observation);
+        }
+        beforeDispatch(); dispatched = true; throw new Error('must not dispatch');
+      };
+      const accepted = await f.call('devices.install'), result = await f.wait(accepted.operationId);
+      assert.equal(dispatched, false, drift); assert.notEqual(result.operationState, 'succeeded');
+    } finally { await f.cleanup(); }
+  }
+});
+
 test('unimplemented backend operations fail before admission or ownership changes, including qualification', async () => {
   const f = await deviceFixture(); try {
     f.backend.supportedOperations = ['connect'];

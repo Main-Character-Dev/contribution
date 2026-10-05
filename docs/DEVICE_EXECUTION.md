@@ -80,6 +80,35 @@ Synthetic validator tests exercise both accepted and rejected record shapes with
 
 CoreDevice readiness distinguishes cached inventory from a completed developer-service query. `device info details` is not connection proof because the installed Xcode help permits cached output after connection failure. Connect uses the bounded installed-app query and stores only the selected device, query kind and count, without unrelated app identities. Inventory alone leaves live developer readiness unknown. Native session attribution and physical response-schema qualification remain required.
 
+CoreDevice launch retains the selected installed app identity and device-side
+bundle URL before sending one launch command. An explicit empty app environment
+overrides inherited `DEVICECTL_CHILD_` variables; the command requests activation
+without terminating an existing app or opening a console/debug session. After
+launch, a separate bounded live process query must identify the returned PID
+and executable directly inside that same app bundle. The selected app version
+and bundle URL are checked before and after the process query. Extensions,
+similar names, duplicate process matches, changed apps and malformed output
+cannot confirm launch. Retained evidence contains only the selected app/process
+identity, not unrelated app/process inventory or device filesystem paths.
+
+Restart or a lost launch reply uses observation only. It requires the original
+durable app selection and one matching live main-app process; a retained reply
+also fixes the PID/executable. This confirms that the selected app was observed
+running, without claiming foreground state, process causation, debugger ownership
+or any other capability. Missing selection or unknown response structure stays
+uncertain and never automatically repeats launch. The engine supplies a final
+synchronous authority check after any asynchronous backend preflight, so changed
+grants, policy, ownership, context or cancellation block dispatch.
+
+The installed Xcode 27 help was inspected for the launch environment override,
+exact bundle-ID filtering and live process query. Initial parser fields follow
+the primary [Flutter app/launch parser](https://chromium.googlesource.com/external/github.com/flutter/flutter/+/a10c95095d17467b8108dde3c6beb8e39d64941b/packages/flutter_tools/lib/src/ios/core_devices.dart)
+and [NativeScript process-query consumer](https://github.com/NativeScript/ios-device-lib/blob/master/IOSDeviceLib/DevicectlHelper.cpp).
+These are implementation references, not physical qualification of Xcode 27 or
+the owner's iPhone. Synthetic fixtures cover the readback and recovery boundary;
+routine native device use still requires ownership/bootstrap and actual context
+qualification.
+
 Signed-archive sending now holds one verified descriptor through peer acknowledgments, rejecting replacement or mutation before completion. Incoming archive chunks use the same recorded private file/parent identity and finite descriptor writer as Git transfers. Lost acknowledgments and matching partial writes can resume; replacement, shared files and unknown legacy ownership cannot become accepted payloads. These are fixture-tested local storage boundaries, not physical transfer qualification.
 
 Materialized app verification now censuses at most 100,000 owned entries, 32 directory levels and four GiB, including empty directories in the entry limit. File hashing uses at most one MiB per read and rechecks file/root/directory identities before returning the existing ordered digest format. Links, shared files, concurrent sibling edits, additions, replacement and growth cannot yield a verified tree. Signed-app inspection compares tree identity across native verification, decodes the same bounded provisioning bytes later retained in its receipt, and rechecks those bytes. Existing digest identities remain compatible. These bounds and synthetic signing-response tests are separate from real Apple signing and device acceptance.
