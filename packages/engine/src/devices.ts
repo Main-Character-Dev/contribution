@@ -17,7 +17,7 @@ export const deviceActions: DeviceAction[] = ['connect', 'prepare', 'install', '
 export interface DeviceProfile {
   repositoryId: string; adapterId: string; revision: string; app: DeviceOperation['intent']['app'];
   permitsForeground: boolean; configurations: string[]; buildProfiles: string[];
-  plans: Record<string, { operation: DeviceAction; fixtureId: string; acceptanceId: string; authorizedOperations: [string, ...string[]]; maxAttempts: number; maxDurationSeconds: number }>;
+  plans: Record<string, { operation: DeviceAction; fixtureId: string; acceptanceId: string; authorizedOperations: [string, ...string[]]; maxAttempts: number; maxDurationSeconds: number; expectedContextDigest?: string }>;
 }
 export interface DeviceObservation {
   recordMode: Mode; deviceId: string; observedAt: string; context: DeviceContext;
@@ -28,6 +28,7 @@ export interface DeviceObservation {
 }
 export interface DeviceBackend {
   readonly recordMode: Mode;
+  readonly supportedOperations?: readonly string[];
   inventory(): Promise<{ deviceId: string; label: string }[]>;
   observe(deviceId: string, profile: DeviceProfile): Promise<DeviceObservation>;
   perform(action: Effect['operation'], receipt: DeviceOperation, parameters: ObjectValue, signal: AbortSignal): Promise<Partial<Effect>>;
@@ -82,22 +83,75 @@ export class Devices {
       qualifiedAt: null, evidenceIds: [], limitations: ['No reviewed evidence qualifies this exact operation and context.'], reasonCodes: ['CAPABILITY_UNVERIFIED'] };
     assertContract('device-capability', value); return value;
   }
-  promote(evidence: DeviceTestEvidence, reviewed: boolean): DeviceCapability {
+  promote(evidence: DeviceTestEvidence, reviewed: boolean, repositoryId?: string): DeviceCapability {
     assertContract('device-test-evidence', evidence);
     requireValue(reviewed && evidence.recordMode === 'observed' && this.mode === 'observed' && evidence.evidenceKind === 'physical_device' && evidence.executionStatus === 'executed' && evidence.outcome === 'passed',
       'PHYSICAL_EVIDENCE_REQUIRED', 'Only reviewed observed execution can qualify a physical capability. Fixture shape never establishes support.');
     requireValue(evidence.operationIds.length > 0 && evidence.evidenceRefs.length > 0 && evidence.missingProof.length === 0, 'PHYSICAL_EVIDENCE_INCOMPLETE', 'Qualification needs retained observed operations and complete required proof.');
+    const context = evidence.context;
+    requireValue(context.host.hostId === this.store.hostId && context.host.architecture !== 'unknown' && context.host.macOSVersion && context.host.macOSBuild && context.host.xcodeVersion && context.host.xcodeBuild &&
+      context.device.iOSVersion && context.device.iOSBuild && context.backend.version && context.backend.revision && context.engineVersion && context.network.scenario !== 'unknown',
+      'QUALIFICATION_CONTEXT_INCOMPLETE', 'Physical support requires observed host/device/toolchain/backend versions and the actual network scenario.');
+    requireValue(evidence.startedAt && evidence.completedAt && Date.parse(evidence.startedAt) <= Date.parse(evidence.completedAt), 'PHYSICAL_EVIDENCE_INCOMPLETE', 'The physical proof needs an ordered observed time window.');
+    let qualifiedAction = false; const refs = new Set<string>();
     for (const opId of evidence.operationIds) {
       const op = this.store.get(opId), receipt = op.result['deviceOperation'] as DeviceOperation | undefined;
-      requireValue(receipt?.recordMode === 'observed' && receipt.operationState === 'succeeded' && digest(receipt.context) === digest(evidence.context), 'PHYSICAL_EVIDENCE_INCOMPLETE', 'Every cited operation must confirm the exact observed context.');
+      try { assertContract('device-operation', receipt); } catch { throw new Fault('PHYSICAL_EVIDENCE_INCOMPLETE', 'A retained operation no longer has a valid device receipt.', 3); }
+      requireValue(op.kind === 'device' && op.state === 'succeeded' && (!repositoryId || op.repositoryId === repositoryId) && receipt?.recordMode === 'observed' && receipt.operationState === 'succeeded' && receipt.resultCertainty === 'confirmed' &&
+        digest(receipt.context) === digest(evidence.context) && receipt.startedAt && receipt.completedAt && Date.parse(receipt.startedAt) >= Date.parse(evidence.startedAt) && Date.parse(receipt.completedAt) <= Date.parse(evidence.completedAt),
+        'PHYSICAL_EVIDENCE_INCOMPLETE', 'Every cited operation must confirm the selected repository, exact context and observed time window.');
+      for (const effect of receipt.effects) {
+        if (effect.state === 'succeeded') this.validateReadback(effect, receipt);
+        if (effect.operation === evidence.operation && effect.state === 'succeeded' && effect.certainty === 'confirmed' && effect.evidenceRefs.length &&
+          receipt.intent.mode === 'qualification' && receipt.intent.qualification?.acceptanceId === evidence.acceptanceId && receipt.intent.qualification.expectedContextDigest === digest(receipt.context)) qualifiedAction = true;
+        for (const ref of effect.evidenceRefs) {
+          const retained = this.store.record<{ operationId: string }>('deviceReadback', ref) ?? this.store.record<{ operationId: string }>('deviceBuildEvidence', ref);
+          if (retained?.operationId === opId) refs.add(ref);
+        }
+      }
     }
+    requireValue(qualifiedAction && evidence.evidenceRefs.every(ref => refs.has(ref)), 'PHYSICAL_EVIDENCE_INCOMPLETE', 'The named operation and acceptance case need a retained successful qualification effect and its actual readback references.');
+    if (evidence.operation === 'install' && ['AT-01', 'AT-02', 'AT-03', 'AT-16'].includes(evidence.acceptanceId)) requireValue(evidence.dataRetention === 'passed', 'DATA_RETENTION_PROOF_REQUIRED', 'This installation case also requires reviewed meaningful app-data continuity proof.');
     if (evidence.context.network.scenario === 'cold_cellular') {
       const cold = evidence.coldStartProof;
       requireValue(cold.priorDeveloperSessionAbsent === true && cold.usableWifiAbsent === true && cold.usbAbsent === true && cold.phoneCellularConfirmed === true,
         'COLD_START_PROOF_REQUIRED', 'A warm or unknown session cannot establish fresh cellular support.');
     }
+    if (evidence.acceptanceId === 'AT-09') requireValue(['phone', 'both'].includes(evidence.coldStartProof.restartKind), 'RESTART_PROOF_REQUIRED', 'The phone-restart case needs a recorded phone restart.');
+    if (evidence.acceptanceId === 'AT-10') requireValue(['host', 'both'].includes(evidence.coldStartProof.restartKind), 'RESTART_PROOF_REQUIRED', 'The host-restart case needs a recorded host restart.');
+    const prior = this.store.record<DeviceTestEvidence>('deviceEvidence', evidence.evidenceId);
+    requireValue(!prior || digest(prior) === digest(evidence), 'EVIDENCE_ID_CONFLICT', 'A reviewed evidence identity cannot be rewritten.');
+    const priorCapability = this.store.record<DeviceCapability>('deviceEvidenceCapability', evidence.evidenceId);
+    if (prior && priorCapability) return priorCapability;
     const capability = { ...this.capability(evidence.operation, evidence.context), support: 'supported' as const, qualifiedAt: now(), evidenceIds: [evidence.evidenceId], limitations: [], reasonCodes: [] };
-    this.store.transaction(() => { this.store.put('deviceEvidence', evidence.evidenceId, evidence); this.store.put('deviceCapability', capability.capabilityId, capability); }); return capability;
+    this.store.transaction(() => { this.store.put('deviceEvidence', evidence.evidenceId, evidence); this.store.put('deviceCapability', capability.capabilityId, capability); this.store.put('deviceEvidenceCapability', evidence.evidenceId, capability); }); return capability;
+  }
+  recordEvidence(repo: Enrolled, value: unknown, requestId: string): ObjectValue {
+    try { assertContract('device-test-evidence', value); } catch { throw new Fault('DEVICE_EVIDENCE_INVALID', 'The private evidence report does not match the installed schema.', 2); }
+    const evidence = value as DeviceTestEvidence;
+    requireValue(evidence.recordMode === this.mode && evidence.context.host.hostId === this.store.hostId, 'FIXTURE_AUTHORITY_REJECTED', 'Evidence must match the selected service host and evidence mode.', 3);
+    this.profile(repo);
+    const scope = digest({ repositoryId: repo.id, evidence }), prior = this.store.record<{ digest: string; result: ObjectValue }>('deviceEvidenceRequest', requestId);
+    if (prior) { requireValue(prior.digest === scope, 'REQUEST_ID_CONFLICT', 'Evidence request identity already names different content.'); return prior.result; }
+    for (const operationId of evidence.operationIds) requireValue(this.store.get(operationId).repositoryId === repo.id, 'EVIDENCE_SCOPE_MISMATCH', 'Every cited operation must belong to this project.', 3);
+    const existing = this.store.record<{ repositoryId: string; evidence: DeviceTestEvidence }>('deviceEvidenceDraft', evidence.evidenceId);
+    requireValue(!existing || (existing.repositoryId === repo.id && digest(existing.evidence) === digest(evidence)), 'EVIDENCE_ID_CONFLICT', 'Retained evidence is immutable. Use a new identity for a corrected report.');
+    const result = { evidenceId: evidence.evidenceId, revision: digest(evidence), physicalSupport: 'not_promoted', reviewRequired: true };
+    this.store.transaction(() => { this.store.put('deviceEvidenceDraft', evidence.evidenceId, { repositoryId: repo.id, evidence }); this.store.put('deviceEvidenceRequest', requestId, { digest: scope, result }); }); return result;
+  }
+  inspectEvidence(repo: Enrolled, evidenceId: string): ObjectValue {
+    const retained = this.store.record<{ repositoryId: string; evidence: DeviceTestEvidence }>('deviceEvidenceDraft', evidenceId);
+    requireValue(retained?.repositoryId === repo.id, 'EVIDENCE_NOT_FOUND', 'No retained evidence report belongs to this project.', 3);
+    return { evidence: retained.evidence, revision: digest(retained.evidence), reviewed: Boolean(this.store.record('deviceEvidence', evidenceId)) };
+  }
+  reviewEvidence(repo: Enrolled, evidenceId: string, expectedRevision: string, requestId: string): ObjectValue {
+    const scope = digest({ repositoryId: repo.id, evidenceId, expectedRevision }), prior = this.store.record<{ digest: string; result: ObjectValue }>('deviceEvidenceReview', requestId);
+    if (prior) { requireValue(prior.digest === scope, 'REQUEST_ID_CONFLICT', 'Review request identity has a different scope.'); return prior.result; }
+    this.enabled(); const selected = this.inspectEvidence(repo, evidenceId);
+    requireValue(selected['revision'] === expectedRevision, 'EVIDENCE_REVISION_CONFLICT', 'Inspect the exact retained report before reviewing it.', 3);
+    const capability = this.promote(selected['evidence'] as DeviceTestEvidence, true, repo.id);
+    const result = { evidenceId, capability, reviewScope: 'Named operation and exact context only; no other acceptance case or device scope is qualified.' };
+    this.store.put('deviceEvidenceReview', requestId, { digest: scope, result }); return result;
   }
   authorize(repo: Enrolled, deviceId: string, operations: string[], revoke: boolean, requestId: string): ObjectValue {
     this.enabled(); const profile = this.profile(repo), key = this.key(repo, deviceId);
@@ -119,16 +173,18 @@ export class Devices {
     requireValue(grant && grant.appIdentity === this.appIdentity(profile) && grant.policyRevision === profile.revision && actions.every(action => grant.operations.includes(action)),
       'AUTHORIZATION_DENIED', 'This host/device/project/app operation scope is not approved or was revoked.', 3); return grant;
   }
-  private guard(repo: Enrolled, observation: DeviceObservation, actions: string[], qualification: DeviceOperation['intent']['qualification']): DeviceOwnership {
+  private guard(repo: Enrolled, observation: DeviceObservation, actions: string[], qualification: DeviceOperation['intent']['qualification'], ownedOperationId?: string): DeviceOwnership {
     const profile = this.profile(repo); this.permission(repo, observation.deviceId, profile, actions);
     requireValue(observation.hostReady, 'HOST_OFFLINE', 'The selected host/toolchain is unavailable.', 3);
     const physical = actions.some(action => action !== 'prepare');
+    requireValue(!this.backend.supportedOperations || actions.every(action => action === 'prepare' || this.backend.supportedOperations!.includes(action)),
+      'BACKEND_OPERATION_UNAVAILABLE', 'The installed backend does not implement the selected operation. Select its explicit supported adapter before qualification.', 3);
     const ownership = this.ownership(observation.deviceId);
     if (physical) {
       requireValue(observation.trust === 'trusted', observation.trust === 'verification_failed' ? 'PAIR_VERIFICATION_FAILED' : 'PAIRING_REQUIRED', 'The selected host must verify trust with this exact phone.', 3);
       requireValue(observation.externalSession === 'absent', observation.externalSession === 'present' ? 'DEVICE_BUSY_EXTERNAL' : 'PREVIOUS_OWNER_UNCONFIRMED', 'Account for existing native or backend sessions before starting device work.', 3);
       requireValue(ownership.state === 'owned' && ownership.ownerHostId === this.store.hostId && ownership.mutationsPermitted && ownership.priorSession !== 'unknown', 'PREVIOUS_OWNER_UNCONFIRMED', 'Device ownership or previous effects remain unconfirmed.', 3);
-      requireValue(!ownership.activeOperationIds.length, 'DEVICE_BUSY', 'A conflicting device operation is active.');
+      requireValue(!ownership.activeOperationIds.length || (ownedOperationId && ownership.activeOperationIds.length === 1 && ownership.activeOperationIds[0] === ownedOperationId), 'DEVICE_BUSY', 'A conflicting device operation is active.');
       if (!actions.every(action => ['connect', 'disconnect'].includes(action))) requireValue(observation.developerService === 'ready',
         observation.developerService === 'unlock_required' ? 'UNLOCK_REQUIRED' : observation.developerService === 'developer_mode_required' ? 'DEVELOPER_MODE_REQUIRED' : 'DEVELOPER_SERVICE_UNAVAILABLE',
         'The required Apple developer session is unavailable in this observed context.', 3);
@@ -170,6 +226,8 @@ export class Devices {
       const planId = string(args['qualificationPlan'], 'qualificationPlan'), plan = profile.plans[planId];
       requireValue(plan && plan.operation === actions[0] && plan.maxAttempts >= 1 && plan.maxAttempts <= 3 && plan.maxDurationSeconds > 0 && plan.maxDurationSeconds <= 5400,
         'QUALIFICATION_PLAN_UNCONFIGURED', 'Choose a registered bounded plan for this app and operation.', 3);
+      requireValue((plan.expectedContextDigest || this.mode === 'fixture') && (!plan.expectedContextDigest || plan.expectedContextDigest === digest(observation.context)),
+        'QUALIFICATION_CONTEXT_CHANGED', 'The observed context must match the exact context approved in the registered qualification plan.', 3);
       qualification = { acceptanceId: plan.acceptanceId, fixtureId: plan.fixtureId, authorizedOperations: plan.authorizedOperations,
         maxAttempts: plan.maxAttempts, maxDurationSeconds: plan.maxDurationSeconds, planId, expectedContextDigest: digest(observation.context) };
       const count = this.store.records<{ count: number; key: string }>('qualificationBudget').find(record => record.key === digest({ planId, context: observation.context, repo: repo.id }));
@@ -250,6 +308,12 @@ export class Devices {
           await this.backend.verifyArtifact(artifact, receipt);
         }
         if (['launch', 'logs', 'debug', 'screenshot', 'screen_capture'].includes(effect.operation)) await this.backend.verifyInstalledApp(receipt);
+        if (effect.operation !== 'prepare') {
+          const current = await this.observe(repo, receipt.deviceId);
+          requireValue(digest(current.context) === digest(receipt.context), 'CAPABILITY_CONTEXT_CHANGED', 'The device context changed during effect preflight.', 3);
+          this.guard(repo, current, [effect.operation], receipt.intent.qualification, op.operationId);
+          requireValue(this.profile(repo).revision === receipt.intent.policyRevision, 'POLICY_CHANGED', 'The project policy changed during device preflight.', 3);
+        } else this.permission(repo, receipt.deviceId, this.profile(repo), ['prepare']);
         if (bounded.signal.aborted) { effect.state = 'cancelled'; effect.completedAt = now(); throw new Fault('CANCELLED', 'Device work was cancelled before the next effect.', 130); }
         effect.state = 'running'; effect.startedAt = now(); receipt.stage = effect.operation === 'install' ? 'installing' : effect.operation === 'launch' ? 'launching' : effect.operation;
         this.save(op, receipt); this.store.update(this.store.get(op.operationId), { effectDispatched: effect.operation !== 'prepare' });

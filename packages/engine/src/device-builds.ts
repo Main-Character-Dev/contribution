@@ -39,7 +39,7 @@ export class DeviceBuilds {
     requireValue(repo.config.integration.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Existing project source-selection and activation rules need their preserved device adapter before registration.', 3);
     const requestDigest = digest({ repo: repo.id, config, expectedRevision }), prior = this.store.record<{ digest: string; result: ObjectValue }>('deviceProfileRequest', requestId);
     if (prior) { requireValue(prior.digest === requestDigest, 'REQUEST_ID_CONFLICT', 'Profile request identity was reused with different inputs.'); return prior.result; }
-    requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id && op.kind === 'device'), 'DEVICE_JOBS_PENDING', 'Drain or reconcile existing device jobs before replacing their policy.');
+    requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id && ['device', 'device_transfer', 'artifact_transfer'].includes(op.kind)), 'DEVICE_JOBS_PENDING', 'Drain or reconcile existing device jobs before replacing their policy.');
     const old = this.store.record<Registration>('deviceBuildProfile', repo.id);
     requireValue((old?.revision ?? 'none') === expectedRevision, 'STALE_CONFIGURATION', 'The device profile changed; inspect its current revision first.');
     requireValue(new Set(config.builds.map(build => build.id)).size === config.builds.length, 'DEVICE_PROFILE_INVALID', 'Build profile IDs must be unique.', 2);
@@ -50,8 +50,19 @@ export class DeviceBuilds {
       for (const value of [build.scheme, build.configuration, build.provisioningProfileSpecifier]) requireValue(!/[\x00-\x1f]/.test(value) && !value.startsWith('-'), 'DEVICE_PROFILE_INVALID', 'Build selections must be bounded literal values.', 2);
     }
     const registration: Registration = { config, revision: digest(config), registeredAt: now() };
+    const plans = config.qualificationPlans ?? [];
+    requireValue(new Set(plans.map(plan => plan.id)).size === plans.length, 'DEVICE_PROFILE_INVALID', 'Qualification plan IDs must be unique.', 2);
+    for (const plan of plans) {
+      requireValue(plan.expectedContext.host.hostId === this.store.hostId && config.eligibleDeviceRefs.includes(plan.expectedContext.device.deviceId),
+        'QUALIFICATION_CONTEXT_CHANGED', 'Each plan must approve this exact host and an eligible device.', 3);
+      if (['AT-08', 'AT-09', 'AT-10'].includes(plan.acceptanceId)) requireValue(plan.expectedContext.network.scenario === 'cold_cellular' && plan.expectedContext.network.phoneUnderlay === 'cellular' && ['none', 'fresh'].includes(plan.expectedContext.network.developerSession),
+        'COLD_START_CONTEXT_REQUIRED', 'Cold-cellular plans cannot select an existing warm developer session.', 2);
+      if (plan.operation === 'launch') requireValue(config.permitsForeground, 'PROJECT_FOREGROUND_GUARD', 'A launch plan requires the explicit project foreground policy.', 3);
+    }
     const profile: DeviceProfile = { repositoryId: repo.id, adapterId: config.adapterId, revision: registration.revision, app: config.app, permitsForeground: config.permitsForeground,
-      configurations: config.builds.map(build => build.configuration), buildProfiles: config.builds.map(build => build.id), plans: {} };
+      configurations: config.builds.map(build => build.configuration), buildProfiles: config.builds.map(build => build.id), plans: Object.fromEntries(plans.map(plan => [plan.id, {
+        operation: plan.operation, fixtureId: plan.fixtureId, acceptanceId: plan.acceptanceId, authorizedOperations: [plan.operation] as [string],
+        maxAttempts: plan.maxAttempts, maxDurationSeconds: plan.maxDurationSeconds, expectedContextDigest: digest(plan.expectedContext) }])) };
     const result = { config, revision: registration.revision, deviceAuthority: 'not_granted', physicalSupport: 'unverified' };
     this.store.transaction(() => { this.store.put('deviceBuildProfile', repo.id, registration); this.store.put('deviceProfile', repo.id, profile); this.store.put('deviceProfileRequest', requestId, { digest: requestDigest, result }); });
     return result;

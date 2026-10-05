@@ -102,6 +102,23 @@ test('device build registration rejects unknown execution instructions and stale
   } finally { await f.cleanup(); }
 });
 
+test('qualification plans register exact host/device context and finite scope without executing or granting it', async () => {
+  const f = await setup(); try {
+    const context = JSON.parse(readFileSync(new URL('../packages/contracts/examples/device-operation.json', import.meta.url))).context;
+    context.host.hostId = f.store.hostId; context.device.deviceId = f.args.device;
+    const plan = { id: 'install-proof', operation: 'install', fixtureId: 'meaningful-data-v1', acceptanceId: 'AT-02', expectedContext: context, maxAttempts: 2, maxDurationSeconds: 60 };
+    const config = { ...f.config, qualificationPlans: [plan] }, prior = await f.call('devices.profile', { repo: f.repo.id });
+    const registered = await f.call('devices.configure', { repo: f.repo.id, config, expectedRevision: prior.result.revision, requestId: randomUUID() }); assert.equal(registered.error, null, JSON.stringify(registered));
+    const stored = f.engine.devices.profile(f.repo).plans['install-proof']; assert.deepEqual(stored.authorizedOperations, ['install']); assert.equal(stored.expectedContextDigest, digest(context));
+    assert.equal(f.store.records('deviceCapability').length, 0); assert.equal(f.calls.phone, 0); assert.equal(f.calls.build, 0);
+    for (const changed of [{ ...plan, maxAttempts: 4 }, { ...plan, shell: '/bin/sh' }, { ...plan, authorizedOperations: ['launch'] }]) assert.equal(validateContract('device-profile', { ...config, qualificationPlans: [changed] }).valid, false);
+    const request = { repo: f.repo.id, expectedRevision: registered.result.revision, requestId: randomUUID() };
+    const wrongHost = structuredClone(plan); wrongHost.expectedContext.host.hostId = randomUUID();
+    assert.equal((await f.call('devices.configure', { ...request, config: { ...config, qualificationPlans: [wrongHost] } })).error.code, 'QUALIFICATION_CONTEXT_CHANGED');
+    assert.equal((await f.call('devices.configure', { ...request, config: { ...config, qualificationPlans: [{ ...plan, acceptanceId: 'AT-08' }] } })).error.code, 'COLD_START_CONTEXT_REQUIRED');
+  } finally { await f.cleanup(); }
+});
+
 
 test('restart reconciles only a sealed offline artifact, without another build or any phone access', async () => {
   const f = await setup(); let replacement;

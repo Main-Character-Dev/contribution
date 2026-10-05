@@ -57,6 +57,9 @@ allowed['devices.list'] = ['repo', 'host']; allowed['devices.status'] = ['repo',
 allowed['devices.authorize'] = ['repo', 'host', 'device', 'operations', 'requestId']; allowed['devices.revoke'] = allowed['devices.authorize']!;
 allowed['devices.reconcile'] = ['host', 'operationId', 'requestId'];
 allowed['devices.transfer-host'] = ['repo', 'device', 'fromHost', 'host', 'expectedRevision', 'requestId', 'releaseRef'];
+allowed['devices.evidence.record'] = ['repo', 'host', 'config', 'requestId'];
+allowed['devices.evidence.get'] = ['repo', 'host', 'evidence'];
+allowed['devices.evidence.review'] = ['repo', 'host', 'evidence', 'expectedRevision', 'requestId'];
 export class Engine {
   readonly repos: Repositories;
   readonly workflows: Workflows;
@@ -385,6 +388,9 @@ export class Engine {
           mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });
       }
       if (command === 'devices.configure') return completed(this.devices.builds.configure(repo, args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
+      if (command === 'devices.evidence.record') return completed(this.devices.recordEvidence(repo, args['config'], string(args['requestId'], 'requestId')));
+      if (command === 'devices.evidence.get') return completed(this.devices.inspectEvidence(repo, string(args['evidence'], 'evidence')));
+      if (command === 'devices.evidence.review') return completed(this.devices.reviewEvidence(repo, string(args['evidence'], 'evidence'), string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
       if (command === 'devices.transfer-host') {
         const op = this.deviceOwnership.admit(repo, args, this.payload.identity); this.kick(); return this.store.response(op);
       }

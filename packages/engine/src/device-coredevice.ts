@@ -14,6 +14,7 @@ interface Selection { deviceId: string; identifier: string; udid: string; model:
 /** The native adapter uses CoreDevice only. It never silently starts another backend. */
 export class CoreDeviceBackend implements DeviceBackend {
   readonly recordMode = 'observed' as const;
+  readonly supportedOperations = ['connect', 'install', 'launch'] as const;
   constructor(readonly store: Journal) {}
   private async command(argv: string[], timeout = 15000, signal?: AbortSignal): Promise<ObjectValue> {
     const result = await run('/usr/bin/xcrun', ['devicectl', ...argv, '--timeout', String(Math.ceil(timeout / 1000)), '--json-output', '-'], { timeoutMs: timeout + 2000, maxBytes: 2 * 1024 * 1024, ...(signal ? { signal } : {}) });

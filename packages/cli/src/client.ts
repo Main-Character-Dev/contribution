@@ -11,6 +11,7 @@ const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--
   '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId', '--ssh-alias': 'sshAlias', '--host': 'host',
   '--device': 'device', '--artifact': 'artifact', '--app-ref': 'appRef', '--build-profile': 'buildProfile', '--plan': 'plan', '--session-profile': 'sessionProfile', '--duration-seconds': 'durationSeconds', '--max-bytes': 'maxBytes', '--kind': 'kind', '--node': 'node', '--pnpm': 'pnpm', '--adapter': 'adapter', '--to-host': 'toHost', '--from-host': 'fromHost' };
 values['--release-ref'] = 'releaseRef';
+values['--evidence'] = 'evidence';
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch' };
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
@@ -51,6 +52,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID]',
         'devices list|status|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
         'devices profile --repo ID', 'devices configure --repo ID --file PATH --expected-revision REVISION --request-id UUID', 'devices artifacts list|get --repo ID [--artifact ID]',
+        'devices evidence record --repo ID --file PATH --request-id UUID', 'devices evidence get|review --repo ID --evidence ID [--expected-revision REV --request-id UUID]',
         'devices artifacts transfer --repo ID --artifact ID --from-host SOURCE --host DESTINATION --request-id UUID',
         'devices transfer-host --repo ID --device DEVICE --from-host SOURCE --host DESTINATION --expected-revision REV --request-id UUID [--release-ref REF]'],
         waitSeconds: 30, eventPollMilliseconds: 500, json: 'One response envelope; --jsonl for runs follow.',
@@ -78,6 +80,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     else if (groups.has(group)) { const action = words.shift(); if (!action) throw new Fault('INVALID_USAGE', `Specify a ${group} action.`, 2); command = `${group}.${action}`; }
     else throw new Fault('INVALID_USAGE', 'Unknown command. Use contribution help.', 2);
     if (command === 'devices.artifacts') { const action = words.shift(); if (!['list', 'get', 'transfer'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices artifacts list, get or transfer.', 2); command += `.${action}`; }
+    if (command === 'devices.evidence') { const action = words.shift(); if (!['record', 'get', 'review'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices evidence record, get or review.', 2); command += `.${action}`; }
     if (['repos.add', 'repos.create', 'repos.relocate'].includes(command)) args['path'] = words.shift();
     if (command.startsWith('runs.') && !['runs.list', 'runs.events'].includes(command) || ['logs', 'repair-context'].includes(command)) args['operationId'] = words.shift();
     if (command === 'devices.reconcile') args['operationId'] = words.shift();

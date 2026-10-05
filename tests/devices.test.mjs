@@ -139,3 +139,25 @@ test('lease expiry cannot grant ownership and warm evidence never applies to col
     assert.equal(status.result.ownership.mutationsPermitted, false); assert.equal(status.result.availability.find(item => item.operation === 'install').callable, false);
   } finally { await f.cleanup(); }
 });
+
+test('revocation during asynchronous artifact preflight stops the physical effect at its final boundary', async () => {
+  const f = await deviceFixture(); try {
+    f.backend.verifyArtifact = async () => {
+      const revoked = await f.call('devices.revoke', { repo: f.repo.id, device: f.device, operations: ['install'], requestId: randomUUID() });
+      assert.equal(revoked.error, null);
+    };
+    const accepted = await f.call('devices.install'), result = await f.wait(accepted.operationId);
+    assert.equal(result.operationState, 'failed'); assert.equal(result.error.code, 'AUTHORIZATION_DENIED');
+    assert.deepEqual(f.calls, []); assert.equal(f.journal.get(result.operationId).effectDispatched, false);
+  } finally { await f.cleanup(); }
+});
+
+test('unimplemented backend operations fail before admission or ownership changes, including qualification', async () => {
+  const f = await deviceFixture(); try {
+    f.backend.supportedOperations = ['connect'];
+    const owner = f.engine.devices.ownership(f.device);
+    assert.equal((await f.call('devices.qualify', { ...f.args, plan: 'remote-wifi-install' })).error.code, 'BACKEND_OPERATION_UNAVAILABLE');
+    assert.deepEqual(f.engine.devices.ownership(f.device), owner); assert.deepEqual(f.calls, []);
+    assert.equal(f.journal.list().length, 0);
+  } finally { await f.cleanup(); }
+});
