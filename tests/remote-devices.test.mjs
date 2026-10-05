@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -37,6 +37,7 @@ async function setup() {
   assert.equal((await call('laptop', 'repos.pair', { repo: config.repositoryId, host: hosts.mini.store.hostId, requestId: randomUUID() })).error, null);
   const artifact = example('artifact-provenance'); artifact.repositoryId = config.repositoryId; artifact.app = targetApp; artifact.signing.eligibleDeviceRefs = [device];
   const path = join(root, 'fixture-artifact'); writeFileSync(path, 'fixture artifact'); artifact.artifact.sha256 = digest(readFileSync(path)); artifact.artifact.bytes = 16;
+  mkdirSync(join(root, 'fixture.app'));
   for (const [name, engine] of Object.entries(hosts)) {
     const repo = engine.repos.all()[0];
     engine.store.put('deviceProfile', repo.id, { repositoryId: repo.id, adapterId: 'fixture', revision: 'original-profile', app: targetApp, permitsForeground: false, configurations: [], buildProfiles: [], plans: {} });

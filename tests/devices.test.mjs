@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -40,6 +40,7 @@ async function deviceFixture() {
   const artifact = example('artifact-provenance'); artifact.repositoryId = repo.id; artifact.app = profile.app; artifact.build.hostId = journal.hostId; artifact.source.policyRevision = profile.revision;
   artifact.signing.eligibleDeviceRefs = [device]; const artifactPath = join(root, 'fixture-artifact'); writeFileSync(artifactPath, 'fixture artifact bytes');
   artifact.artifact.sha256 = digest(readFileSync(artifactPath)); artifact.artifact.bytes = readFileSync(artifactPath).length;
+  mkdirSync(join(root, 'fixture.app'));
   journal.put('deviceArtifact', artifact.artifactId, { provenance: artifact, path: artifactPath, appPath: join(root, 'fixture.app') });
   const args = { repo: repo.id, host: journal.hostId, device, artifact: artifact.artifactId, requestId: randomUUID() };
   const call = (command, input = args) => engine.dispatch({ schemaVersion: 1, command, args: input, cwd: path });

@@ -13,6 +13,7 @@ import { run, alive, processIdentity } from './process.js';
 import type { RunOptions } from './process.js';
 import { privateDirectory } from './private-files.js';
 import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
+import { artifactRetention, requireArtifactAvailable } from './storage.js';
 
 type Build = DeviceProfileConfiguration['builds'][number];
 type Host = DeviceContext['host'];
@@ -72,7 +73,7 @@ export class DeviceBuilds {
     const records = this.store.records<RetainedDeviceArtifact>('deviceArtifact').filter(artifact => artifact.provenance.repositoryId === repo.id && artifact.provenance.recordMode === this.mode)
       .sort((a, b) => b.provenance.build.preparedAt.localeCompare(a.provenance.build.preparedAt));
     if (artifactId) requireValue(records.some(artifact => artifact.provenance.artifactId === artifactId), 'ARTIFACT_NOT_FOUND', 'No retained artifact belongs to this repository and evidence mode.', 3);
-    return { artifacts: records.filter(artifact => !artifactId || artifact.provenance.artifactId === artifactId).slice(0, 100).map(artifact => ({ provenance: artifact.provenance, archiveAvailable: existsSync(artifact.path), integrity: 'revalidated_before_dispatch' })), grantsAuthority: false };
+    return { artifacts: records.filter(artifact => !artifactId || artifact.provenance.artifactId === artifactId).slice(0, 100).map(artifact => ({ provenance: artifact.provenance, archiveAvailable: existsSync(artifact.path) && !artifactRetention(this.store, artifact), retention: artifactRetention(this.store, artifact), integrity: 'revalidated_before_dispatch' })), grantsAuthority: false };
   }
   selected(repo: Enrolled, profileId: string, deviceId: string): { registration: Registration; build: Build } {
     const registration = this.store.record<Registration>('deviceBuildProfile', repo.id);
@@ -154,6 +155,8 @@ export class DeviceBuilds {
     const retained = this.store.record<{ artifactId: string; policy: string; sourceTip: string }>('devicePreparedArtifact', op.operationId);
     requireValue(retained && retained.policy === receipt.intent.policyRevision && retained.sourceTip === receipt.intent.sourceCommit, 'NO_SEALED_ARTIFACT', 'No complete retained artifact exists for this interrupted build. Inspect its local output before requesting a new preparation.', 3);
     const artifact = this.store.record<RetainedDeviceArtifact>('deviceArtifact', retained.artifactId);
+    requireValue(artifact, 'NO_SEALED_ARTIFACT', 'The retained build has no sealed artifact.', 3);
+    requireArtifactAvailable(this.store, artifact);
     requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.build.attemptId === op.attemptId && artifact.provenance.repositoryId === op.repositoryId &&
       artifactFileDigest(artifact.path) === artifact.provenance.artifact.sha256 && lstatSync(artifact.path).size === artifact.provenance.artifact.bytes && appTreeDigest(artifact.appPath) === artifact.appDigest,
       'ARTIFACT_CHANGED', 'The sealed build or materialized app changed; preserve it for inspection.');

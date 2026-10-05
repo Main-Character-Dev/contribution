@@ -10,6 +10,7 @@ import type { RetainedDeviceArtifact, DeviceProfile } from './devices.js';
 import { privateDirectory } from './private-files.js';
 import { extractSignedAppArchive } from './app-archive.js';
 import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
+import { requireArtifactAvailable } from './storage.js';
 
 type PeerCall = (hostId: string, action: string, body: ObjectValue) => Promise<ObjectValue>;
 interface Manifest { schemaVersion: 1; transferId: string; requestId: string; repositoryId: string; senderHostId: string; receiverHostId: string; provenance: ArtifactProvenance; appName: string; appDigest: string }
@@ -37,6 +38,7 @@ export class DeviceArtifactTransfers {
     const artifact = this.store.record<RetainedDeviceArtifact>('deviceArtifact', artifactId);
     requireValue(artifact && artifact.provenance.repositoryId === repo.id && artifact.provenance.recordMode === this.mode, 'ARTIFACT_UNAUTHORIZED', 'Select a retained artifact belonging to this repository and evidence mode.', 3);
     assertContract('artifact-provenance', artifact.provenance);
+    requireArtifactAvailable(this.store, artifact);
     const manifest: Manifest = { schemaVersion: 1, transferId: id(), requestId, repositoryId: repo.id, senderHostId: this.store.hostId, receiverHostId: toHost, provenance: artifact.provenance, appName: basename(artifact.appPath), appDigest: string(artifact.appDigest, 'sealed app digest') };
     return this.store.admit(requestId, 'artifact_transfer', repo.id, input, payload, 'queued', op => {
       this.store.put('artifactOutbox', op.operationId, { manifest, path: artifact.path });
@@ -90,12 +92,12 @@ export class DeviceArtifactTransfers {
         // A retained completion receipt is historical observation, even after
         // later policy changes. No new bytes or effects follow this reply.
         if (!previous.accepted) requireValue(this.profile(repo, m).revision === previous.policy, 'POLICY_CHANGED', 'The receiving scope changed during the retained transfer.');
-        return { transferId, offset: statSync(previous.path).size, accepted: previous.accepted ?? null };
+        return { transferId, offset: previous.accepted ? previous.manifest.provenance.artifact.bytes : statSync(previous.path).size, accepted: previous.accepted ?? null };
       }
       const profile = this.profile(repo, m);
       const request = this.store.records<Incoming>('artifactIncoming').find(item => item.manifest.senderHostId === from && item.manifest.requestId === m.requestId);
       requireValue(!request, 'REQUEST_ID_CONFLICT', 'This sender already retained a transfer for this request.');
-      const pending = this.store.records<Incoming>('artifactIncoming');
+      const pending = this.store.records<Incoming>('artifactIncoming').filter(item => !item.accepted || this.store.record<{ state: string }>('storageEviction', `incoming:${item.manifest.transferId}`)?.state !== 'removed');
       requireValue(pending.filter(item => !item.accepted && item.manifest.repositoryId === repo.id).length < 3 && pending.reduce((sum, item) => sum + item.manifest.provenance.artifact.bytes * 3, m.provenance.artifact.bytes * 3) <= CAPACITY, 'ARTIFACT_STORAGE_QUOTA', 'Retained artifact transfers reached their private storage reservation. Reconcile and prune eligible transfers first.', 3);
       const root = join(this.store.directory, 'artifact-incoming'); privateDirectory(root);
       const directory = join(root, transferId); requireValue(!existsSync(directory), 'TRANSFER_RECOVERY_REQUIRED', 'An unrecorded incoming directory must be reconciled before reusing this transfer identity.', 3);

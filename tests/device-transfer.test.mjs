@@ -9,6 +9,7 @@ import { Journal } from '../packages/engine/dist/journal.js';
 import { Engine } from '../packages/engine/dist/service.js';
 import { digest, Fault } from '../packages/engine/dist/core.js';
 import { appTreeDigest } from '../packages/engine/dist/device-artifacts.js';
+import { StorageRetention } from '../packages/engine/dist/storage.js';
 import { repository } from './integration/service.mjs';
 
 async function fixture() {
@@ -118,5 +119,42 @@ test('a lost completion receipt remains observable after later receiver scope re
     assert.equal(f.calls.filter(call => call.action === 'artifact.finish').length, 1); assert.deepEqual(f.phoneCalls, []);
     const another = await f.call('laptop', 'devices.artifacts.transfer', { ...f.args, requestId: randomUUID() });
     assert.equal((await f.wait('laptop', another.operationId)).operationState, 'waiting');
+  } finally { await f.cleanup(); }
+});
+
+test('expiration releases completed incoming storage while preserving lost-reply receipts and preventing reuse for a new effect', async () => {
+  const f = await fixture(); try {
+    const admitted = await f.call('laptop', 'devices.artifacts.transfer', f.args); assert.equal((await f.wait('laptop', admitted.operationId)).operationState, 'succeeded');
+    const receiver = f.hosts.mini, incoming = receiver.store.records('artifactIncoming')[0], repo = receiver.repos.all()[0];
+    receiver.store.put('artifactIncoming', incoming.manifest.transferId, { ...incoming, accepted: { ...incoming.accepted, retainedAt: '2020-01-01T00:00:00.000Z' } });
+    const retained = receiver.store.record('artifactIncoming', incoming.manifest.transferId).accepted, storage = new StorageRetention(receiver.store), preview = storage.preview();
+    assert.equal(preview.candidates.length, 1); storage.apply(preview.scopeToken, randomUUID());
+    const replay = await receiver.artifacts.receive(repo, f.hosts.laptop.store.hostId, 'artifact.begin', { transferId: incoming.manifest.transferId, manifest: incoming.manifest });
+    assert.deepEqual(replay.accepted, retained); assert.equal(replay.offset, f.provenance.artifact.bytes);
+    assert.deepEqual(await receiver.artifacts.receive(repo, f.hosts.laptop.store.hostId, 'artifact.finish', { transferId: incoming.manifest.transferId }), retained);
+    const listed = await f.call('mini', 'devices.artifacts.get', { repo: f.args.repo, artifact: f.args.artifact });
+    assert.equal(listed.result.artifacts[0].archiveAvailable, false); assert.equal(listed.result.artifacts[0].retention.state, 'removed');
+    const fresh = await f.call('mini', 'devices.artifacts.transfer', { ...f.args, toHost: f.hosts.laptop.store.hostId, requestId: randomUUID() });
+    assert.equal(fresh.error.code, 'ARTIFACT_EXPIRED'); assert.deepEqual(f.phoneCalls, []);
+  } finally { await f.cleanup(); }
+});
+
+test('incoming quota is released by confirmed cleanup, not by a missing archive or a partial removal', async () => {
+  const f = await fixture(); try {
+    const admitted = await f.call('laptop', 'devices.artifacts.transfer', f.args); await f.wait('laptop', admitted.operationId);
+    const receiver = f.hosts.mini, incoming = receiver.store.records('artifactIncoming')[0], repo = receiver.repos.all()[0];
+    // Model a completed maximum-size reservation without allocating gigabytes.
+    incoming.manifest.provenance.artifact.bytes = 1024 ** 3; incoming.accepted.retainedAt = '2020-01-01T00:00:00.000Z';
+    receiver.store.put('artifactIncoming', incoming.manifest.transferId, incoming);
+    const manifest = structuredClone(incoming.manifest); manifest.transferId = randomUUID(); manifest.requestId = randomUUID(); manifest.provenance.artifactId = randomUUID();
+    const begin = () => receiver.artifacts.receive(repo, f.hosts.laptop.store.hostId, 'artifact.begin', { transferId: manifest.transferId, manifest });
+    await assert.rejects(begin, { code: 'ARTIFACT_STORAGE_QUOTA' });
+    const archive = readFileSync(incoming.path); rmSync(incoming.path);
+    await assert.rejects(begin, { code: 'ARTIFACT_STORAGE_QUOTA' }); writeFileSync(incoming.path, archive);
+    const storage = new StorageRetention(receiver.store), preview = storage.preview(), requestId = randomUUID();
+    receiver.store.put('storageEviction', `incoming:${incoming.manifest.transferId}`, { state: 'removing', requestId });
+    await assert.rejects(begin, { code: 'ARTIFACT_STORAGE_QUOTA' });
+    storage.apply(preview.scopeToken, requestId); assert.equal((await begin()).offset, 0);
+    assert.deepEqual(f.phoneCalls, []);
   } finally { await f.cleanup(); }
 });
