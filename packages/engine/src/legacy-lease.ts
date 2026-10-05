@@ -7,7 +7,7 @@ export interface LegacyOwner {
   version: 1; token: string; pid: number; purpose: string; acquired_at: string; start_time: string;
 }
 /** On-disk protocol shared by the four existing primary-checkout writers.
- * No migration selects this lease until its hook/flight adapter is adopted.
+ * Adopted publication and reviewed cutover share this boundary with legacy writers.
  */
 export class LegacyPrimaryLease {
   readonly directory: string;

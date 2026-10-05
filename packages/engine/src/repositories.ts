@@ -100,7 +100,11 @@ export class Repositories {
     await gitText(path, ['init', '--initial-branch=dev']);
     const repo = await this.add(path); intent.repository = repo; this.store.put('creationIntent', intent.requestId, intent); return repo;
   }
+  private migrationReady(repo: Enrolled): void {
+    requireValue(!this.store.records<{ repositoryId: string; phase: string }>('adoptionPlan').some(plan => plan.repositoryId === repo.id && ['applying', 'applied', 'rolling_back'].includes(plan.phase)), 'MIGRATION_RECONCILIATION_REQUIRED', 'Finish or roll back the retained adoption before repository work or configuration changes.', 3);
+  }
   async current(repo: Enrolled): Promise<void> {
+    this.migrationReady(repo);
     requireValue(!this.store.records<ConfigurationIntent>('configurationIntent').some(intent => intent.previous.id === repo.id && intent.state === 'prepared'), 'CONFIGURATION_RECONCILIATION_REQUIRED', 'A retained policy change needs reconciliation before another writer can run.', 3);
     const info = await identity(repo.path);
     requireValue(info.commonDir === repo.commonDir, 'REPOSITORY_IDENTITY_CHANGED', 'The enrolled path now points to a different Git repository.');
@@ -111,7 +115,7 @@ export class Repositories {
     }
   }
   configure(repo: Enrolled, config: Repository, expectedRevision: string, requestId: string): Enrolled {
-    assertContract('repository', config);
+    this.migrationReady(repo); assertContract('repository', config);
     const requestIdentity = digest({ repo: repo.id, config, expectedRevision });
     const retained = this.store.record<ConfigurationIntent>('configurationIntent', requestId);
     if (retained) { requireValue(retained.identity === requestIdentity, 'REQUEST_ID_CONFLICT', 'Configuration request identity already has different content.'); return retained.state === 'completed' ? retained.updated : this.finishConfiguration(retained); }

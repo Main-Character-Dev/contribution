@@ -21,6 +21,7 @@ import { DeviceArtifactTransfers } from './device-transfer.js';
 import { DeviceOwnershipTransfers } from './device-ownership.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
+import { Adoptions } from './adoption.js';
 import { LegacyReporting } from './legacy-reporting.js';
 import { LegacyHookBorrow } from './legacy-hook-borrow.js';
 import { LegacyPrimaryLease } from './legacy-lease.js';
@@ -36,7 +37,7 @@ const allowed: Record<string, string[]> = {
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
-  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId'],
+  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
   'repos.initialize': ['repo', 'requestId'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata'],
@@ -70,6 +71,7 @@ allowed['devices.evidence.review'] = ['repo', 'host', 'evidence', 'expectedRevis
 export class Engine {
   readonly repos: Repositories;
   readonly workflows: Workflows;
+  readonly adoptions: Adoptions;
   readonly github: GitHubMonitor;
   readonly peers: Peers;
   readonly devices: Devices;
@@ -88,7 +90,7 @@ export class Engine {
   get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy || this.requests > 0; }
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture'; buildDriver?: DeviceBuildDriver }) {
     this.maintenance = new Maintenance(store, payload.identity);
-    this.repos = new Repositories(store); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
+    this.repos = new Repositories(store); this.adoptions = new Adoptions(store, this.repos); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
     this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
     this.peers.cancelLocal = op => this.cancel(op);
     this.peers.prepareFence = repo => this.workflows.ensureHook(repo);
@@ -149,7 +151,7 @@ export class Engine {
   private async schedule(): Promise<void> {
     if (this.stopping || this.store.getMeta<boolean>('paused') || this.store.getMeta<boolean>('maintenance')) return;
     for (const op of this.store.queue()) {
-      if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId)) continue;
+      if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId) || this.adoptions.isBusy(op.repositoryId)) continue;
       const blocked = isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
       if (blocked) continue;
       const controller = new AbortController(); this.active.set(op.operationId, controller); this.activeRepositories.add(op.repositoryId);
@@ -360,6 +362,7 @@ export class Engine {
         return this.store.response(op);
       }
       const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
+      requireValue(!this.adoptions.isBusy(repo.id) || ['repos.inspect', 'status', 'repos.migration'].includes(command), 'REPOSITORY_BUSY', 'The reviewed adoption transaction is holding this repository.', 4);
       if (command === 'hook.adopted.begin' || command === 'hook.adopted.finish') {
         if (command === 'hook.adopted.finish') {
           const retained = this.workflows.adopted.retainedCompletion(repo, args); if (retained) return completed(retained);
@@ -414,8 +417,12 @@ export class Engine {
       }
       if (command === 'repos.runtime') return completed({ runtime: await new ProjectRuntimes(this.store).register(repo, string(args['node'], 'node'), string(args['pnpm'], 'pnpm')) });
       if (command === 'repos.migration') {
+        requireValue(['prepareReporting', 'prepareAdoption', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan'].filter(key => args[key]).length <= 1, 'INVALID_USAGE', 'Choose one migration action.', 2);
+        if (args['adoptionPlan']) return completed(this.adoptions.inspect(repo, string(args['adoptionPlan'], 'proposal')));
+        for (const [key, action] of [['applyAdoption', 'apply'], ['activateAdoption', 'activate'], ['rollbackAdoption', 'rollback']] as const) if (args[key]) return completed(await this.adoptions.change(repo, string(args[key], 'proposal'), action, string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
         const adapter = typeof args['adapter'] === 'string' ? args['adapter'] : identifyAdoption(repo.path)?.id;
         requireValue(adapter, 'ADAPTER_UNKNOWN', 'Select an installed repository adapter for parity inspection.', 3);
+        if (args['prepareAdoption']) return completed(await this.adoptions.prepare(repo, adapter, string(args['requestId'], 'requestId')));
         const inventory = policyInventory(repo.path, adapter);
         if (args['prepareReporting']) {
           requireValue(adapter === repo.config.validation.adapter || repo.config.validation.adapter === 'migration-required', 'ADAPTER_SELECTION_MISMATCH', 'The reporting proposal must match the enrolled validation owner or its pending adoption.', 2);
@@ -470,7 +477,7 @@ export class Engine {
       if (command === 'repos.relocate') return completed({ repository: await this.repos.relocate(repo, string(args['path'], 'path')) });
       if (command === 'repos.remove') {
         requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Retain enrollment while work or effects remain unresolved.');
-        requireValue(!this.store.record('hook', repo.id), 'INTEGRATION_REMOVAL_REQUIRED', 'Remove the matching Contribution-owned hook through a reviewed integration removal before unenrollment.');
+        requireValue(!this.store.record('hook', repo.id) && !this.store.record('adoptedHooks', repo.id) && !this.store.records<{ repositoryId: string; phase: string }>('adoptionPlan').some(plan => plan.repositoryId === repo.id && (['applying', 'applied', 'active', 'rolling_back'].includes(plan.phase) || (plan.phase === 'rolled_back' && (repo.availability === 'both-macs' || Boolean(this.store.record('authority', repo.id)))))), 'INTEGRATION_REMOVAL_REQUIRED', 'Remove the matching Contribution-owned hook through a reviewed integration removal before unenrollment.');
         this.store.db.prepare('DELETE FROM repositories WHERE id=?').run(repo.id); return completed({ removed: repo.id, sourcePreserved: true });
       }
       if (command === 'repos.configure') {

@@ -20,7 +20,7 @@ export interface PublicationScope { repositoryId: string; branch: string; tip: s
 export interface AdoptedHookRegistration {
   schemaVersion: 1; phase: 'active'; adoptionId: string; repositoryId: string; adapter: string; policyRevision: string;
   hooksPath: string; dispatcherPath: string; dispatcherDigest: string; policyFilesDigest: string;
-  originalHookDigest: string | null;
+  originalHookDigest: string | null; guardPath?: string; guardDigest?: string; dispatcherDependencies?: { path: string; digest: string }[];
 }
 interface PushInvocation {
   operationId: string; attemptId: string; scope: PublicationScope; remoteBefore: string | null; hookToken: string; lease: LegacyOwner;
@@ -43,6 +43,8 @@ export class AdoptedHooks {
     const dispatcher = await gitText(repo.path, ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push']);
     requireValue(hooks === record.hooksPath && realpathSync(dispatcher) === realpathSync(record.dispatcherPath) && digest(Buffer.from(this.bounded(dispatcher, 128 * 1024))) === record.dispatcherDigest && (lstatSync(dispatcher).mode & 0o100) !== 0,
       'EXISTING_HOOK_OWNER_CHANGED', 'The installed hook dispatcher differs from its reviewed adoption. Preserve it for reconciliation.', 3);
+    if (record.guardPath) requireValue(digest(Buffer.from(this.bounded(record.guardPath, 128 * 1024))) === record.guardDigest, 'ADOPTED_POLICY_CHANGED', 'The adopted source guard changed.');
+    for (const dependency of record.dispatcherDependencies ?? []) requireValue(digest(Buffer.from(this.bounded(dependency.path, 128 * 1024))) === dependency.digest, 'EXISTING_HOOK_OWNER_CHANGED', 'A dispatcher dependency changed.');
     if (record.originalHookDigest) requireValue(digest(Buffer.from(this.bounded(this.original(record), 128 * 1024))) === record.originalHookDigest, 'ADOPTED_HOOK_SNAPSHOT_CHANGED', 'The retained original gate changed or is unavailable.', 3);
     else requireValue(repo.config.validation.gate === 'inactive', 'ADOPTED_GATE_MISSING', 'An enabled gate requires its retained original program.', 3);
     return record;

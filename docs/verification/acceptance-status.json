@@ -405,10 +405,20 @@
         {
           "level": "fixture",
           "source": "tests/adapters.test.mjs",
-          "scope": "Four policy-family inventories and exact project runtimes retain the inactive Glass Alpha gate. Shared lease, hook cutover, original gate and imported-source parity remain open."
+          "scope": "Four policy-family inventories and exact project runtimes preserve the inactive Glass Alpha gate."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adoption.test.mjs",
+          "scope": "Reviewed initial hook adoption, committed activation, interrupted application, source conflicts, dispatcher preservation, compatible flight/lease exclusion and authority-preserving rollback for all four synthetic policy families."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adopted-hooks.test.mjs",
+          "scope": "Actual disposable managed and external Git gates share verified borrow authority, distinguish inactive/no-op/transport outcomes and retain uncertain external-client interruption. Real project gate parity and landing/import adapters remain open."
         }
       ],
-      "nextStep": "Shared lease, hook cutover, original gate and imported-source parity remain open."
+      "nextStep": "Complete original landing/import adapters and current real-project policy parity, then perform only authorized live cutover."
     },
     {
       "id": "AT-V02",
