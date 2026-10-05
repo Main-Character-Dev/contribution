@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readdirSync, lstatSync, openSync, closeSync, fsyncSync, renameSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { assertContract } from '@contribution/contracts';
 import type { Repository } from '@contribution/contracts';
@@ -12,8 +12,13 @@ export interface Enrolled {
   id: string; path: string; commonDir: string; config: Repository; revision: string; canonicalHostId: string;
   availability: 'this-mac' | 'both-macs'; policySource: 'generated' | 'tracked'; hookPath: string | null;
 }
+interface ConfigurationIntent { requestId: string; identity: string; previous: Enrolled; updated: Enrolled; state: 'prepared' | 'completed' }
 export class Repositories {
-  constructor(readonly store: Journal) {}
+  constructor(readonly store: Journal) {
+    for (const intent of store.records<ConfigurationIntent>('configurationIntent').filter(record => record.state === 'prepared')) {
+      try { this.finishConfiguration(intent); } catch { /* Preserve the approved intent and block dependent writers until the same request can reconcile it. */ }
+    }
+  }
   all(): Enrolled[] { return this.store.db.prepare('SELECT body FROM repositories').all().map(row => JSON.parse(String(row['body'])) as Enrolled); }
   save(repo: Enrolled): void { this.store.db.prepare('INSERT INTO repositories VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET common_dir=excluded.common_dir,body=excluded.body').run(repo.id, repo.commonDir, JSON.stringify(repo)); }
   async get(selector: string): Promise<Enrolled> {
@@ -56,6 +61,7 @@ export class Repositories {
     mkdirSync(path, { recursive: true }); await gitText(path, ['init', '--initial-branch=dev']); return this.add(path);
   }
   async current(repo: Enrolled): Promise<void> {
+    requireValue(!this.store.records<ConfigurationIntent>('configurationIntent').some(intent => intent.previous.id === repo.id && intent.state === 'prepared'), 'CONFIGURATION_RECONCILIATION_REQUIRED', 'A retained policy change needs reconciliation before another writer can run.', 3);
     const info = await identity(repo.path);
     requireValue(info.commonDir === repo.commonDir, 'REPOSITORY_IDENTITY_CHANGED', 'The enrolled path now points to a different Git repository.');
     requireValue(info.branch === repo.config.integration.branch, 'ACTIVE_BRANCH_CHANGED', 'The primary checkout is no longer on its configured integration branch.');
@@ -64,18 +70,40 @@ export class Repositories {
       requireValue(existsSync(file) && digest(JSON.parse(readFileSync(file, 'utf8'))) === repo.revision, 'POLICY_CHANGED', 'Tracked configuration changed; apply and review it through repos configure.');
     }
   }
-  configure(repo: Enrolled, config: Repository, expectedRevision: string): Enrolled {
+  configure(repo: Enrolled, config: Repository, expectedRevision: string, requestId: string): Enrolled {
     assertContract('repository', config);
+    const requestIdentity = digest({ repo: repo.id, config, expectedRevision });
+    const retained = this.store.record<ConfigurationIntent>('configurationIntent', requestId);
+    if (retained) { requireValue(retained.identity === requestIdentity, 'REQUEST_ID_CONFLICT', 'Configuration request identity already has different content.'); return retained.state === 'completed' ? retained.updated : this.finishConfiguration(retained); }
+    requireValue(!this.store.records<ConfigurationIntent>('configurationIntent').some(intent => intent.previous.id === repo.id && intent.state === 'prepared'), 'CONFIGURATION_RECONCILIATION_REQUIRED', 'Reconcile the earlier approved policy change first.', 3);
     requireValue(repo.revision === expectedRevision, 'REVISION_CONFLICT', 'Configuration changed since it was read.');
     requireValue(config.repositoryId === repo.id && config.integration.branch === repo.config.integration.branch && config.integration.adapter === repo.config.integration.adapter,
       'AUTHORITY_TRANSITION_REQUIRED', 'Identity, branch and adapter changes require an explicit reconciled migration.');
     requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Reconcile queued or uncertain operations before changing effective policy.');
     const updated = { ...repo, config, revision: digest(config) };
-    if (repo.policySource === 'tracked') {
-      requireValue(digest(JSON.parse(readFileSync(join(repo.path, 'contribution.json'), 'utf8'))) === repo.revision, 'POLICY_CHANGED', 'Resolve concurrent tracked configuration changes before applying.');
-      writeFileSync(join(repo.path, 'contribution.json'), JSON.stringify(config, null, 2) + '\n');
+    const intent: ConfigurationIntent = { requestId, identity: requestIdentity, previous: repo, updated, state: 'prepared' };
+    if (repo.policySource === 'tracked') requireValue(digest(JSON.parse(readFileSync(join(repo.path, 'contribution.json'), 'utf8'))) === repo.revision, 'POLICY_CHANGED', 'Resolve concurrent tracked configuration changes before applying.');
+    this.store.put('configurationIntent', requestId, intent); return this.finishConfiguration(intent);
+  }
+  private finishConfiguration(intent: ConfigurationIntent): Enrolled {
+    const { previous, updated } = intent;
+    if (previous.policySource === 'tracked') {
+      const path = join(previous.path, 'contribution.json'), info = lstatSync(path);
+      requireValue(info.isFile() && !info.isSymbolicLink(), 'POLICY_PATH_CHANGED', 'The tracked policy is no longer a regular file.');
+      const current = digest(JSON.parse(readFileSync(path, 'utf8')));
+      requireValue(current === previous.revision || current === updated.revision, 'POLICY_CHANGED', 'Concurrent policy changes are preserved; reconcile the retained configuration intent.');
+      if (current !== updated.revision) {
+        const temporary = join(previous.path, `.contribution-config-${digest(intent.requestId)}.tmp`), content = JSON.stringify(updated.config, null, 2) + '\n';
+        if (existsSync(temporary)) requireValue(lstatSync(temporary).isFile() && !lstatSync(temporary).isSymbolicLink() && readFileSync(temporary, 'utf8') === content, 'CONFIGURATION_TEMP_CONFLICT', 'Preserve the conflicting policy temporary file for reconciliation.');
+        else writeFileSync(temporary, content, { flag: 'wx', mode: info.mode & 0o777 });
+        const fd = openSync(temporary, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
+        requireValue(digest(JSON.parse(readFileSync(path, 'utf8'))) === previous.revision, 'POLICY_CHANGED', 'Policy changed before atomic replacement.');
+        renameSync(temporary, path);
+        const parent = openSync(previous.path, 'r'); try { fsyncSync(parent); } finally { closeSync(parent); }
+      }
     }
-    this.save(updated); return updated;
+    this.store.transaction(() => { this.save(updated); this.store.put('configurationIntent', intent.requestId, { ...intent, state: 'completed' });
+      this.store.put('configurationRequests', intent.requestId, { digest: intent.identity, result: { repository: updated } }); }); return updated;
   }
   async relocate(repo: Enrolled, path: string): Promise<Enrolled> {
     const info = await identity(path);

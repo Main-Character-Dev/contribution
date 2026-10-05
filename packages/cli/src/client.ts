@@ -17,6 +17,7 @@ export function exitCode(response: Response): number {
   if (response.result && typeof response.result['exitCode'] === 'number') return response.result['exitCode'];
   if (response.operationState === 'outcome_unknown') return 6;
   if (response.operationState === 'cancelled') return 130;
+  if (response.operationState === 'needs_attention') return 4;
   if (response.operationState === 'failed' || response.operationState === 'interrupted') return 5;
   return response.error ? 3 : 0;
 }

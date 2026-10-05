@@ -7,6 +7,7 @@ let package = Package(
     products: [.library(name: "ContributionPlatform", targets: ["ContributionPlatform"])],
     targets: [
         .target(name: "ContributionPlatform"),
+        .executableTarget(name: "ContributionProbe", dependencies: ["ContributionPlatform"]),
         .testTarget(name: "ContributionPlatformTests", dependencies: ["ContributionPlatform"])
     ],
     swiftLanguageModes: [.v6]

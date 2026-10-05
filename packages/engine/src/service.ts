@@ -274,7 +274,7 @@ export class Engine {
         const requestDigest = digest({ repo: repo.id, config, expectedRevision: args['expectedRevision'] });
         const prior = this.store.record<{ digest: string; result: ObjectValue }>('configurationRequests', requestId);
         if (prior) { requireValue(prior.digest === requestDigest, 'REQUEST_ID_CONFLICT', 'Configuration request ID was reused with different inputs.'); return completed(prior.result); }
-        const result = { repository: this.repos.configure(repo, config, string(args['expectedRevision'], 'expectedRevision')) };
+        const result = { repository: this.repos.configure(repo, config, string(args['expectedRevision'], 'expectedRevision'), requestId) };
         this.store.put('configurationRequests', requestId, { digest: requestDigest, result }); return completed(result);
       }
       if (command === 'repos.initialize') return this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
