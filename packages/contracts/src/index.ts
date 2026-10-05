@@ -6,6 +6,7 @@ import type { AnySchema, ValidateFunction } from 'ajv';
 export type { Response } from './generated/response.js';
 export type { Repository } from './generated/repository.js';
 export type { StoragePolicy } from './generated/storage-policy.js';
+export type { PowerPolicy } from './generated/power-policy.js';
 export type { Machine } from './generated/machine.js';
 export type { DeviceCapability, Context as DeviceContext } from './generated/device-capability.js';
 export type { DeviceOwnership } from './generated/device-ownership.js';

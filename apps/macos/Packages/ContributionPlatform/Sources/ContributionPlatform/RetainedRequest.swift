@@ -15,9 +15,13 @@ public struct RetainedRequest: Codable, Equatable, Sendable {
 }
 
 public enum NativeRequestSlot: Equatable, Sendable {
-    case operation, storageSettings
-    fileprivate var fileName: String { self == .operation ? "native-pending-request.json" : "native-storage-settings-request.json" }
-    fileprivate func accepts(_ command: String) -> Bool { self == .operation || ["settings.apply", "service.storage-policy"].contains(command) }
+    case operation, storageSettings, powerSettings
+    fileprivate var fileName: String {
+        switch self { case .operation: "native-pending-request.json"; case .storageSettings: "native-storage-settings-request.json"; case .powerSettings: "native-power-settings-request.json" }
+    }
+    fileprivate func accepts(_ command: String) -> Bool {
+        switch self { case .operation: true; case .storageSettings: ["settings.apply", "service.storage-policy"].contains(command); case .powerSettings: command == "service.power-policy" }
+    }
 }
 
 @MainActor public final class NativeRequestJournal {
@@ -52,7 +56,7 @@ public enum NativeRequestSlot: Equatable, Sendable {
     }
     public func retain(_ request: RetainedRequest) throws {
         try verifyDirectory()
-        guard slot.accepts(request.command) else { throw failure("This recovery slot only accepts storage setting changes.") }
+        guard slot.accepts(request.command) else { throw failure("This recovery slot only accepts its designated setting changes.") }
         if let prior = try pending() {
             guard prior == request else { throw failure("An earlier request has an uncertain reply. Reconcile it before submitting another action.") }; return
         }

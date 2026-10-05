@@ -26,7 +26,8 @@ try {
     // A maintenance stop drains instead of killing owned effects.
     const drain = setInterval(() => {
       if (engine.active.size || engine.backgroundBusy) return;
-      clearInterval(drain); server.close(() => {
+      clearInterval(drain); server.close(async () => {
+        await engine.power.close();
         try { unlinkSync(socketPath(directory)); } catch { /* server may remove it */ }
         engine.maintenance.stopped(); journal.close(); lock.release();
         if (engine.restartRequested) {
@@ -40,5 +41,5 @@ try {
     }, 100);
   };
   process.on('SIGTERM', close); process.on('SIGINT', close);
-  const lifecycle = setInterval(() => { if (engine.stopping) { clearInterval(lifecycle); close(); } }, 250);
+  const lifecycle = setInterval(() => { engine.refreshPower(); if (engine.stopping) { clearInterval(lifecycle); close(); } }, 250);
 } catch (error) { process.stderr.write(redact(error instanceof Error ? error.message : 'Service startup failed.') + '\n'); process.exitCode = 3; }

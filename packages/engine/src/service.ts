@@ -35,6 +35,7 @@ import { OwnedWorktrees } from './owned-worktrees.js';
 import { RepositoryRemoval } from './repository-removal.js';
 import { Diagnostics } from './diagnostics.js';
 import { ManagedStorage } from './managed-storage.js';
+import { WorkPower } from './power.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
@@ -42,6 +43,7 @@ const allowed: Record<string, string[]> = {
   'service.storage': ['preview', 'scopeToken', 'requestId', 'worktrees'],
   'service.diagnostics': ['operationId'],
   'service.storage-policy': ['config', 'expectedRevision', 'requestId'],
+  'service.power-policy': ['config', 'expectedRevision', 'requestId'],
   'maintenance.begin': ['requestId'], 'maintenance.status': [], 'maintenance.stop': ['windowId'],
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
@@ -88,6 +90,7 @@ export class Engine {
   readonly artifacts: DeviceArtifactTransfers;
   readonly deviceOwnership: DeviceOwnershipTransfers;
   readonly maintenance: Maintenance;
+  readonly power: WorkPower;
   readonly active = new Map<string, AbortController>();
   readonly activeRepositories = new Set<string>();
   private readonly externalHooks = new Map<string, { lease: LegacyPrimaryLease; timer: NodeJS.Timeout }>();
@@ -100,6 +103,7 @@ export class Engine {
   private requests = 0;
   get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy || this.requests > 0; }
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture'; buildDriver?: DeviceBuildDriver }) {
+    this.power = new WorkPower(store);
     this.maintenance = new Maintenance(store, payload.identity);
     this.repos = new Repositories(store); this.adoptions = new Adoptions(store, this.repos); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
     this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
@@ -140,6 +144,7 @@ export class Engine {
     }
   }
   settings(): Machine { return this.store.getMeta<Machine>('settings')!; }
+  refreshPower(): void { this.power.refresh(!this.stopping && (this.active.size > 0 || this.externalHooks.size > 0)); }
   async refreshNotifications(): Promise<void> {
     if (this.notificationRefresh || this.stopping || this.store.getMeta('maintenance') || Date.now() < this.notificationRefreshAt) return;
     this.notificationRefresh = true; this.notificationRefreshAt = Date.now() + 30000;
@@ -303,7 +308,7 @@ export class Engine {
         const reads = ['version', 'doctor', 'service.status', 'service.diagnostics', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
-        requireValue(reads.includes(command) || (command === 'service.storage-policy' && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+        requireValue(reads.includes(command) || (['service.storage-policy', 'service.power-policy'].includes(command) && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
           'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
       }
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
@@ -323,7 +328,7 @@ export class Engine {
       }
       if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
-        storageHold: this.storageHold,
+        storageHold: this.storageHold, power: this.power.status(),
         maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
       if (command === 'service.storage') {
@@ -340,6 +345,10 @@ export class Engine {
         const storage = new ManagedStorage(this.store);
         if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read storage policy without mutation arguments.', 2); return completed({ ...storage.policy(), usage: storage.usage() }); }
         const result = storage.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')); this.kick(); return completed(result);
+      }
+      if (command === 'service.power-policy') {
+        if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read power preference without mutation arguments.', 2); return completed(this.power.status()); }
+        const result = this.power.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')); this.refreshPower(); return completed(result);
       }
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
         database: { version: 1, journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),

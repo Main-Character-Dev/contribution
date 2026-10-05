@@ -5,7 +5,7 @@ import { schemaNames, validateContract, validateContractFormat } from '../packag
 import { example, exampleSchemas, negativeCases } from './fixtures/contracts.mjs';
 
 test('all fourteen schemas compile with local references', () => {
-  assert.equal(schemaNames.length, 14);
+  assert.equal(schemaNames.length, 15);
 });
 test('all fourteen examples are covered by schema validation', () => {
   const files = readdirSync(new URL('../packages/contracts/examples/', import.meta.url)).filter(n => n.endsWith('.json'));

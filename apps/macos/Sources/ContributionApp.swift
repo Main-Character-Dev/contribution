@@ -461,6 +461,7 @@ private struct ContributionSettings: View {
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Version") { LabeledContent("Contribution", value: BuildIdentity.version); Text("Development build · Remote device capabilities remain unverified").foregroundStyle(.secondary) }
+            PowerSettings(workspace: workspace)
             Section("Command line") {
                 Text(cliStatus)
                 Button("Install bundled CLI") { do { try CLIInstallation().install(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }

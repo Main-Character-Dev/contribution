@@ -2,6 +2,20 @@ import XCTest
 @testable import ContributionPlatform
 
 final class RetainedRequestTests: XCTestCase {
+    @MainActor func testPowerPreferenceKeepsItsOwnImmutableReviewDuringOtherUnresolvedWork() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let work = NativeRequestJournal(directory: directory), power = NativeRequestJournal(directory: directory, slot: .powerSettings)
+        let original = RetainedRequest(command: "devices.install", args: [:])
+        let preference = RetainedRequest(command: "service.power-policy", args: ["config": .object(["schemaVersion": .number(1), "keepAwakeWhileWorking": .bool(false)])])
+        try work.retain(original); try power.retain(preference)
+        XCTAssertEqual(try NativeRequestJournal(directory: directory, slot: .powerSettings).pending(), preference)
+        XCTAssertThrowsError(try power.retain(RetainedRequest(command: "service.power-policy", args: [:])))
+        try power.resolve(preference)
+        XCTAssertThrowsError(try power.retain(RetainedRequest(command: "service.storage-policy", args: [:])))
+        XCTAssertEqual(try work.pending(), original); XCTAssertNil(try power.pending())
+    }
     @MainActor func testStorageRecoveryRetainsItsOwnReviewWithoutDiscardingAnUnresolvedOperation() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
