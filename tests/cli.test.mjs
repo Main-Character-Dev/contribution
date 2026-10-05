@@ -16,7 +16,7 @@ test('CLI version reports the canonical development identity as one JSON documen
 });
 test('help is honest about implemented commands and unavailability', () => {
   const result = invoke(['--help']); assert.equal(result.status, 0);
-  assert.match(result.stdout, /service status/); assert.match(result.stdout, /no service is installed/);
+  assert.match(result.stdout, /service status/); assert.match(result.stdout, /qualification/);
   const json = invoke(['help', '--json']); assertContract('response', JSON.parse(json.stdout));
 });
 test('unavailable commands cannot mutate a caller directory or accept work', () => {

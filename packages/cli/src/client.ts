@@ -1,0 +1,110 @@
+import { readFileSync, statSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { request, defaultStateDirectory } from '@contribution/engine/client';
+import { Fault, object, rejected, terminal } from '@contribution/engine/core';
+import type { ObjectValue } from '@contribution/engine/core';
+import { helpResponse, versionResponse } from '@contribution/engine';
+import type { Response } from '@contribution/contracts';
+
+const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--profile': 'profile', '--availability': 'availability', '--request-id': 'requestId',
+  '--expected-revision': 'expectedRevision', '--source-path': 'sourcePath', '--source-tip': 'sourceTip', '--base': 'base', '--expected-tip': 'expectedTip', '--scope-token': 'scopeToken',
+  '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId' };
+const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle' };
+const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
+const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
+export function exitCode(response: Response): number {
+  if (response.result && typeof response.result['exitCode'] === 'number') return response.result['exitCode'];
+  if (response.operationState === 'outcome_unknown') return 6;
+  if (response.operationState === 'cancelled') return 130;
+  if (response.operationState === 'failed' || response.operationState === 'interrupted') return 5;
+  return response.error ? 3 : 0;
+}
+function jsonFile(path: string): ObjectValue {
+  if (statSync(path).size > 1024 * 1024) throw new Fault('INPUT_TOO_LARGE', 'Configuration input exceeds one MiB.', 2);
+  return object(JSON.parse(readFileSync(path, 'utf8')));
+}
+function render(response: Response, json: boolean): string {
+  if (json) return JSON.stringify(response) + '\n';
+  if (response.error) return `${response.error.code}: ${response.error.message}\n${response.operationId ? `Operation: ${response.operationId}\n` : ''}`;
+  return JSON.stringify(response.result, null, 2) + '\n';
+}
+export async function runCommand(argv: readonly string[], write: (text: string) => void = text => process.stdout.write(text)): Promise<number> {
+  let json = argv.includes('--json'), jsonl = argv.includes('--jsonl'), directory = defaultStateDirectory(), wait = false, follow = false;
+  try {
+    if (argv.length === 0 || argv[0] === 'help' || argv.includes('--help')) {
+      const response = helpResponse();
+      response.result = { commands: ['version', 'doctor', 'repos list|discover|add|create|initialize|inspect|configure|relocate|remove', 'status [--refresh]',
+        'submit --repo ID --source-path PATH --source-tip OID --base OID --request-id ID [--metadata-file PATH]',
+        'push --repo ID --preview', 'push --repo ID --expected-tip OID --scope-token TOKEN --request-id ID [--wait]',
+        'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',
+        'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'hosts list', 'update check|apply --when-idle', 'codex open --repo ID'],
+        waitSeconds: 30, eventPollMilliseconds: 500, json: 'One response envelope; --jsonl for runs follow.',
+        unavailable: ['Live host pairing and adopted project migration need qualification.', 'Device operations require configured identity and evidence.', 'Signed updates need a configured verified feed.'] };
+      write(render(response, json)); return 0;
+    }
+    const words: string[] = [], args: ObjectValue = {};
+    for (let index = 0; index < argv.length; index++) {
+      const word = argv[index]!;
+      if (word === '--json' || word === '--jsonl') continue;
+      if (word === '--wait') { wait = true; continue; } if (word === '--follow') { follow = true; continue; }
+      if (word === '--state-dir' || word === '--file' || word === '--metadata-file') {
+        const value = argv[++index]; if (!value || value.startsWith('--')) throw new Fault('INVALID_USAGE', `${word} needs a value.`, 2);
+        if (word === '--state-dir') directory = value; else args[word === '--file' ? 'config' : 'metadata'] = jsonFile(value); continue;
+      }
+      const key = values[word];
+      if (key) { const value = argv[++index]; if (!value || value.startsWith('--') || key in args) throw new Fault('INVALID_USAGE', `${word} needs one value.`, 2); args[key] = ['tail', 'after'].includes(key) ? Number(value) : value; continue; }
+      const flag = flags[word]; if (flag) { if (flag in args) throw new Fault('INVALID_USAGE', `Repeated ${word}.`, 2); args[flag] = true; continue; }
+      if (word.startsWith('-') && word !== '--version') throw new Fault('INVALID_USAGE', `Unknown option ${word}.`, 2);
+      words.push(word === '--version' ? 'version' : word);
+    }
+    const group = words.shift()!; let command: string;
+    if (single.has(group)) command = group;
+    else if (groups.has(group)) { const action = words.shift(); if (!action) throw new Fault('INVALID_USAGE', `Specify a ${group} action.`, 2); command = `${group}.${action}`; }
+    else throw new Fault('INVALID_USAGE', 'Unknown command. Use contribution help.', 2);
+    if (['repos.add', 'repos.create', 'repos.relocate'].includes(command)) args['path'] = words.shift();
+    if (command.startsWith('runs.') && !['runs.list', 'runs.events'].includes(command) || ['logs', 'repair-context'].includes(command)) args['operationId'] = words.shift();
+    if (words.length) throw new Fault('INVALID_USAGE', 'Unexpected positional arguments.', 2);
+    if (['checks.run', 'repos.create'].includes(command) && !args['requestId']) args['requestId'] = randomUUID();
+    if (json && jsonl) throw new Fault('INVALID_USAGE', 'Choose --json or --jsonl.', 2);
+    if (wait && command !== 'push') throw new Fault('INVALID_USAGE', '--wait is supported on push; use runs wait for other operations.', 2);
+    if (follow && command !== 'logs') throw new Fault('INVALID_USAGE', '--follow is supported on logs; use runs follow for events.', 2);
+    if (jsonl && command !== 'runs.follow') throw new Fault('INVALID_USAGE', '--jsonl is only supported on runs follow.', 2);
+    if (command === 'hook.pre-push') {
+      args['operationId'] = process.env['CONTRIBUTION_OPERATION_ID'] ?? '';
+      args['hookToken'] = process.env['CONTRIBUTION_HOOK_TOKEN'] ?? '';
+      const chunks: Buffer[] = []; let bytes = 0;
+      for await (const chunk of process.stdin) { const data = Buffer.from(chunk); bytes += data.length; if (bytes > 65536) throw new Fault('REF_TRANSACTION_UNSUPPORTED', 'Hook input exceeds its bound.', 2); chunks.push(data); }
+      args['stdin'] = Buffer.concat(chunks).toString('utf8');
+    }
+    const call = (name: string, input: ObjectValue = args, timeout = 15000): Promise<Response> => request(directory, { schemaVersion: 1, command: name, args: input, cwd: process.cwd() }, timeout);
+    if (command === 'version') {
+      let response: Response; try { response = await call(command); } catch { response = versionResponse(); }
+      write(render(response, json)); return exitCode(response);
+    }
+    if (command === 'runs.wait' || command === 'runs.follow' || (command === 'logs' && follow)) {
+      const deadline = Date.now() + 30000; let after = Number(args['after'] ?? 0), response: Response, lastText = '';
+      do {
+        response = await call('runs.get', { operationId: args['operationId'] });
+        if (command === 'runs.follow') {
+          const events = await call('runs.events', { operationId: args['operationId'], after });
+          for (const event of (events.result?.['events'] ?? []) as ObjectValue[]) { after = Number(event['sequence']); write(JSON.stringify(event) + '\n'); }
+        } else if (command === 'logs') {
+          const logs = await call('logs', { operationId: args['operationId'], tail: args['tail'] ?? 200 }); const text = String(logs.result?.['text'] ?? '');
+          if (text !== lastText) { write(text.startsWith(lastText) ? text.slice(lastText.length) : text); lastText = text; }
+        }
+        if (!response.operationState || terminal.has(response.operationState) || response.error) break;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } while (Date.now() < deadline);
+      if (command === 'runs.wait') write(render(response!, json));
+      return exitCode(response!);
+    }
+    let response = await call(command, args, command === 'hook.pre-push' ? 3600000 : 15000);
+    if (wait && response.operationId && !response.error) {
+      const deadline = Date.now() + 30000;
+      while (response.operationState && !terminal.has(response.operationState) && !response.error && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250)); response = await call('runs.get', { operationId: response.operationId });
+      }
+    }
+    write(render(response, json)); return exitCode(response);
+  } catch (error) { const response = rejected(error); write(render(response, json)); return exitCode(response); }
+}

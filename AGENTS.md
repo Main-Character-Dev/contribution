@@ -1,6 +1,6 @@
 # Contribution
 
-Read `docs/README.md`, `docs/REPOSITORY_SETUP.md`, and `docs/SETUP_STATUS.md` before changing the foundation. Detailed requirements and review amendments remain authoritative; setup does not authorize M0–M6 or D0–D4 implementation.
+Read `docs/README.md`, `docs/SETUP_STATUS.md`, and `docs/IMPLEMENTATION_STATUS.md` before changes. Detailed requirements and review amendments remain authoritative. The owner authorized all M0–M6 and D0–D4 implementation on 2026-10-05; live installation, enrollment and hardware approvals are deferred to the final handoff. The S0-only prompt remains historical scope, not the current assignment.
 
 - Preserve existing work, project policies, the MIT license, provenance, and native Codex worktree ownership. Commit only completed owned changes on a `codex/` branch. Do not push or install without authorization.
 - Do not permanently delete user-created or irreplaceable files. Move them to `~/.Trash/` when practical. Use normal owning-tool removal for reproducible project data. Verify exact targets; ask when ambiguous, valuable, or outside scope.

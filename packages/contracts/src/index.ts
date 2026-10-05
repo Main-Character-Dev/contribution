@@ -4,6 +4,8 @@ import addFormats from 'ajv-formats';
 import type { AnySchema, ValidateFunction } from 'ajv';
 
 export type { Response } from './generated/response.js';
+export type { Repository } from './generated/repository.js';
+export type { Machine } from './generated/machine.js';
 export { buildIdentity } from './generated/version.js';
 
 const directory = new URL('../schemas/', import.meta.url);

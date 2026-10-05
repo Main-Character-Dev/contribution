@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./client": "./dist/ipc.js",
+    "./core": "./dist/core.js"
   },
   "types": "./dist/index.d.ts",
   "dependencies": {
