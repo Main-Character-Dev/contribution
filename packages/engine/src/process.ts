@@ -56,7 +56,7 @@ export function gitPushAncestor(caller: { pid: number; start: string }): { pid: 
   }
   return null;
 }
-export interface ProcessResult { code: number; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean }
+export interface ProcessResult { code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean }
 export interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number;
   signal?: AbortSignal; output?: (text: string) => void; started?: (pid: number, start: string | null) => void }
 export async function run(executable: string, argv: readonly string[], options: RunOptions = {}): Promise<ProcessResult> {
@@ -99,7 +99,10 @@ export async function run(executable: string, argv: readonly string[], options: 
     };
     child.stdout.on('data', (data: Buffer) => collect('stdout', data)); child.stderr.on('data', (data: Buffer) => collect('stderr', data));
     child.stdin.on('error', () => { /* child may exit before consuming input */ }); child.stdin.end(options.input);
-    child.once('close', (code, signal) => { cleanup(); for (const text of Object.values(pending)) if (text) options.output?.(text); resolveResult({ code: bytes > maxBytes ? 5 : code ?? 5, signal, stdout, stderr,
+    child.once('close', (code, signal) => { cleanup(); for (const text of Object.values(pending)) if (text) options.output?.(text); resolveResult({
+      // A cooperative shell can trap TERM and exit zero after its deadline or
+      // cancellation. Consumers of code alone must never call that success.
+      code: cancelled ? 130 : timedOut ? 124 : bytes > maxBytes ? 5 : code ?? 5, actualExitCode: code, signal, stdout, stderr,
       timedOut, cancelled }); });
   });
 }
