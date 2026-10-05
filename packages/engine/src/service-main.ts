@@ -26,7 +26,14 @@ try {
       if (engine.active.size || engine.peers.busy) return;
       clearInterval(drain); server.close(() => {
         try { unlinkSync(socketPath(directory)); } catch { /* server may remove it */ }
-        journal.close(); lock.release(); process.exitCode = 0;
+        journal.close(); lock.release();
+        if (engine.restartRequested) {
+          // Replace this launchd-owned process only after every worker and peer
+          // transfer drained and the database/socket/lock were closed.
+          const environment = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+          try { process.execve!(payload.node, [payload.node, payload.service, '--payload', payload.root, '--state-dir', directory], environment); }
+          catch { process.stderr.write('The service could not restart its pinned payload. Reopen Contribution to repair registration.\n'); process.exitCode = 3; }
+        } else process.exitCode = 0;
       });
     }, 100);
   };

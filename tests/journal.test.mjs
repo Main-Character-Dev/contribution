@@ -28,3 +28,14 @@ test('bounded logs make omitted output explicit and retain a structured quota re
     assert.ok(journal.record('logTruncation', op.attemptId));
   } finally { journal.close(); rmSync(root, { recursive: true }); }
 });
+
+test('settings mutation and completion roll back together when the operation receipt cannot commit', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ct-journal-')), journal = new Journal(root);
+  try {
+    const op = journal.admit(randomUUID(), 'settings.apply', journal.hostId, {}, 'fixture');
+    journal.setMeta('settings', { label: 'Before' });
+    journal.db.exec("CREATE TRIGGER reject_receipt BEFORE UPDATE ON operations BEGIN SELECT RAISE(ABORT, 'fixture failure'); END;");
+    assert.throws(() => journal.update(op, { state: 'succeeded' }, 'operation.succeeded', () => journal.setMeta('settings', { label: 'After' })), /fixture failure/);
+    assert.equal(journal.getMeta('settings').label, 'Before'); assert.equal(journal.get(op.operationId).state, 'queued');
+  } finally { journal.close(); rmSync(root, { recursive: true }); }
+});

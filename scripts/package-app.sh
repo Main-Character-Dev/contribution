@@ -8,7 +8,8 @@ bash scripts/dev.sh native:build
 ditto .build/native/Build/Products/Debug/Contribution.app "$destination"
 mkdir -p "$destination/Contents/Resources" "$destination/Contents/Library/LaunchAgents"
 .tools/node/bin/node scripts/package-payload.mjs "$destination/Contents/Resources/Engine"
-xcrun swiftc -swift-version 6 -target arm64-apple-macosx14.0 apps/macos/ServiceLauncher.swift -o "$destination/Contents/Library/ContributionService"
+xcrun swiftc -swift-version 6 -target arm64-apple-macosx14.0 apps/macos/VerifiedPayload.swift apps/macos/ServiceLauncher.swift -o "$destination/Contents/Library/ContributionService"
+xcrun swiftc -swift-version 6 -target arm64-apple-macosx14.0 -D CONTRIBUTION_CLI apps/macos/VerifiedPayload.swift apps/macos/ServiceLauncher.swift -o "$destination/Contents/MacOS/contribution"
 cp apps/macos/Config/dev.contribution.service.plist "$destination/Contents/Library/LaunchAgents/dev.contribution.service.plist"
-"$destination/Contents/Library/ContributionService" --cli version --json
+"$destination/Contents/Resources/Engine/runtime/node" "$destination/Contents/Resources/Engine/node_modules/@contribution/cli/dist/main.js" version --json
 echo "Packaged unsigned development app. Registration, signing and release qualification are separate."

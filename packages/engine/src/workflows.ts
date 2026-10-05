@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, fsyncSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, fsyncSync, lstatSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { Journal } from './journal.js';
 import type { Operation } from './journal.js';
@@ -69,20 +69,35 @@ export class Workflows {
     return this.store.admit(requestId, 'submit', repo.id, input, this.payload.identity, repo.canonicalHostId === this.store.hostId ? 'queued' : 'queued_local');
   }
   async initialize(op: Operation, repo: Enrolled): Promise<ObjectValue> {
-    const info = await identity(repo.path); requireValue(!info.tip, 'HISTORY_ALREADY_EXISTS', 'Initialization never replaces existing history.');
+    await this.repos.current(repo);
+    requireValue(op.input['policy'] === repo.revision, 'POLICY_CHANGED', 'Initialization policy changed after admission.');
+    const info = await identity(repo.path), retained = op.result['bootstrapIntent'];
+    requireValue(!info.tip || (retained && info.tip === op.result['bootstrapTip']), 'HISTORY_ALREADY_EXISTS', 'Initialization never replaces existing history.');
     const generated: Record<string, string> = { 'contribution.json': JSON.stringify(repo.config, null, 2) + '\n',
       'CONTRIBUTION.md': '# Contribution workflow\n\nCommit task-owned work in a native task worktree. Submit completed commits through Contribution. Publication always requires an explicit Push request.\n' };
-    for (const file of Object.keys(generated)) requireValue(!existsSync(join(repo.path, file)), 'GENERATED_FILE_CONFLICT', `Initialization will not overwrite ${file}.`);
+    if (retained) requireValue(digest(retained) === digest(generated), 'BOOTSTRAP_INTENT_CHANGED', 'The retained bootstrap metadata no longer matches the approved policy.');
+    for (const [file, content] of Object.entries(generated)) {
+      const path = join(repo.path, file);
+      requireValue(!existsSync(path) || (retained && lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink() && readFileSync(path, 'utf8') === content), 'GENERATED_FILE_CONFLICT', `Initialization preserves the conflicting ${file}; reconcile the retained intent.`);
+    }
     for (const key of ['user.name', 'user.email']) requireValue((await git(repo.path, ['config', '--get', key])).code === 0, 'GIT_IDENTITY_REQUIRED', 'Configure your Git author identity before initialization.', 3);
     const index = join(this.store.directory, `${op.attemptId}.index`), env = { GIT_INDEX_FILE: index };
-    for (const [name, content] of Object.entries(generated)) writeFileSync(join(repo.path, name), content, { flag: 'wx' });
+    this.store.update(this.store.get(op.operationId), { stage: 'writing_bootstrap', effectDispatched: true, result: { ...op.result, bootstrapIntent: generated } });
+    for (const [name, content] of Object.entries(generated)) {
+      const path = join(repo.path, name);
+      if (!existsSync(path)) writeFileSync(path, content, { flag: 'wx' });
+      const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
+    }
+    const directory = openSync(repo.path, 'r'); try { fsyncSync(directory); } finally { closeSync(directory); }
     await gitText(repo.path, ['read-tree', '--empty'], { env });
     await gitText(repo.path, ['add', '--', ...Object.keys(generated)], { env });
     const tree = await gitText(repo.path, ['write-tree'], { env });
-    const tip = await gitText(repo.path, ['commit-tree', tree], { input: 'Initialize Contribution workflow\n' });
-    this.store.update(this.store.get(op.operationId), { stage: 'promoting_bootstrap', effectDispatched: true, result: { bootstrapTip: tip } });
-    await gitText(repo.path, ['update-ref', `refs/heads/${repo.config.integration.branch}`, tip, '0'.repeat(tip.length)]);
+    const tip = typeof op.result['bootstrapTip'] === 'string' ? op.result['bootstrapTip'] : await gitText(repo.path, ['commit-tree', tree], { input: 'Initialize Contribution workflow\n' });
+    requireValue(await gitText(repo.path, ['rev-parse', `${tip}^{tree}`]) === tree, 'BOOTSTRAP_TREE_CHANGED', 'Retained bootstrap commit differs from the approved files.');
+    this.store.update(this.store.get(op.operationId), { stage: 'promoting_bootstrap', effectDispatched: true, result: { bootstrapIntent: generated, bootstrapTip: tip } });
+    if (!info.tip) await gitText(repo.path, ['update-ref', `refs/heads/${repo.config.integration.branch}`, tip, '0'.repeat(tip.length)]);
     // Stage only generated entries in the real index, preserving every other entry.
+    for (const [name, content] of Object.entries(generated)) requireValue(readFileSync(join(repo.path, name), 'utf8') === content, 'BOOTSTRAP_FILE_CHANGED', 'Generated files changed before index reconciliation.');
     await gitText(repo.path, ['add', '--', ...Object.keys(generated)]);
     this.repos.save({ ...repo, policySource: 'tracked' });
     return { bootstrapTip: tip, publication: 'not_requested' };

@@ -199,6 +199,7 @@ private struct ContributionMenu: View {
 private struct ContributionSettings: View {
     @Bindable var workspace: Workspace
     @State private var registration = ServiceRegistration.status
+    @State private var cliStatus = CLIInstallation().status
     var body: some View {
         Form {
             Section("Background service") {
@@ -208,6 +209,12 @@ private struct ContributionSettings: View {
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Version") { LabeledContent("Contribution", value: BuildIdentity.version); Text("Development build · Remote device capabilities remain unverified").foregroundStyle(.secondary) }
+            Section("Command line") {
+                Text(cliStatus)
+                Button("Install bundled CLI") { do { try CLIInstallation().install(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
+                Button("Remove owned CLI link") { do { try CLIInstallation().uninstallOwnedLink(); cliStatus = CLIInstallation().status } catch { workspace.error = error.localizedDescription } }
+                Text("Add ~/.local/bin to your shell PATH. This action preserves any unrelated executable already at that location.").font(.caption).foregroundStyle(.secondary)
+            }
         }.formStyle(.grouped).padding().frame(width: 540)
     }
 }

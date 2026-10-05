@@ -1,6 +1,6 @@
 import { createServer, createConnection } from 'node:net';
 import type { Server } from 'node:net';
-import { chmodSync, existsSync, lstatSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, rmdirSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, rmdirSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
@@ -25,7 +25,13 @@ export class ServiceLock {
   constructor(state: string) {
     privateDirectory(state); this.directory = join(state, 'service.lock');
     const start = processIdentity(process.pid); requireValue(start, 'PROCESS_IDENTITY_UNAVAILABLE', 'Cannot establish the service process identity.', 3); this.start = start;
+    const recovery = join(state, 'service-recovery.lock');
+    let recoveryFD: number;
+    try { recoveryFD = openSync(recovery, 'wx', 0o600); }
+    catch { throw new Fault('SERVICE_LOCK_RECONCILING', 'Another launcher is acquiring the service lock, or its interrupted acquisition needs repair.', 3); }
+    try {
     if (existsSync(this.directory)) {
+      requireValue(lstatSync(this.directory).isDirectory() && !lstatSync(this.directory).isSymbolicLink(), 'UNSAFE_SERVICE_LOCK', 'Service lock is not a regular owned directory.', 3);
       let previous: { pid: number; start: string };
       try { previous = JSON.parse(readFileSync(join(this.directory, 'owner.json'), 'utf8')) as typeof previous; }
       catch { throw new Fault('SERVICE_LOCK_UNCONFIRMED', 'The prior service lock has no verifiable owner. Preserve it for explicit repair.', 3); }
@@ -33,6 +39,7 @@ export class ServiceLock {
       unlinkSync(join(this.directory, 'owner.json')); rmdirSync(this.directory);
     }
     mkdirSync(this.directory, { mode: 0o700 }); writeFileSync(join(this.directory, 'owner.json'), JSON.stringify({ pid: process.pid, start }), { flag: 'wx', mode: 0o600 });
+    } finally { closeSync(recoveryFD); unlinkSync(recovery); }
   }
   release(): void {
     const owner = JSON.parse(readFileSync(join(this.directory, 'owner.json'), 'utf8')) as { pid: number; start: string };
@@ -73,10 +80,18 @@ export async function listen(engine: Engine): Promise<Server> {
 export async function request(directory: string, body: Request, timeoutMs = 15000): Promise<Response> {
   let token: string;
   try { token = credential(directory); } catch { throw new Fault('SERVICE_NOT_INSTALLED', 'The Contribution user service is unavailable. Open the installed app to inspect registration.', 3); }
+  const path = socketPath(directory);
+  for (const [candidate, socket] of [[directory, false], [join(path, '..'), false], [path, true]] as const) {
+    let stat;
+    try { stat = lstatSync(candidate); } catch { throw new Fault('SERVICE_UNAVAILABLE', 'The private service endpoint is unavailable.', 3); }
+    requireValue(!stat.isSymbolicLink() && (socket ? stat.isSocket() : stat.isDirectory()) && stat.uid === process.getuid?.() && (stat.mode & 0o077) === 0, 'UNSAFE_SERVICE_ENDPOINT', 'The private service endpoint ownership or permissions need repair.', 3);
+  }
+  const outbound = JSON.stringify({ token, request: body }) + '\n';
+  requireValue(Buffer.byteLength(outbound) <= MAX_FRAME, 'FRAME_TOO_LARGE', 'IPC request exceeds one MiB.', 2);
   return new Promise((resolve, reject) => {
-    const socket = createConnection(socketPath(directory)); let data = Buffer.alloc(0);
+    const socket = createConnection(path); let data = Buffer.alloc(0);
     const timer = setTimeout(() => { socket.destroy(); reject(new Fault('SERVICE_TIMEOUT', 'The bounded request wait ended; accepted work continues. Query the same request before retrying.', 3)); }, timeoutMs);
-    socket.on('connect', () => socket.write(JSON.stringify({ token, request: body }) + '\n'));
+    socket.on('connect', () => socket.write(outbound));
     socket.on('error', () => { clearTimeout(timer); reject(new Fault('SERVICE_UNAVAILABLE', 'The installed user service is not reachable.', 3)); });
     socket.on('data', (chunk: Buffer) => {
       data = Buffer.concat([data, chunk]);

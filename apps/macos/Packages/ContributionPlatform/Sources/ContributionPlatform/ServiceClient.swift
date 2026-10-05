@@ -21,6 +21,11 @@ public struct ServiceClient: Sendable {
     }
     private static func exchange(_ directory: URL, command: String, args: [String: JSONValue], cwd: String) throws -> ResponseEnvelope {
         func failure(_ message: String) -> NSError { NSError(domain: "Contribution.Service", code: 3, userInfo: [NSLocalizedDescriptionKey: message]) }
+        func verifyPrivate(_ path: String, type: mode_t) throws {
+            var value = stat()
+            guard lstat(path, &value) == 0, value.st_mode & S_IFMT == type, value.st_uid == getuid(), value.st_mode & 0o077 == 0 else { throw failure("The private service endpoint ownership or permissions need repair.") }
+        }
+        try verifyPrivate(directory.path, type: S_IFDIR)
         func readPrivate(_ name: String) throws -> Data {
             let url = directory.appendingPathComponent(name), attributes = try FileManager.default.attributesOfItem(atPath: url.path)
             guard attributes[.type] as? FileAttributeType == .typeRegular,
@@ -34,6 +39,8 @@ public struct ServiceClient: Sendable {
             token = String(decoding: try readPrivate("client.token"), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         } catch { throw failure("The Contribution service is unavailable. Open Settings to inspect background-service registration.") }
         guard endpoint["schemaVersion"] == .number(1), let path = endpoint["socket"]?.text, !path.isEmpty, !token.isEmpty else { throw failure("Incompatible service discovery record.") }
+        try verifyPrivate(URL(fileURLWithPath: path).deletingLastPathComponent().path, type: S_IFDIR)
+        try verifyPrivate(path, type: S_IFSOCK)
         var address = sockaddr_un(); address.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8) + [0]
         guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else { throw failure("Service socket path exceeds the platform limit.") }

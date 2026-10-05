@@ -49,6 +49,7 @@ export class Engine {
   readonly active = new Map<string, AbortController>();
   readonly activeRepositories = new Set<string>();
   stopping = false;
+  restartRequested = false;
   private scheduled = false;
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture' }) {
     this.repos = new Repositories(store); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
@@ -122,7 +123,8 @@ export class Engine {
         } else throw new Fault('OPERATION_UNSUPPORTED', 'This payload does not implement the retained operation.', 3);
       }
       const latest = this.store.get(op.operationId);
-      this.store.update(latest, { state: 'succeeded', stage: 'completed', result: { ...latest.result, ...result, completedAt: now() }, error: null }, 'operation.succeeded');
+      this.store.update(latest, { state: 'succeeded', stage: 'completed', result: { ...latest.result, ...result, completedAt: now() }, error: null }, 'operation.succeeded',
+        op.kind === 'settings.apply' ? () => this.store.setMeta('settings', op.input['config']) : undefined);
       if (op.kind === 'submit') {
         const repo = await this.repos.get(op.repositoryId);
         if (repo.availability === 'both-macs') {
@@ -155,10 +157,12 @@ export class Engine {
     } finally { lease?.release(); }
   }
   private admit(requestId: unknown, kind: string, repositoryId: string, input: ObjectValue): Response {
+    const identity = string(requestId, 'requestId'), existing = this.store.existing(identity, kind, repositoryId, input);
+    if (existing) return this.store.response(existing);
     const settings = this.settings();
     const logBytes = readdirSync(join(this.store.directory, 'logs')).reduce((total, name) => total + statSync(join(this.store.directory, 'logs', name)).size, 0);
     requireValue(logBytes < settings.retention.maxLogBytes, 'STORAGE_PRESSURE', 'Retained logs reached the configured quota. Free or export eligible evidence before more work.', 3);
-    const op = this.store.admit(string(requestId, 'requestId'), kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
+    const op = this.store.admit(identity, kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
   }
   private cancel(op: Operation): Response {
     if (terminal.has(op.state)) return this.store.response(op);
@@ -175,7 +179,7 @@ export class Engine {
     requireValue(config.hostId === previous.hostId && config.role === previous.role && config.primaryHostId === previous.primaryHostId && config.primarySshAlias === previous.primarySshAlias && digest(config.repositories) === digest(previous.repositories),
       'AUTHORITY_TRANSITION_REQUIRED', 'Host roles and repository authority require a reconciled transition; raw settings cannot grant ownership.');
     requireValue(!config.remoteDevices?.maintainSession, 'CAPABILITY_UNVERIFIED', 'Persistent session maintenance requires measured and approved device qualification.', 3);
-    this.store.setMeta('settings', config); return { settings: config, revision: digest(config) };
+    return { settings: config, revision: digest(config) };
   }
   async dispatch(value: unknown): Promise<Response> {
     try {
@@ -195,10 +199,11 @@ export class Engine {
       }
       if (command === 'service.restart' || command === 'update.apply') {
         requireValue(args['whenIdle'] === true, 'IDLE_WINDOW_REQUIRED', 'Use --when-idle for lifecycle changes.', 2);
-        requireValue(this.active.size === 0, 'SERVICE_BUSY', 'Active work must drain before restart or update.', 4);
+        requireValue(this.active.size === 0 && !this.peers.busy, 'SERVICE_BUSY', 'Active work and peer transfers must drain before restart or update.', 4);
         requireValue(!this.store.unsettled().some(op => op.state === 'outcome_unknown'), 'RECONCILIATION_REQUIRED', 'Resolve uncertain effects before lifecycle changes.');
         if (command === 'update.apply') throw new Fault('SIGNED_UPDATE_REQUIRED', 'No verified signed update is staged. Use the native updater once release signing is configured.', 3);
-        this.store.setMeta('maintenance', true); this.stopping = true; return completed({ state: 'restart_ready', queuedPreserved: this.store.queue().length });
+        requireValue(typeof process.execve === 'function', 'RESTART_UNAVAILABLE', 'This runtime cannot replace the service process safely.', 3);
+        this.store.setMeta('maintenance', true); this.restartRequested = true; this.stopping = true; return completed({ state: 'restart_ready', queuedPreserved: this.store.queue().length });
       }
       if (command === 'update.check') return completed({ status: 'not_configured', reason: 'SIGNED_FEED_REQUIRED', automaticInstallation: false });
       if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list()] });
@@ -364,7 +369,18 @@ export class Engine {
       const processes = op.result['processes'] as { pid: number; start: string | null }[] | undefined;
       if (processes?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start))) continue;
       const repo = await this.repos.get(op.repositoryId);
-      if (op.kind === 'push') {
+      if (op.kind === 'initialize' && op.result['bootstrapIntent']) {
+        const old = Lease.inspect(repo.commonDir);
+        if (old && (old.attemptId !== op.attemptId || !Lease.reclaim(repo.commonDir, old))) continue;
+        let lease: Lease | undefined;
+        try {
+          this.peers.assertWriter(repo); lease = new Lease(repo.commonDir, op.attemptId);
+          const result = await this.workflows.initialize(op, repo);
+          this.store.update(this.store.get(op.operationId), { state: 'succeeded', stage: 'reconciled', error: null, result: { ...this.store.get(op.operationId).result, ...result } });
+        } catch (error) {
+          this.store.put('bootstrapReconciliation', op.operationId, { code: error instanceof Fault ? error.code : 'RECONCILIATION_FAILED', observedAt: now() });
+        } finally { lease?.release(); }
+      } else if (op.kind === 'push') {
         const scope = op.input['scope'] as { destination: string; ref: string; tip: string };
         const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
         if (observed.code === 0 && observed.stdout.split('\t')[0] === scope.tip)

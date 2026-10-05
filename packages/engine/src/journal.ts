@@ -77,9 +77,10 @@ export class Journal {
   list(limit = 200): Operation[] { return this.db.prepare('SELECT body FROM operations ORDER BY sequence DESC LIMIT ?').all(limit).map(row => JSON.parse(String(row['body'])) as Operation); }
   queue(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state='queued' ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
   unsettled(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state NOT IN ('succeeded','failed','cancelled','interrupted') ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
-  update(op: Operation, patch: Partial<Operation>, type = 'operation.changed'): Operation {
+  update(op: Operation, patch: Partial<Operation>, type = 'operation.changed', mutation?: () => void): Operation {
     const updated = { ...op, ...patch };
     this.transaction(() => {
+      mutation?.();
       this.db.prepare('UPDATE operations SET state=?,body=? WHERE id=?').run(updated.state, canonical(updated), op.operationId);
       this.event(updated, type, { state: updated.state, stage: updated.stage, attemptId: updated.attemptId });
     }); return updated;
