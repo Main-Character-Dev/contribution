@@ -139,3 +139,75 @@ test('activation rejects additional committed paths, changed dispatchers and aut
     } finally { await f.cleanup(); }
   }
 });
+
+async function secondClone(f) {
+  const path = join(f.root, 'second'), store = new Journal(join(f.root, 'second-state'));
+  git(f.root, 'clone', '--no-hardlinks', f.path, path);
+  const hooks = f.repo.config.validation.gate === 'enabled' && f.guard.startsWith('.githooks/') ? join(path, '.git/mathy/trusted-hooks/fixture') : join(path, '.husky/_');
+  mkdirSync(hooks, { recursive: true }); writeFileSync(join(hooks, 'pre-push'), readFileSync(f.dispatcher), { mode: 0o755 });
+  git(path, 'config', 'core.hooksPath', f.guard.startsWith('.githooks/') ? hooks : '.husky/_');
+  const engine = new Engine(store, { identity: 'fixture', node: process.execPath, cli: resolve('packages/cli/dist/main.js') }), repo = await engine.repos.add(path);
+  const call = args => engine.dispatch({ schemaVersion: 1, command: 'repos.migration', args: { repo: repo.id, ...args }, cwd: path });
+  return { path, store, engine, repo, call, cleanup: () => { engine.stopping = true; store.close(); } };
+}
+
+test('second clones reconstruct all four original gates from committed history without rewriting source', async () => {
+  for (const adapter of adoptionPolicies.map(policy => policy.id)) {
+    const f = await fixture(adapter); let second;
+    try {
+      const { plan } = await f.prepare(); assert.equal((await f.change('applyAdoption', plan)).error, null);
+      git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Fixture adoption for clone'); const migrationTip = git(f.path, 'rev-parse', 'HEAD');
+      second = await secondClone(f);
+      writeFileSync(join(second.path, 'unrelated-after-migration'), 'Later normal source work\n');
+      git(second.path, 'add', '--all'); git(second.path, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Later work');
+      const before = git(second.path, 'rev-parse', 'HEAD'), request = { prepareExistingAdoption: true, originalTip: plan.sourceTip, migrationTip, requestId: randomUUID() };
+      const reviewed = await second.call(request); assert.equal(reviewed.error, null, JSON.stringify(reviewed)); assert.equal(reviewed.result.registrationOnly, true);
+      assert.deepEqual((await second.call(request)).result, reviewed.result);
+      assert.equal(second.store.record('adoptedHooks', second.repo.id), undefined);
+      assert.equal((await second.call({ applyAdoption: reviewed.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() })).error.code, 'REGISTRATION_ONLY');
+      const activation = { activateAdoption: reviewed.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() };
+      const activated = await second.call(activation); assert.equal(activated.error, null, JSON.stringify(activated));
+      assert.deepEqual((await second.call(activation)).result, activated.result);
+      const registration = await second.engine.workflows.adopted.verify(second.repo);
+      assert.equal(registration.originalHookDigest, f.store.record('adoptionPlan', plan.proposalId).originalHookDigest);
+      assert.equal(git(second.path, 'rev-parse', 'HEAD'), before); assert.equal(git(second.path, 'status', '--porcelain'), '');
+      assert.equal((await second.call({ rollbackAdoption: reviewed.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() })).error.code, 'REGISTRATION_ONLY');
+    } finally { second?.cleanup(); await f.cleanup(); }
+  }
+});
+
+test('existing adoption review rejects forged migration contents, missing ancestry and changed local policy', async () => {
+  for (const variant of ['hook', 'lease', 'extra', 'history', 'policy']) {
+    const f = await fixture(); let second;
+    try {
+      const { plan } = await f.prepare(); assert.equal((await f.change('applyAdoption', plan)).error, null);
+      if (variant === 'hook') writeFileSync(join(f.path, f.guard), '#!/bin/sh\nexit 0\n');
+      if (variant === 'lease') writeFileSync(join(f.path, 'scripts/lib/primary-checkout-lease.mjs'), 'export const forged = true;\n');
+      if (variant === 'extra') writeFileSync(join(f.path, 'extra-migration-file'), 'unreviewed\n');
+      git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Fixture candidate'); const migrationTip = git(f.path, 'rev-parse', 'HEAD');
+      second = await secondClone(f);
+      if (variant === 'policy') { writeFileSync(join(second.path, 'AGENTS.md'), 'different policy\n'); git(second.path, 'add', '--all'); git(second.path, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Policy changed'); }
+      const before = git(second.path, 'status', '--porcelain'), tip = git(second.path, 'rev-parse', 'HEAD');
+      const result = await second.call({ prepareExistingAdoption: true, originalTip: variant === 'history' ? 'a'.repeat(40) : plan.sourceTip, migrationTip, requestId: randomUUID() });
+      assert.ok(result.error, JSON.stringify(result)); assert.equal(second.store.record('adoptedHooks', second.repo.id), undefined);
+      assert.equal(git(second.path, 'status', '--porcelain'), before); assert.equal(git(second.path, 'rev-parse', 'HEAD'), tip);
+    } finally { second?.cleanup(); await f.cleanup(); }
+  }
+});
+
+test('existing adoption activation rechecks local dispatcher, snapshot and authority after review', async () => {
+  for (const variant of ['dispatcher', 'snapshot', 'authority', 'writer']) {
+    const f = await fixture(); let second, lease;
+    try {
+      const { plan } = await f.prepare(); assert.equal((await f.change('applyAdoption', plan)).error, null);
+      git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Fixture adoption'); const migrationTip = git(f.path, 'rev-parse', 'HEAD'); second = await secondClone(f);
+      const review = await second.call({ prepareExistingAdoption: true, originalTip: plan.sourceTip, migrationTip, requestId: randomUUID() }); assert.equal(review.error, null, JSON.stringify(review));
+      if (variant === 'dispatcher') writeFileSync(join(second.path, '.husky/_/h'), 'changed dispatcher\n');
+      if (variant === 'snapshot') { const snapshot = join(review.result.privateReviewDirectory, 'original-pre-push'); chmodSync(snapshot, 0o600); writeFileSync(snapshot, 'forged original\n'); }
+      if (variant === 'authority') second.engine.repos.save({ ...second.repo, canonicalHostId: randomUUID() });
+      if (variant === 'writer') lease = new LegacyPrimaryLease(second.repo.commonDir, randomUUID());
+      const result = await second.call({ activateAdoption: review.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() }); assert.ok(result.error);
+      assert.equal(second.store.record('adoptedHooks', second.repo.id), undefined);
+    } finally { lease?.release(); second?.cleanup(); await f.cleanup(); }
+  }
+});

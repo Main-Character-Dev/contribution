@@ -42,3 +42,21 @@ An interrupted apply/rollback retains its phase and matching snapshots. New adop
 ## Current proof
 
 Synthetic policy fixtures exercise all four existing dispatcher families and actual disposable managed Git publication after activation. They preserve the inactive gate, old dispatcher, gate borrowing, request identities, source isolation and ordinary project commit boundary. Additional fixtures cover interrupted file application, concurrent edits/commits, corrupted snapshots, rollback with companion authority, primary-writer and landing-flight contention, and changed dispatchers/authority/activation ranges. These prove the shared implementation; they do not claim full real-project gate parity or a live cutover. No live project was changed by this work.
+
+## Registering an already migrated second clone
+
+A clone of the committed adoption does not contain the first host's private original gate or local dispatcher registration. Reconstruct them from local Git history with a separate review:
+
+```sh
+contribution repos migration --repo REPO --prepare-existing-adoption \
+  --original-tip ORIGINAL_COMMIT --migration-tip MIGRATION_COMMIT --request-id UUID
+contribution repos migration --repo REPO --adoption-plan PLAN
+contribution repos migration --repo REPO --activate-adoption PLAN \
+  --expected-revision REVISION --request-id UUID
+```
+
+The original and migration selectors must be full committed object IDs. The migration must be an ancestor of the current clone. The engine reconstructs the same guard, bridge, reporting overrides and configuration from original committed files, checks the exact changed paths and executable modes, and verifies that all current policy files still match. Later unrelated source commits are allowed. Original source must be bounded ordinary UTF-8 files; missing ancestry, links, submodules, LFS and changed policy stop review.
+
+This path writes only private reviewed snapshots and local registration. It never applies or rolls back project source, stages files, commits, installs a dispatcher or changes canonical ownership. The second host must already have the project's normal trusted dispatcher or Husky owner. Activation drains compatible primary/landing writers and rechecks local dispatcher, snapshots, branch, configuration, history and authority. The original gate is recovered from committed source; no supplied remote executable is accepted. All-writer cutover and adopted cross-host handoff remain separately blocked pending their implementation and qualification.
+
+Three focused fixture groups cover all four second-clone reconstructions, source preservation, idempotent activation, changed history/policy/gate/lease, and post-review dispatcher/snapshot/authority/writer conflicts.

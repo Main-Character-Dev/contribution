@@ -15,7 +15,9 @@ values['--release-ref'] = 'releaseRef';
 values['--evidence'] = 'evidence';
 values['--borrow-token'] = 'borrowToken';
 values['--apply-adoption'] = 'applyAdoption'; values['--activate-adoption'] = 'activateAdoption'; values['--rollback-adoption'] = 'rollbackAdoption'; values['--adoption-plan'] = 'adoptionPlan';
+values['--original-tip'] = 'originalTip'; values['--migration-tip'] = 'migrationTip';
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch', '--prepare-reporting': 'prepareReporting', '--prepare-adoption': 'prepareAdoption' };
+flags['--prepare-existing-adoption'] = 'prepareExistingAdoption';
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
 export function exitCode(response: Response): number {
@@ -54,6 +56,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repos pair --repo ID --host HOST --request-id UUID', 'repos seed|mirror --repo ID --request-id UUID',
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID] [--prepare-reporting|--prepare-adoption --request-id UUID]',
         'repos migration --repo ID --adoption-plan ID', 'repos migration --repo ID --apply-adoption|--activate-adoption|--rollback-adoption ID --expected-revision REV --request-id UUID',
+        'repos migration --repo ID --prepare-existing-adoption --original-tip OID --migration-tip OID --request-id UUID',
         'devices list|status|apps|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
         'devices profile --repo ID', 'devices configure --repo ID --file PATH --expected-revision REVISION --request-id UUID', 'devices artifacts list|get --repo ID [--artifact ID]',
         'devices evidence record --repo ID --file PATH --request-id UUID', 'devices evidence get|review --repo ID --evidence ID [--expected-revision REV --request-id UUID]',

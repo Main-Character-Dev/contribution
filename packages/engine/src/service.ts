@@ -39,7 +39,7 @@ const allowed: Record<string, string[]> = {
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
-  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
+  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'prepareExistingAdoption', 'originalTip', 'migrationTip', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
   'repos.initialize': ['repo', 'requestId'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata'],
@@ -435,7 +435,9 @@ export class Engine {
       }
       if (command === 'repos.runtime') return completed({ runtime: await new ProjectRuntimes(this.store).register(repo, string(args['node'], 'node'), string(args['pnpm'], 'pnpm')) });
       if (command === 'repos.migration') {
-        requireValue(['prepareReporting', 'prepareAdoption', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan'].filter(key => args[key]).length <= 1, 'INVALID_USAGE', 'Choose one migration action.', 2);
+        requireValue(['prepareReporting', 'prepareAdoption', 'prepareExistingAdoption', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan'].filter(key => args[key]).length <= 1, 'INVALID_USAGE', 'Choose one migration action.', 2);
+        requireValue(args['prepareExistingAdoption'] || (!args['originalTip'] && !args['migrationTip']), 'INVALID_USAGE', 'History selectors require an existing-adoption review.', 2);
+        if (args['prepareExistingAdoption']) return completed(await this.adoptions.prepareExisting(repo, string(args['originalTip'], 'originalTip'), string(args['migrationTip'], 'migrationTip'), string(args['requestId'], 'requestId')));
         if (args['adoptionPlan']) return completed(this.adoptions.inspect(repo, string(args['adoptionPlan'], 'proposal')));
         for (const [key, action] of [['applyAdoption', 'apply'], ['activateAdoption', 'activate'], ['rollbackAdoption', 'rollback']] as const) if (args[key]) return completed(await this.adoptions.change(repo, string(args[key], 'proposal'), action, string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
         const adapter = typeof args['adapter'] === 'string' ? args['adapter'] : identifyAdoption(repo.path)?.id;

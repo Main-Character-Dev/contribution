@@ -12,6 +12,7 @@ import { privateDirectory } from './private-files.js';
 import { LegacyPrimaryLease } from './legacy-lease.js';
 import { LegacyLandingFlight } from './legacy-flight.js';
 import type { AdoptedHookRegistration } from './adopted-hooks.js';
+import { adoptionGuard, adoptionReporting, existingAdoptionSource } from './adoption-source.js';
 
 interface Change { path: string; before: string | null; after: string; mode: number; beforeMode: number | null; beforeFile: string | null; afterFile: string }
 interface Plan {
@@ -20,9 +21,8 @@ interface Plan {
   phase: 'prepared' | 'applying' | 'applied' | 'active' | 'rolling_back' | 'rolled_back';
   hooksPath: string; dispatcher: string; dispatcherDigest: string; dependencies: { path: string; digest: string }[];
   guard: string; originalHookDigest: string | null; changes: Change[];
+  existingMigrationTip?: string;
 }
-const quote = (value: string): string => "'" + value.replaceAll("'", "'\\''") + "'";
-const reporting: Record<string, string | null> = { 'mathy-v1': 'scripts/lib/pre-push-reporting.mjs', 'maincharacter-v1': null, 'roboty-v1': 'scripts/local-pre-push.mjs', 'glassalpha-v1': null };
 
 /** Explicit source migration with private before/after snapshots. Applying a
  * proposal never commits or activates it; activation verifies the committed
@@ -60,11 +60,49 @@ export class Adoptions {
     return { proposalId: plan.id, repositoryId: plan.repositoryId, adapter: plan.adapter, phase: plan.phase, sourceTip: plan.sourceTip, sourceBranch: plan.sourceBranch,
       expectedRevision: plan.before.revision, configurationRevision: digest(plan.config), gate: plan.config.validation.gate, hookOwner: plan.hooksPath,
       files: plan.changes.map(change => ({ path: change.path, before: change.before, after: change.after })), privateReviewDirectory: this.directory(plan.id),
-      sourceCommitted: plan.phase === 'active', landingAdapter: 'not_activated_by_hook_adoption', mutation: plan.phase === 'prepared' ? 'none' : 'reviewed_files_only' };
+      sourceCommitted: plan.phase === 'active', registrationOnly: Boolean(plan.existingMigrationTip), migrationTip: plan.existingMigrationTip ?? null, landingAdapter: 'not_activated_by_hook_adoption', mutation: plan.existingMigrationTip || plan.phase === 'prepared' ? 'none' : 'reviewed_files_only' };
   }
   inspect(repo: Enrolled, planId: string): ObjectValue { return this.view(this.plan(repo, planId)); }
   private plan(repo: Enrolled, planId: string): Plan {
     const plan = this.store.record<Plan>('adoptionPlan', planId); requireValue(plan?.repositoryId === repo.id, 'MIGRATION_PLAN_REQUIRED', 'Select a retained proposal belonging to this repository.', 3); return plan;
+  }
+  async prepareExisting(repo: Enrolled, sourceTip: string, migrationTip: string, requestId: string): Promise<ObjectValue> {
+    const scope = digest({ repositoryId: repo.id, sourceTip, migrationTip }), prior = this.store.record<{ scope: string; planId: string; completed: boolean }>('adoptionExistingProposal', requestId);
+    if (prior) {
+      requireValue(prior.scope === scope, 'REQUEST_ID_CONFLICT', 'This registration review already identifies different history.');
+      requireValue(prior.completed, 'MIGRATION_PROPOSAL_PENDING', 'An interrupted review remains retained. Prepare a fresh review with a new identity.', 3);
+      return this.inspect(repo, prior.planId);
+    }
+    requireValue(!this.store.record('adoptedHooks', repo.id) && !this.busy.has(repo.id) && !this.store.records<Plan>('adoptionPlan').some(value => value.repositoryId === repo.id && !['prepared', 'rolled_back'].includes(value.phase)),
+      'MIGRATION_PENDING', 'An existing registration or migration must be reconciled before this review.', 3);
+    await this.repos.current(repo); await clean(repo.path);
+    const source = await identity(repo.path), reconstructed = await existingAdoptionSource(repo, sourceTip, migrationTip), adapter = repo.config.integration.adapter;
+    const inventory = policyInventory(repo.path, adapter), planId = id();
+    requireValue(source.branch && inventory.readyForParity, 'MIGRATION_POLICY_CHANGED', 'The local clone must retain a complete adopted policy on its configured branch.', 3);
+    const hooksPath = await gitText(repo.path, ['config', '--get', 'core.hooksPath']);
+    const dispatcher = await gitText(repo.path, ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push']);
+    const dispatcherBytes = this.read(dispatcher);
+    requireValue((lstatSync(dispatcher).mode & 0o100) !== 0 && (adapter === 'mathy-v1' ? realpathSync(dispatcher).startsWith(join(repo.commonDir, 'mathy/trusted-hooks') + '/') : realpathSync(dispatcher) === realpathSync(join(repo.path, '.husky/_/pre-push'))),
+      'MIGRATION_HOOK_OWNER_UNKNOWN', 'The second clone needs its own original trusted dispatcher or Husky owner.', 3);
+    const dependencies = adapter === 'mathy-v1' ? [] : [{ path: join(dirname(dispatcher), 'h'), digest: digest(this.read(join(dirname(dispatcher), 'h'))) }];
+    const guard = adapter === 'mathy-v1' ? '.githooks/pre-push' : '.husky/pre-push';
+    const plan: Plan = { id: planId, requestId, repositoryId: repo.id, adapter, before: repo, config: repo.config,
+      sourceTip, sourceBranch: source.branch, existingMigrationTip: migrationTip, authorityDigest: digest(this.store.record('authority', repo.id) ?? null),
+      inventory: reconstructed.inventory, createdAt: now(), phase: 'prepared', hooksPath, dispatcher, dispatcherDigest: digest(dispatcherBytes), dependencies,
+      guard, originalHookDigest: reconstructed.originalHook ? digest(reconstructed.originalHook) : null, changes: [] };
+    this.store.put('adoptionExistingProposal', requestId, { scope, planId, completed: false });
+    privateDirectory(join(this.store.directory, 'adoptions')); const directory = this.directory(planId); privateDirectory(directory);
+    for (const [index, change] of reconstructed.changes.entries()) {
+      const beforeFile = change.before ? `${index}-before` : null, afterFile = `${index}-after`;
+      if (change.before) { writeFileSync(join(directory, beforeFile!), change.before, { flag: 'wx', mode: 0o400 }); this.sync(join(directory, beforeFile!)); }
+      writeFileSync(join(directory, afterFile), change.after, { flag: 'wx', mode: 0o400 }); this.sync(join(directory, afterFile));
+      plan.changes.push({ path: change.path, before: change.before ? digest(change.before) : null, after: digest(change.after), mode: change.mode, beforeMode: change.beforeMode, beforeFile, afterFile });
+    }
+    if (reconstructed.originalHook) { writeFileSync(join(directory, 'original-pre-push'), reconstructed.originalHook, { flag: 'wx', mode: 0o400 }); this.sync(join(directory, 'original-pre-push')); }
+    this.sync(directory); this.sync(dirname(directory)); this.validateFiles(plan, repo, true); await this.ownerUnchanged(plan, repo); await clean(repo.path);
+    requireValue((await identity(repo.path)).tip === source.tip && digest(policyInventory(repo.path, adapter).files) === digest(inventory.files), 'MIGRATION_SOURCE_CHANGED', 'The local clone changed while preparing registration.');
+    this.store.transaction(() => { this.store.put('adoptionPlan', planId, plan); this.store.put('adoptionExistingProposal', requestId, { scope, planId, completed: true }); });
+    return this.view(plan);
   }
   async prepare(repo: Enrolled, adapter: string, requestId: string): Promise<ObjectValue> {
     const prior = this.store.record<{ repositoryId: string; adapter: string; planId: string; completed: boolean }>('adoptionProposal', requestId);
@@ -101,9 +139,9 @@ export class Adoptions {
     requireValue(inventory.policy.gate === 'inactive' ? originalHook === null : originalHook !== null && originalHook.length <= 128 * 1024,
       'MIGRATION_GATE_CHANGED', 'An enabled original gate must be retained; an unexpected inactive hook requires explicit policy review.', 3);
     if (originalHook) { plan.originalHookDigest = digest(originalHook); writeFileSync(join(directory, 'original-pre-push'), originalHook, { flag: 'wx', mode: 0o400 }); }
-    add(guard, `#!/bin/sh\n# Contribution adopted publication guard v1; original gate retained by the installed service.\nset -eu\nif [ -n "\${CONTRIBUTION_HOOK_TOKEN:-}" ]; then\n  exec "$CONTRIBUTION_BRIDGE_NODE" "$CONTRIBUTION_BRIDGE_CLI" hook adopted --repo ${quote(repo.id)} --state-dir "$CONTRIBUTION_BRIDGE_STATE" --remote "$1" --url "$2"\nfi\nexec "$HOME/.local/bin/contribution" hook adopted --repo ${quote(repo.id)} --remote "$1" --url "$2"\n`, 0o755);
+    add(guard, adoptionGuard(repo.id), 0o755);
     const leasePath = 'scripts/lib/primary-checkout-lease.mjs'; add(leasePath, leaseBridgePatch(this.read(this.source(repo, leasePath)).toString('utf8')));
-    const reportingPath = reporting[adapter]; if (reportingPath) add(reportingPath, reportingPatch(adapter, this.read(this.source(repo, reportingPath)).toString('utf8')).source);
+    const reportingPath = adoptionReporting[adapter]; if (reportingPath) add(reportingPath, reportingPatch(adapter, this.read(this.source(repo, reportingPath)).toString('utf8')).source);
     add('contribution.json', JSON.stringify(config, null, 2) + '\n');
     for (const change of plan.changes) {
       const current = existsSync(this.source(repo, change.path)) ? this.read(this.source(repo, change.path)) : null;
@@ -138,6 +176,7 @@ export class Adoptions {
     const input = digest({ repositoryId: repo.id, planId, action, expectedRevision }), previous = this.store.record<{ input: string; result?: ObjectValue }>('adoptionCommand', requestId);
     if (previous) { requireValue(previous.input === input, 'REQUEST_ID_CONFLICT', 'This migration request has different immutable inputs.'); if (previous.result) return previous.result; }
     let plan = this.plan(repo, planId);
+    requireValue(!plan.existingMigrationTip || action === 'activate', 'REGISTRATION_ONLY', 'An imported adoption review only registers committed source; it cannot rewrite or roll back the clone.', 3);
     requireValue(!this.busy.has(repo.id) && !this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Drain or reconcile retained repository jobs before migration.');
     requireValue(repo.revision === expectedRevision, 'REVISION_CONFLICT', 'The repository configuration changed since review.');
     requireValue(!this.store.records<Plan>('adoptionPlan').some(value => value.repositoryId === repo.id && value.id !== plan.id && !['prepared', 'rolled_back'].includes(value.phase)), 'MIGRATION_PENDING', 'Another adoption owns the current migration.');
@@ -159,10 +198,11 @@ export class Adoptions {
         for (const change of plan.changes) this.replace(plan, repo, change, 'after');
         plan = { ...plan, phase: 'applied' };
       } else if (action === 'activate') {
-        requireValue(plan.phase === 'applied' && repo.revision === plan.before.revision, 'MIGRATION_NOT_APPLIED', 'Apply and commit the reviewed source changes before activation.');
+        requireValue(plan.phase === (plan.existingMigrationTip ? 'prepared' : 'applied') && repo.revision === plan.before.revision, 'MIGRATION_NOT_APPLIED', 'Apply and commit the reviewed source changes before activation.');
         await clean(repo.path); this.validateFiles(plan, repo, true);
+        if (plan.existingMigrationTip) await existingAdoptionSource(repo, plan.sourceTip, plan.existingMigrationTip);
         requireValue(source.tip !== plan.sourceTip && (await git(repo.path, ['merge-base', '--is-ancestor', plan.sourceTip, source.tip!])).code === 0, 'MIGRATION_COMMIT_REQUIRED', 'Commit the reviewed changes without rewriting their source history.');
-        const changed = (await gitText(repo.path, ['diff', '--name-only', plan.sourceTip, source.tip!, '--'])).split('\n').filter(Boolean).sort();
+        const changed = (await gitText(repo.path, ['diff', '--name-only', plan.sourceTip, plan.existingMigrationTip ?? source.tip!, '--'])).split('\n').filter(Boolean).sort();
         requireValue(digest(changed) === digest(plan.changes.filter(change => change.before !== change.after).map(change => change.path).sort()), 'MIGRATION_RANGE_CHANGED', 'The activation range must contain exactly the reviewed migration paths.');
         const inventory = policyInventory(repo.path, plan.adapter); requireValue(inventory.readyForParity, 'MIGRATION_POLICY_CHANGED', 'The adopted policy inventory is incomplete.');
         for (const [path, hash] of Object.entries(plan.inventory)) if (!plan.changes.some(change => change.path === path)) requireValue(inventory.files[path] === hash, 'MIGRATION_POLICY_CHANGED', 'An unmodified policy source changed during adoption.');
