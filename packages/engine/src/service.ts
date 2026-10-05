@@ -171,7 +171,7 @@ export class Engine {
       else {
         const repo = await this.repos.get(op.repositoryId);
         if (isGitJob(op.kind) && !(op.kind === 'submit' && repo.config.integration.adapter !== 'generic-v1'))
-          lease = repo.config.integration.adapter === 'generic-v1' ? new Lease(repo.commonDir, op.attemptId) : new LegacyPrimaryLease(repo.commonDir, op.attemptId);
+          lease = op.kind === 'checks' || repo.config.integration.adapter === 'generic-v1' ? new Lease(repo.commonDir, op.attemptId) : new LegacyPrimaryLease(repo.commonDir, op.attemptId);
         if (['initialize', 'submit', 'push', 'seed'].includes(op.kind)) this.peers.assertWriter(repo);
         if (op.kind === 'initialize') result = await this.workflows.initialize(op, repo);
         else if (op.kind === 'submit') result = await this.workflows.landing(op, repo, signal);
@@ -570,7 +570,8 @@ export class Engine {
         const source = await identity(sourcePath);
         requireValue(source.commonDir === repo.commonDir, 'SOURCE_OWNERSHIP_REQUIRED', 'Source belongs to a different repository.');
         requireValue(source.tip, 'UNBORN_REPOSITORY', 'Initialize history before checking a committed source.', 3);
-        return this.admit(requestId, 'checks', repo.id, { ...selection, selection, sourceTip: source.tip, fingerprint: await inputFingerprint(sourcePath), policy: repo.revision });
+        const adoptedCheck = repo.config.validation.adapter === 'generic-v1' ? {} : { adoptedCheck: await this.workflows.adoptedChecks.select(repo, sourcePath, selection.checkId, selection.fresh) };
+        return this.admit(requestId, 'checks', repo.id, { ...selection, selection, sourceTip: source.tip, fingerprint: await inputFingerprint(sourcePath), policy: repo.revision, ...adoptedCheck });
       }
       if (command === 'hook.pre-push') {
         this.peers.assertWriter(repo);

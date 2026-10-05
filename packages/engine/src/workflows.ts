@@ -14,14 +14,17 @@ import { ProjectRuntimes } from './project-runtime.js';
 import { AdoptedHooks } from './adopted-hooks.js';
 import { LegacyPrimaryLease } from './legacy-lease.js';
 import { AdoptedLanding } from './adopted-landing.js';
+import { AdoptedChecks } from './adopted-checks.js';
 
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
 export class Workflows {
   readonly adopted: AdoptedHooks;
   readonly adoptedLanding: AdoptedLanding;
+  readonly adoptedChecks: AdoptedChecks;
   constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: Payload) {
     this.adopted = new AdoptedHooks(store, payload, repo => this.scope(repo)); this.adoptedLanding = new AdoptedLanding(store, this.adopted);
+    this.adoptedChecks = new AdoptedChecks(store, this.adopted);
   }
   async scope(repo: Enrolled): Promise<PushScope> {
     await this.repos.current(repo);
@@ -148,7 +151,10 @@ export class Workflows {
   async checks(op: Operation, repo: Enrolled, sourcePath: string, signal: AbortSignal, gate = false): Promise<ObjectValue> {
     const info = await identity(sourcePath); requireValue(info.commonDir === repo.commonDir, 'SOURCE_OWNERSHIP_REQUIRED', 'Check source must belong to this enrolled clone.');
     if (gate && repo.config.validation.gate === 'inactive') return { state: 'inactive', checks: [], sourceTip: info.tip };
-    requireValue(repo.config.validation.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Existing project checks require their preserved adapter.', 3);
+    if (repo.config.validation.adapter !== 'generic-v1') {
+      requireValue(!gate, 'ADOPTED_GATE_ROUTE_REQUIRED', 'Publication must use the preserved original hook invocation.', 3);
+      return this.adoptedChecks.execute(op, repo, sourcePath, this.options(op, signal));
+    }
     await clean(sourcePath); const before = await inputFingerprint(sourcePath);
     const selected = repo.config.validation.checks.filter(check => check.profiles.includes(repo.config.validation.profile) && (!op.input['checkId'] || check.id === op.input['checkId']));
     requireValue(!op.input['checkId'] || selected.length === 1, 'CHECK_NOT_SELECTED', 'The requested check is not configured for this profile.', 2);
