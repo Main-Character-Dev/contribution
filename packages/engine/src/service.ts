@@ -409,6 +409,8 @@ export class Engine {
         requireValue(args['whenIdle'] === true, 'IDLE_WINDOW_REQUIRED', 'Use --when-idle for lifecycle changes.', 2);
         requireValue(this.active.size === 0 && !this.backgroundBusy, 'SERVICE_BUSY', 'Active work, observations and peer transfers must drain before restart or update.', 4);
         requireValue(!this.store.unsettled().some(op => op.state === 'outcome_unknown'), 'RECONCILIATION_REQUIRED', 'Resolve uncertain effects before lifecycle changes.');
+        const blockers = this.maintenance.blockers(0, false, 0);
+        if (!this.maintenance.isReady(blockers)) throw new Fault('RECONCILIATION_REQUIRED', 'Owned device sessions or retained backend workers still need reconciliation before restart or update.', 3, { blockers });
         if (command === 'update.apply') throw new Fault('SIGNED_UPDATE_REQUIRED', 'No verified signed update is staged. Use the native updater once release signing is configured.', 3);
         requireValue(typeof process.execve === 'function', 'RESTART_UNAVAILABLE', 'This runtime cannot replace the service process safely.', 3);
         this.store.setMeta('maintenance', true); this.restartRequested = true; this.stopping = true; return completed({ state: 'restart_ready', queuedPreserved: this.store.queue().length });

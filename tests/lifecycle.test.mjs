@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { chmodSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fixture, repository } from './integration/service.mjs';
 import { socketPath } from '../packages/engine/dist/ipc.js';
+import { Journal } from '../packages/engine/dist/journal.js';
+import { Engine } from '../packages/engine/dist/service.js';
 
 test('idle restart replaces the service process and retains queued identity and pause state', async () => {
   const f = await fixture(); try {
@@ -30,4 +34,23 @@ test('IPC refuses a service socket exposed to other users before transmitting it
     await assert.rejects(f.call('version'), error => error.code === 'UNSAFE_SERVICE_ENDPOINT');
     chmodSync(socketPath(f.state), 0o600); assert.equal((await f.call('version')).error, null);
   } finally { await f.cleanup(); }
+});
+
+test('direct restart and update retain session blockers just like update maintenance', async () => {
+  for (const state of ['backend-running', 'backend-unconfirmed', 'phone-owned', 'phone-unknown']) {
+    const root = mkdtempSync(join(tmpdir(), 'ct-lifecycle-session-')), store = new Journal(root);
+    try {
+      const engine = new Engine(store, { identity: 'fixture', node: process.execPath, cli: '/fixture/cli' });
+      const sessionId = randomUUID(), deviceId = 'fixture-device';
+      if (state.startsWith('backend')) store.put('backendSession', sessionId, { sessionId, deviceId, state: state.slice(8), localProcess: 'unknown', dispatchGranted: true });
+      else store.put('deviceOwnership', deviceId, { deviceId, ownerHostId: store.hostId, state: 'owned', priorSession: state === 'phone-owned' ? 'owned' : 'unknown' });
+      for (const command of ['service.restart', 'update.apply']) {
+        const result = await engine.dispatch({ schemaVersion: 1, command, args: { whenIdle: true }, cwd: root });
+        assert.equal(result.error.code, 'RECONCILIATION_REQUIRED', state);
+        assert.equal(result.result.blockers.backendSessions.length + result.result.blockers.deviceSessions.length, 1, state);
+        assert.equal(engine.stopping, false); assert.equal(engine.restartRequested, false); assert.equal(store.getMeta('maintenance'), undefined);
+      }
+      assert.equal(engine.maintenance.isReady(engine.maintenance.blockers(0, false, 0)), false);
+    } finally { store.close(); rmSync(root, { recursive: true }); }
+  }
 });
