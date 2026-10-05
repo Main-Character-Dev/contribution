@@ -13,6 +13,22 @@ Acknowledgment itself removes no files and does not release Git source refs.
 
 Raw attempt logs use the configured `rawLogDays` (30 by default) and `maxLogBytes` admission cap. Completed, unpinned logs may expire automatically; uncertain, interrupted, active and unacknowledged peer work remains protected. `doctor` reports protected usage and blocked admission. Individual running logs are bounded as well. A full protected cap still permits one retention-only settings request that matches the current revision and raises the cap above observed usage. That control request can complete while ordinary processing is paused; repository jobs remain paused. Other settings changes, stale revisions and a second pending recovery cannot use this exception. New project creation and source/history capture check storage pressure before creating repository or outbox state.
 
+Cached remote log text shares that raw-log cap and retention policy. A refresh
+replaces only its own bounded snapshot, truncates on UTF-8 boundaries and reports
+truncation explicitly. Unknown cached records count as protected usage. Expiry
+atomically retains a tombstone before removing the SQLite record; later ordinary
+observation cannot resurrect expired bytes. This releases logical raw-log usage,
+not necessarily allocated database pages. Managed-data accounting continues to
+count the database's actual logical file size separately.
+
+Remote log responses distinguish the retained snapshot's timestamp from the
+latest origin availability. An unavailable or expired origin does not overwrite
+a good local snapshot. Without a cache, the response is `LOG_UNAVAILABLE` or
+`LOG_EXPIRED`, never an unrelated empty local attempt log. Older peer replies
+with an untagged empty string remain unavailable because they cannot establish
+that the original log was actually empty. Completion receipts and request replay
+remain independent of cached output expiration.
+
 Generated signed artifacts and accepted incoming artifacts are eligible after 30 days. Original project gate output and its sealed private snapshots use `rawLogDays`. Cleanup requires an explicit review:
 
 ```sh
@@ -59,7 +75,7 @@ Accepted incoming transfer reservations are released only after a confirmed remo
 
 Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, unconfirmed build output, Git retention release and payload cleanup remain separate unfinished work. Cleanup does not imply that all retained sources can expire; managed-data accounting below separately limits new admission and dispatch.
 
-`tests/storage.test.mjs`, `tests/retention.test.mjs`, `tests/owned-worktrees.test.mjs`, `tests/build-output.test.mjs` and `tests/device-transfer.test.mjs` cover terminal/pinned/unresolved decisions, stale selections, links, partial recovery, receipt replay and quota release in disposable fixtures. They do not provide physical device evidence.
+`tests/storage.test.mjs`, `tests/retention.test.mjs`, `tests/remote-log-retention.test.mjs`, `tests/owned-worktrees.test.mjs`, `tests/build-output.test.mjs` and `tests/device-transfer.test.mjs` cover terminal/pinned/unresolved decisions, stale selections, links, partial recovery, receipt replay and quota release in disposable fixtures. They do not provide physical device evidence.
 
 ## Completed update backups
 

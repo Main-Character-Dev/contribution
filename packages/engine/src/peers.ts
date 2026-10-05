@@ -262,9 +262,9 @@ export class Peers {
         requireValue(op.repositoryId === repo.id && (op.input['senderHostId'] === from || association?.from === from), 'PEER_OPERATION_UNAUTHORIZED', 'This operation does not belong to the peer.');
         const response = action === 'operation.reconcile' && this.dispatchLocal ? await this.dispatchLocal(op.kind === 'device' ? 'devices.reconcile' : 'runs.reconcile', { operationId: op.operationId, ...(op.kind === 'device' ? { requestId: id() } : {}) })
           : action === 'operation.cancel' && this.cancelLocal ? this.cancelLocal(op) : this.store.response(op);
-        let log = '';
-        try { log = this.store.logs(op, 2000); } catch { /* Expose unavailable evidence without inventing output. */ }
-        return { response, completionReceipt: completionReceipt(response), log: Buffer.byteLength(log) > 131072 ? '[Earlier remote log output omitted]\n' + Buffer.from(log).subarray(-131072).toString('utf8') : log };
+        let log = '', logStatus = 'available';
+        try { log = this.store.logs(op, 2000); } catch (error) { logStatus = error instanceof Fault && error.code === 'LOG_EXPIRED' ? 'expired' : 'unavailable'; }
+        return { response, completionReceipt: completionReceipt(response), logStatus, log: Buffer.byteLength(log) > 131072 ? '[Earlier remote log output omitted]\n' + Buffer.from(log).subarray(-131072).toString('utf8') : log };
       }
       throw new Fault('PEER_ACTION_UNSUPPORTED', 'The fixed peer endpoint does not support this action.', 2);
     });
@@ -525,7 +525,10 @@ export class Peers {
     const response = observation['response'] as Response; assertContract('response', response);
     requireValue(response.operationId === remoteOperationId && response.operationState, 'PEER_OPERATION_MISMATCH', 'Peer response identifies different work.');
     const stopped = Boolean(response.error) || ['succeeded', 'failed', 'cancelled', 'interrupted', 'outcome_unknown', 'needs_attention', 'waiting'].includes(response.operationState);
-    if (typeof observation['log'] === 'string' && Buffer.byteLength(observation['log']) <= 132000) this.store.put('remoteLog', op.operationId, { text: observation['log'], observedAt: now(), originHostId: hostId });
+    // Older peers used an empty string for both empty and unavailable logs.
+    const logStatus = observation['logStatus'] ?? (typeof observation['log'] === 'string' && observation['log'].length ? 'available' : 'unavailable');
+    requireValue(['available', 'expired', 'unavailable'].includes(String(logStatus)), 'PEER_PROTOCOL_ERROR', 'The peer returned an unknown log availability state.', 3);
+    if (typeof observation['log'] === 'string') this.store.retainRemoteLog(op, hostId, observation['log'], logStatus as 'available' | 'expired' | 'unavailable');
     const selected = completionReceipt(response), offered = observation['completionReceipt'];
     requireValue(!offered || selected && digest(offered) === digest(selected), 'COMPLETION_RECEIPT_INVALID', 'The peer completion receipt does not match its observed response.', 3);
     const latest = this.store.get(op.operationId), prior = this.store.record<CompletionOutbox>('peerCompletionOutbox', op.operationId);

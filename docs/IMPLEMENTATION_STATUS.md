@@ -276,3 +276,21 @@ an acknowledgment blocked behind frozen authority; explicit preflight and the
 narrow historical-receipt route corrected that recovery boundary. All traffic
 used injected local two-journal transport; no real SSH, live handoff or source
 cleanup occurred.
+
+## Cached remote-log retention
+
+Remote snapshots now share the configured raw-log cap with local attempt files.
+They retain independent cache and origin-observation timestamps, expose UTF-8
+safe truncation, and distinguish unavailable or expired output. Unknown older
+records count as protected usage. Eligible expiry atomically retains a tombstone
+and removes only the cached text; completion identities and request replay stay
+stable. Pinned, unresolved and unacknowledged peer snapshots remain protected.
+An older peer's untagged empty reply cannot become false evidence of an empty log.
+
+All 328 Node tests, generated drift, strict/type checks and foundation
+preservation with 260 local links passed (`.build/check-remote-log-retention.log`).
+The 25-test focused peer/log suite passed before the legacy-empty-reply assertion
+was added and included in the full run. Five new retention groups cover shared
+quota, UTF-8 bounds, unavailable/expired sources, protected records and immutable
+completion replay. No actual remote host or live output was accessed. SQLite
+page allocation remains separately accounted for by the managed-data cap.

@@ -500,8 +500,7 @@ export class Engine {
           this.kick(); op = this.store.get(op.operationId);
         }
         if (command === 'logs') {
-          const cached = op.result['remoteOperationId'] ? this.store.record<ObjectValue>('remoteLog', op.operationId) : undefined;
-          return completed({ operationId: op.operationId, attemptId: op.attemptId, ...(cached ?? {}), text: cached ? String(cached['text']).split('\n').slice(-Math.max(1, Math.min(2000, Number(args['tail'] ?? 200)))).join('\n') : this.store.logs(op, Number(args['tail'] ?? 200)), ...(op.result['remoteOperationId'] ? { freshness: 'cached' } : {}) });
+          return completed({ operationId: op.operationId, attemptId: op.attemptId, ...(op.result['remoteOperationId'] ? this.store.remoteLogs(op, Number(args['tail'] ?? 200)) : { text: this.store.logs(op, Number(args['tail'] ?? 200)) }) });
         }
         if (command === 'repair-context') return completed({ operation: op, log: this.store.logs(op, 100), boundaries: ['Repair only the recorded failure.', 'Preserve unrelated work.', 'Publication needs a new explicit preview when scope changes.'] });
         if (command === 'runs.pin' || command === 'runs.unpin') return this.store.response(this.store.update(op, { pinned: command === 'runs.pin' }));

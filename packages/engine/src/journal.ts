@@ -162,18 +162,42 @@ export class Journal {
     if (!existsSync(this.logPath(op)) && this.record('logEviction', op.attemptId)) throw new Fault('LOG_EXPIRED', 'Raw output expired under retention. Its operation summary and replay identity remain retained.', 3);
     try { return readFileSync(this.logPath(op), 'utf8').split('\n').slice(-tail).join('\n'); } catch { throw new Fault('LOG_UNAVAILABLE', 'The retained log is unavailable on this host.', 3); }
   }
+  retainRemoteLog(op: Operation, hostId: string, text: string, state: 'available' | 'expired' | 'unavailable'): void {
+    requireValue(typeof op.result['remoteOperationId'] === 'string' && [op.result['canonicalHostId'], op.result['executionHostId']].includes(hostId),
+      'PEER_OPERATION_MISMATCH', 'Remote logs must belong to the retained operation owner.', 3);
+    requireValue(Buffer.byteLength(text) <= 132000, 'PEER_LOG_TOO_LARGE', 'The peer log snapshot exceeded its bound.', 3);
+    this.put('remoteLogStatus', op.operationId, { state, observedAt: now(), originHostId: hostId });
+    if (state !== 'available') return;
+    const usage = this.retention(true);
+    if (this.record('remoteLogEviction', op.attemptId)) return; // Expired snapshots do not silently resurrect.
+    const previous = this.record<{ text?: string }>('remoteLog', op.operationId), oldBytes = typeof previous?.text === 'string' ? Buffer.byteLength(previous.text) : 0;
+    const limit = Math.min(132000, oldBytes + Math.max(0, usage.maxLogBytes - usage.totalBytes)), bytes = Buffer.from(redact(text));
+    const truncated = bytes.length > limit;
+    // Decode only complete UTF-8 characters; replacement characters could
+    // otherwise increase a byte-limited snapshot beyond the selected cap.
+    let end = Math.min(bytes.length, limit);
+    if (end < bytes.length) while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+    const retained = bytes.subarray(0, end).toString('utf8');
+    this.put('remoteLog', op.operationId, { text: retained, observedAt: now(), originHostId: hostId, truncated, retainedBytes: Buffer.byteLength(retained) });
+    this.cachedLogBytes = usage.totalBytes - oldBytes + Buffer.byteLength(retained);
+  }
+  remoteLogs(op: Operation, tail = 200): ObjectValue {
+    requireValue(Number.isInteger(tail) && tail > 0 && tail <= 10000, 'INVALID_LOG_RANGE', 'Request between 1 and 10000 retained lines.', 2);
+    requireValue(!this.record('remoteLogEviction', op.attemptId), 'LOG_EXPIRED', 'The cached remote log expired under local retention. Its operation and completion receipt remain retained.', 3);
+    const cached = this.record<ObjectValue>('remoteLog', op.operationId), status = this.record<ObjectValue>('remoteLogStatus', op.operationId);
+    requireValue(cached && typeof cached['text'] === 'string', status?.['state'] === 'expired' ? 'LOG_EXPIRED' : 'LOG_UNAVAILABLE', 'No retained remote log is available for this operation.', 3);
+    return { ...cached, text: (cached['truncated'] === true ? '[Remote log snapshot truncated by the local log-storage cap]\n' : '') + String(cached['text']).split('\n').slice(-tail).join('\n'), freshness: 'cached', sourceStatus: status ?? null };
+  }
   retention(prune = false, observedAt = Date.now()): { totalBytes: number; eligibleBytes: number; protectedBytes: number; maxLogBytes: number; admissionBlocked: boolean; removed: string[]; policy: ObjectValue } {
     const policy = this.getMeta<{ retention?: { rawLogDays: number; summaryDays: number; maxLogBytes: number } }>('settings')?.retention ?? { rawLogDays: 30, summaryDays: 365, maxLogBytes: 2147483648 };
     let totalBytes = 0, eligibleBytes = 0, protectedBytes = 0; const removed: string[] = [];
     const operations = new Map(this.list(100000).map(op => [`${op.attemptId}.log`, op]));
+    const settled = (op: Operation | undefined): op is Operation => Boolean(op && !op.pinned && ['succeeded', 'failed', 'cancelled'].includes(op.state) &&
+      typeof op.result['completedAt'] === 'string' && Date.parse(op.result['completedAt']) <= observedAt - policy.rawLogDays * 86400000 && !this.peerEvidenceProtected(op));
     for (const name of readdirSync(join(this.directory, 'logs'))) {
       const path = join(this.directory, 'logs', name), info = lstatSync(path), op = operations.get(name);
       const bytes = info.size; totalBytes += bytes;
-      const completed = op?.result['completedAt'];
-      const eligible = info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() && op && !op.pinned
-        && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof completed === 'string'
-        && Date.parse(completed) <= observedAt - policy.rawLogDays * 86400000
-        && !this.peerEvidenceProtected(op);
+      const eligible = info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() && settled(op);
       if (!eligible) { protectedBytes += bytes; continue; }
       eligibleBytes += bytes;
       if (prune) {
@@ -181,14 +205,29 @@ export class Journal {
         unlinkSync(path); removed.push(op.attemptId); totalBytes -= bytes; eligibleBytes -= bytes;
       }
     }
+    const byId = new Map([...operations.values()].map(op => [op.operationId, op]));
+    // Account for raw text stored in SQLite without loading every log body.
+    const remote = this.db.prepare("SELECT key,json_type(body,'$.text') AS text_type,length(CAST(CASE WHEN json_type(body,'$.text')='text' THEN json_extract(body,'$.text') ELSE body END AS BLOB)) AS bytes FROM records WHERE namespace='remoteLog'").all();
+    for (const row of remote) {
+      const op = byId.get(String(row['key'])), bytes = Number(row['bytes']); totalBytes += bytes;
+      if (row['text_type'] !== 'text' || !settled(op)) { protectedBytes += bytes; continue; }
+      eligibleBytes += bytes;
+      if (prune) {
+        this.transaction(() => {
+          this.put('remoteLogEviction', op.attemptId, { operationId: op.operationId, bytes, expiredAt: new Date(observedAt).toISOString(), reason: 'RAW_LOG_RETENTION' });
+          this.db.prepare("DELETE FROM records WHERE namespace='remoteLog' AND key=?").run(op.operationId);
+        });
+        removed.push(`remote:${op.attemptId}`); totalBytes -= bytes; eligibleBytes -= bytes;
+      }
+    }
     this.cachedLogBytes = totalBytes;
     return { totalBytes, eligibleBytes, protectedBytes, maxLogBytes: policy.maxLogBytes, admissionBlocked: totalBytes >= policy.maxLogBytes, removed,
-      policy: { ...policy, summaries: 'Retained with immutable request identities; summary compaction pending', protects: ['pinned', 'active', 'unresolved', 'unacknowledged peer evidence'] } };
+      policy: { ...policy, includes: ['local_raw_log_files', 'cached_remote_log_text'], summaries: 'Retained with immutable request identities; summary compaction pending', protects: ['pinned', 'active', 'unresolved', 'unacknowledged peer evidence'] } };
   }
   response(op: Operation): Response {
     const response: Response = { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
-        logRetention: { truncated: this.record('logTruncation', op.attemptId) ?? null, expired: this.record('logEviction', op.attemptId) ?? null },
+        logRetention: { truncated: this.record('logTruncation', op.attemptId) ?? null, expired: this.record('logEviction', op.attemptId) ?? null, remoteExpired: this.record('remoteLogEviction', op.attemptId) ?? null },
         outputRetention: [...['legacy-working', 'legacy-sealed', 'build'].map(kind => this.record('storageEviction', `${kind}:${op.attemptId}`)), this.record('worktreeEviction', op.attemptId)].filter(Boolean),
         acceptance: ['device', 'remote.device', 'device_transfer'].includes(op.kind) ? op.result['acceptance'] : op.kind === 'artifact_transfer' ? { localDurable: true, executionHostAccepted: true, executionHostId: this.hostId, acceptedAt: op.createdAt } : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };

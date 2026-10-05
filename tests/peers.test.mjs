@@ -18,7 +18,9 @@ async function pairFixture() {
     if (offline) throw new Fault('PEER_UNAVAILABLE', 'Fixture peer disconnected.', 3);
     if (envelope.action === 'operation.acknowledge') beforeAcknowledgment?.(envelope);
     const result = await hosts[alias].dispatch({ schemaVersion: 1, command: 'peer.exchange', args: { envelope }, cwd: root });
-    if (legacyReceipt && envelope.action === 'operation.get' && result.result) delete result.result.completionReceipt;
+    if (legacyReceipt && envelope.action === 'operation.get' && result.result) {
+      delete result.result.completionReceipt; delete result.result.logStatus; result.result.log = '';
+    }
     if ((loseActivation && envelope.action === 'authority.activate') || (loseReceipt && envelope.action === 'transfer.finish')) {
       loseActivation = false; loseReceipt = false; throw new Fault('PEER_UNAVAILABLE', 'Fixture reply lost after durable receipt.', 3);
     }
@@ -98,6 +100,8 @@ test('old peers without a completion receipt keep sender and imported receiver e
     const accepted = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); await f.wait('laptop', accepted.operationId);
     const sender = f.hosts.laptop.store, local = sender.get(accepted.operationId), receiver = f.hosts.mini.store, remote = receiver.get(local.result.remoteOperationId);
     assert.equal(sender.peerEvidenceProtected(local), true); assert.equal(receiver.peerEvidenceProtected(remote), true);
+    assert.equal(sender.record('remoteLogStatus', local.operationId).state, 'unavailable');
+    assert.throws(() => sender.remoteLogs(local), { code: 'LOG_UNAVAILABLE' });
     // Older imported requests without an explicit association are still bound by senderHostId.
     receiver.db.prepare("DELETE FROM records WHERE namespace='peerOperation' AND key=?").run(remote.operationId);
     assert.equal(receiver.peerEvidenceProtected(remote), true);
