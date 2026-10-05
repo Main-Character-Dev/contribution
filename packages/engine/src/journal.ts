@@ -63,6 +63,10 @@ export class Journal {
   records<T>(namespace: string): T[] { return this.db.prepare('SELECT body FROM records WHERE namespace=?').all(namespace).map(row => JSON.parse(String(row['body'])) as T); }
   put(namespace: string, key: string, value: unknown): void { this.db.prepare('INSERT INTO records VALUES(?,?,?) ON CONFLICT(namespace,key) DO UPDATE SET body=excluded.body').run(namespace, key, canonical(value)); }
   assertRepositoryAvailable(repositoryId: string, enrolling = false): void {
+    const bundleCleanup = this.db.prepare(`SELECT r.key FROM records r, json_each(r.body,'$.preview.candidates') c
+      WHERE r.namespace='gitBundleCleanup' AND json_extract(r.body,'$.state')='removing'
+      AND json_extract(c.value,'$.repositoryId')=? LIMIT 1`).get(repositoryId);
+    requireValue(!bundleCleanup, 'STORAGE_CLEANUP_PENDING', 'Resume the retained Git bundle cleanup before new work in this clone.', 3);
     const removal = this.record<{ state: string }>('repositoryRemoval', repositoryId);
     requireValue(!removal || removal.state === 'completed', 'REPOSITORY_REMOVAL_PENDING', 'Resume repos remove with the same repository ID to reconcile its retained removal before new work.', 3);
     requireValue(!removal || enrolling || this.db.prepare('SELECT id FROM repositories WHERE id=?').get(repositoryId), 'REPOSITORY_NOT_ENROLLED', 'This repository left Contribution. Enroll it explicitly before starting new work.', 3);
@@ -228,7 +232,7 @@ export class Journal {
     const response: Response = { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
         logRetention: { truncated: this.record('logTruncation', op.attemptId) ?? null, expired: this.record('logEviction', op.attemptId) ?? null, remoteExpired: this.record('remoteLogEviction', op.attemptId) ?? null },
-        outputRetention: [...['legacy-working', 'legacy-sealed', 'build'].map(kind => this.record('storageEviction', `${kind}:${op.attemptId}`)), this.record('worktreeEviction', op.attemptId)].filter(Boolean),
+        outputRetention: [...['legacy-working', 'legacy-sealed', 'build'].map(kind => this.record('storageEviction', `${kind}:${op.attemptId}`)), this.record('worktreeEviction', op.attemptId), this.record('gitBundleOperationEviction', op.operationId)].filter(Boolean),
         acceptance: ['device', 'remote.device', 'device_transfer'].includes(op.kind) ? op.result['acceptance'] : op.kind === 'artifact_transfer' ? { localDurable: true, executionHostAccepted: true, executionHostId: this.hostId, acceptedAt: op.createdAt } : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
     const completion = peerCompletionStatus(this, op, response);

@@ -33,6 +33,7 @@ import { Maintenance } from './maintenance.js';
 import { BackendSessions } from './backend-sessions.js';
 import { StorageRetention } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
+import { GitBundleRetention } from './git-bundle-retention.js';
 import { RepositoryRemoval } from './repository-removal.js';
 import { Diagnostics } from './diagnostics.js';
 import { ManagedStorage } from './managed-storage.js';
@@ -41,7 +42,7 @@ import { WorkPower } from './power.js';
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
-  'service.storage': ['preview', 'scopeToken', 'requestId', 'worktrees'],
+  'service.storage': ['preview', 'scopeToken', 'requestId', 'worktrees', 'bundles'],
   'service.diagnostics': ['operationId'],
   'service.storage-policy': ['config', 'expectedRevision', 'requestId'],
   'service.power-policy': ['config', 'expectedRevision', 'requestId'],
@@ -339,13 +340,13 @@ export class Engine {
         }
       }
       if (command === 'service.storage' && response.error && typeof args?.['requestId'] === 'string') {
-        const worktrees = args['worktrees'] === true, requestId = args['requestId'];
-        const retained = this.store.record<{ state: string; token?: string; preview?: { token: string } }>(worktrees ? 'worktreeCleanup' : 'storageCleanup', requestId);
+        const worktrees = args['worktrees'] === true, bundles = args['bundles'] === true, requestId = args['requestId'];
+        const retained = this.store.record<{ state: string; token?: string; preview?: { token: string } }>(worktrees ? 'worktreeCleanup' : bundles ? 'gitBundleCleanup' : 'storageCleanup', requestId);
         const token = retained?.token ?? retained?.preview?.token;
         if (retained?.state === 'removing' && token) {
-          response.result = { ...response.result, requestRetained: true, requestId, scopeToken: token, worktrees };
+          response.result = { ...response.result, requestRetained: true, requestId, scopeToken: token, worktrees, bundles };
           response.error.nextActions = [{ id: 'resume-cleanup', label: 'Resume the same reviewed cleanup after resolving the reported condition', argv: ['contribution', 'service', 'storage',
-            ...(worktrees ? ['--worktrees'] : []), '--scope-token', token, '--request-id', requestId, '--json'] }];
+            ...(worktrees ? ['--worktrees'] : bundles ? ['--bundles'] : []), '--scope-token', token, '--request-id', requestId, '--json'] }];
         }
       }
       return response;
@@ -392,7 +393,8 @@ export class Engine {
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
       if (command === 'service.storage') {
         requireValue(args['worktrees'] === undefined || args['worktrees'] === true, 'INVALID_USAGE', 'Use --worktrees to select owned checkout cleanup.', 2);
-        const storage = args['worktrees'] === true ? new OwnedWorktrees(this.store) : new StorageRetention(this.store);
+        requireValue((args['bundles'] === undefined || args['bundles'] === true) && !(args['worktrees'] && args['bundles']), 'INVALID_USAGE', 'Select one cleanup category: generated output, --worktrees or --bundles.', 2);
+        const storage = args['worktrees'] === true ? new OwnedWorktrees(this.store) : args['bundles'] === true ? new GitBundleRetention(this.store) : new StorageRetention(this.store);
         if (args['preview'] === true) {
           requireValue(args['scopeToken'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Preview and cleanup are separate requests.', 2);
           return completed(await storage.preview());

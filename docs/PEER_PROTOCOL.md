@@ -47,8 +47,9 @@ Canonical-owner transfer checks both hosts for pending receipt exchange before
 fencing. A frozen transition still permits the original authenticated sender to
 finish its retained acknowledgment; doing so grants no writer authority. This
 exchange makes otherwise eligible logs and owned output eligible for their
-existing retention policies. Git source refs and bundles remain retained until
-their separate release implementation is complete.
+existing retention policies. Completed successful bundle copies can now use the
+separate [reviewed bundle cleanup](STORAGE_RETENTION.md#completed-git-transfer-copies).
+Source refs and Git objects remain retained; acknowledgment never releases them.
 
 Seed and mirror capture durably select their commit, clone, configuration, authority, destination and transfer identity before creating the source ref or bundle. An interrupted capture reuses that selection even if the primary has advanced. Source refs use compare-and-swap creation; unexpected replacement is preserved and stops recovery. Bundles are hashed in at most 1 MiB buffers and sent in 256 KiB chunks through one verified descriptor. Rewriting, replacement, new hard links or containing-path changes stop transfer before completion. The receiver also checks the imported ref against the declared tip after fetch.
 

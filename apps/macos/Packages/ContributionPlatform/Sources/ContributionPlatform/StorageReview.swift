@@ -1,10 +1,20 @@
 import Foundation
 
 public enum StorageCategory: String, CaseIterable, Identifiable, Sendable {
-    case output, worktrees
+    case output, worktrees, bundles
     public var id: String { rawValue }
-    public var title: String { self == .output ? "Build artifacts and gate output" : "Temporary source checkouts" }
-    public var previewArguments: [String: JSONValue] { self == .output ? ["preview": .bool(true)] : ["preview": .bool(true), "worktrees": .bool(true)] }
+    public var title: String {
+        switch self {
+        case .output: "Build artifacts and gate output"
+        case .worktrees: "Temporary source checkouts"
+        case .bundles: "Completed Git transfer copies"
+        }
+    }
+    public var previewArguments: [String: JSONValue] {
+        var args: [String: JSONValue] = ["preview": .bool(true)]
+        if self != .output { args[rawValue] = .bool(true) }
+        return args
+    }
 }
 
 /// The category and token belong to the completed preview, never the current
@@ -19,13 +29,14 @@ public struct StorageReview: Identifiable, Sendable {
         guard UUID(uuidString: value.object["scopeToken"]?.text ?? "") != nil,
               case .array = value.object["candidates"], case .array = value.object["protected"],
               (value.object["worktrees"] == .bool(true)) == (category == .worktrees),
+              (value.object["bundles"] == .bool(true)) == (category == .bundles),
               value.object["mutation"] == .string("none") else { return nil }
         self.category = category; self.value = value
     }
     public var cleanupArguments: [String: JSONValue]? {
         guard !candidates.isEmpty else { return nil }
         var args: [String: JSONValue] = ["scopeToken": .string(id)]
-        if category == .worktrees { args["worktrees"] = .bool(true) }
+        if category != .output { args[category.rawValue] = .bool(true) }
         return args
     }
     public static func retention(rawDays: String, capMiB: String, existing: JSONValue) -> JSONValue? {

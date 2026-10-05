@@ -435,6 +435,7 @@ export class Peers {
     } finally { file.close(); }
   }
   async send(hostId: string, manifest: TransferManifest, path: string): Promise<ObjectValue> {
+    requireValue(!this.store.record('gitBundleEviction', `outgoing:${manifest.requestId}`), 'GIT_BUNDLE_EXPIRED', 'This completed transport copy expired. Its original request, source ref and completion receipt remain retained; do not resend it as new work.', 3);
     const file = new StableFileReader(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
     try {
     requireValue(file.size === manifest.bytes && file.digest() === manifest.bundleDigest, 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');

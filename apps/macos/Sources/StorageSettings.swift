@@ -134,12 +134,13 @@ private struct StorageReviewSheet: View {
                 Text(ByteCountFormatter.string(fromByteCount: NSDecimalNumber(decimal: bytes).int64Value, countStyle: .file) + " selected for removal")
             }
             if review.category == .worktrees { Text("Native task worktrees and committed retention references are preserved.").font(.caption).foregroundStyle(.secondary) }
+            if review.category == .bundles { Text("Source commits, their retained Git references and completion receipts are preserved.").font(.caption).foregroundStyle(.secondary) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(review.candidates.enumerated()), id: \.offset) { _, candidate in
                         VStack(alignment: .leading) {
-                            Text(candidate.object["directory"]?.text ?? "Retained output").textSelection(.enabled)
-                            Text(candidate.object["kind"]?.text ?? "Contribution temporary checkout").font(.caption).foregroundStyle(.secondary)
+                            Text(candidate.object["directory"]?.text ?? candidate.object["path"]?.text ?? "Retained output").textSelection(.enabled)
+                            Text(review.category == .bundles ? "Completed Git transfer copy" : candidate.object["kind"]?.text ?? "Contribution temporary checkout").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     ForEach(Array(review.protectedEntries.enumerated()), id: \.offset) { _, candidate in
@@ -174,6 +175,10 @@ private struct StorageReviewSheet: View {
         case "WORKTREE_DEPENDENCY_ACTIVE": "Other unfinished or pinned work still needs this clone."
         case "WORKTREE_PROCESS_UNCONFIRMED": "A retained process may still be using this clone."
         case "WORKTREE_HISTORY_UNRETAINED": "The detached commit needs a retained history reference."
+        case "GIT_BUNDLE_HISTORY_UNRETAINED": "The exact source commit needs its retained Git reference."
+        case "GIT_BUNDLE_REVIEW_BOUND": "Resume an unfinished cleanup or review the remaining copies in another batch."
+        case "PEER_RECEIPT_PENDING": "The other host has not confirmed the completion receipt."
+        case "GIT_BUNDLE_PROTECTED", "REPOSITORY_BUSY", "CAPTURE_RECONCILIATION_REQUIRED", "TRANSFER_RECONCILIATION_REQUIRED": "Recent, pinned, failed or unfinished repository work still needs this evidence."
         case "WORKTREE_PROTECTED", "UNRESOLVED_PINNED_RECENT_OR_UNCONFIRMED": "Recent, pinned or unresolved evidence remains protected."
         default: "Ownership or cleanup eligibility could not be confirmed."
         }

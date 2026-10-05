@@ -69,13 +69,54 @@ the exact original file subset and refuses new or changed entries. Operation
 results expose the removal receipt, while artifact provenance, retained signed
 archives, request replay and Git retention references remain independent.
 
-The native Settings → Storage view exposes both cleanup categories and raw-log policy/usage. Errors after retained partial removal carry `requestRetained: true`, the original request identity and a concrete resume action. The client keeps that request through early maintenance refusals as well as file/dependency failures; it clears it only after confirmed completion. This does not label every error an uncertain effect: the response still explains the actual blocking condition.
+The native Settings → Storage view exposes generated output, temporary checkouts and completed Git transfer copies, alongside raw-log policy/usage. Errors after retained partial removal carry `requestRetained: true`, the original request identity and a concrete resume action. The client keeps that request through early maintenance refusals as well as file/dependency failures; it clears it only after confirmed completion. This does not label every error an uncertain effect: the response still explains the actual blocking condition.
 
 Accepted incoming transfer reservations are released only after a confirmed removal tombstone. Missing archive files alone never release quota. Historical begin/finish replies still return the completion receipt after expiration; a new install or transfer using unavailable output returns `ARTIFACT_EXPIRED`. Artifact listings and operation output metadata make expiration visible without rewriting the original evidence.
 
 Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, unconfirmed build output, Git retention release and payload cleanup remain separate unfinished work. Cleanup does not imply that all retained sources can expire; managed-data accounting below separately limits new admission and dispatch.
 
 `tests/storage.test.mjs`, `tests/retention.test.mjs`, `tests/remote-log-retention.test.mjs`, `tests/owned-worktrees.test.mjs`, `tests/build-output.test.mjs` and `tests/device-transfer.test.mjs` cover terminal/pinned/unresolved decisions, stale selections, links, partial recovery, receipt replay and quota release in disposable fixtures. They do not provide physical device evidence.
+
+## Completed Git transfer copies
+
+Successful, acknowledged bundle copies have their own review, available in
+Settings → Storage and through the CLI:
+
+```sh
+contribution service storage --bundles --preview --json
+contribution service storage --bundles --scope-token PREVIEW_UUID --request-id REQUEST_UUID --json
+```
+
+This removes only the exact outgoing producer file or accepted incoming file.
+Its recorded inode, private parent, size and streamed SHA-256 must match. The
+enrolled clone must still resolve the retained source ref to the exact commit.
+Source refs, Git objects, native worktrees, transport manifests, acknowledgment
+receipts and immutable request results remain preserved. No Git garbage
+collection, ref deletion or source-checkout cleanup occurs.
+
+Eligibility uses `rawLogDays` and requires successful completed work. Failed or
+unresolved work, pending peer acknowledgments, incomplete captures/transfers,
+potentially live workers and any pinned record in the repository preserve its
+bundles. Older unrecorded producers and incomplete incoming files remain
+protected. Reenrollment and source reconciliation are required when the original
+clone is unavailable. Changed files, links, shared files and replaced paths are
+never inferred to be owned.
+
+Execution retains the exact cleanup before unlinking and holds new admissions
+in affected clones until completion. Restart resumes that same request and
+rechecks source refs and dependencies; an absent file counts as removed only
+after its own unlink intent. A replacement at that path is preserved. Original
+operation responses expose the expiration without changing their completion
+digest. Replaying an accepted request never regenerates its expired bundle, and
+incoming begin/finish retries still return the original acceptance receipt.
+
+Each review handles at most 1,000 owner records and inspects at most 512 MiB of
+bundle bytes. It stops starting new candidates after three seconds; each Git
+inspection has its own five-second deadline. Remaining candidates are visibly
+protected for another batch. The repository dependency census remains bounded
+to 10,000 operations. `tests/git-bundle-retention.test.mjs` verifies retained
+history, ownership changes, lost unlink completion, replay, incoming receipts,
+pins and mixed/concurrent selection using disposable Git repositories.
 
 ## Completed update backups
 

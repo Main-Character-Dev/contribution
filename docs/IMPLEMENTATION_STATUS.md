@@ -323,3 +323,30 @@ lifecycle orderings. An initial fixture attempted to fetch into its checked-out
 unborn branch; its setup now fetches to FETCH_HEAD before selecting the fixture
 branch. All repository and network activity used disposable clones and injected
 local transport. No real project was removed or paired.
+
+## Reviewed Git bundle retirement
+
+Settings → Storage and `service storage --bundles` now review completed outgoing
+and incoming transport copies separately. Cleanup verifies recorded file
+ownership, private directories, streamed bytes, the exact retained source ref
+and successful acknowledged operations. It preserves source commits/refs,
+native tasks, manifests and request/completion receipts. Failed, pinned,
+unfinished, unowned and unacknowledged material remains protected. New work in
+affected clones waits through retained partial cleanup; a missing file can
+complete only its existing unlink intent, while replacement files survive.
+
+All 344 Node tests passed with generated drift, strict/type checks and foundation
+preservation (`.build/check-git-bundle-retention.log`). The final malformed-owner
+path guard passed the rebuilt 19-test bundle/worktree/storage suite
+(`.build/git-bundle-retention-final-tests.log`). Twenty Swift methods passed and
+the unsigned native app build succeeded, including exact cleanup-category
+selection and retained-request behavior. Logs are
+`.build/git-bundle-retention-swift-tests.log` and
+`.build/git-bundle-retention-native-build.log`. Seven new bundle groups cover
+ownership, interrupted unlink, preserved replacements/history, receipt replay
+and incoming expiration. All removed files were generated disposable bundles.
+No live source ref, project file, installed payload or user export was removed.
+
+Git ref release, failed/unconfirmed transport cleanup, summary compaction and
+retained payload retirement remain separate work. The new route deliberately
+keeps those sources and lifecycle records intact.

@@ -12,6 +12,14 @@ final class StorageReviewTests: XCTestCase {
         XCTAssertNil(StorageReview(category: .worktrees, value: .object(empty))?.cleanupArguments)
         empty["scopeToken"] = .string("unconfirmed")
         XCTAssertNil(StorageReview(category: .worktrees, value: .object(empty)))
+        var bundles = value.object; bundles.removeValue(forKey: "worktrees"); bundles["bundles"] = .bool(true)
+        let bundleReview = try XCTUnwrap(StorageReview(category: .bundles, value: .object(bundles)))
+        XCTAssertEqual(bundleReview.cleanupArguments, ["scopeToken": .string(token), "bundles": .bool(true)])
+        XCTAssertEqual(StorageCategory.bundles.previewArguments, ["preview": .bool(true), "bundles": .bool(true)])
+        XCTAssertNil(StorageReview(category: .output, value: .object(bundles)))
+        bundles["worktrees"] = .bool(true)
+        XCTAssertNil(StorageReview(category: .bundles, value: .object(bundles)))
+        XCTAssertNil(StorageReview(category: .worktrees, value: .object(bundles)))
     }
     func testLogPolicyPreservesSummarySettingAndExactByteUnits() {
         let existing: JSONValue = .object(["summaryDays": .number(365), "rawLogDays": .number(30), "maxLogBytes": .number(10)])
