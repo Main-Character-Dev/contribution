@@ -11,7 +11,7 @@ contribution service storage --preview --json
 contribution service storage --scope-token PREVIEW_UUID --request-id REQUEST_UUID --json
 ```
 
-The preview lists candidates, bytes, policy and protected entries without removing output. Execution rechecks the exact scope, file identities, operation state, pins and dependent queued or unresolved requests. Only positively owned generated directories are eligible. Unknown files, shared hardlinks and changed output are preserved. Artifact and gate-output symlinks remain protected; completed build intermediates have the separately recorded link handling below. Source worktrees, Git bundles and refs, backups, installed payloads, exports and the database are outside this cleanup boundary.
+The preview lists candidates, bytes, policy and protected entries without removing output. Execution rechecks the exact scope, file identities, operation state, pins and dependent queued or unresolved requests. Only positively owned generated directories are eligible. Unknown files, shared hardlinks and changed output are preserved. Artifact and gate-output symlinks remain protected; completed build intermediates have the separately recorded link handling below. Source worktrees, Git bundles and refs, installed payloads, exports and the live database are outside this cleanup boundary. Completed update backups have their separate conservative rule below.
 
 Removal retains its intent before deleting each reviewed path and keeps a tombstone for every output. A crash can leave a partial directory; resume with the same scope and request UUID. New files or dependencies stop recovery without removing them. A different request cannot take over the retained cleanup. A completed request returns its original result. Cleanup does not run during an update maintenance hold.
 
@@ -48,9 +48,37 @@ The native Settings → Storage view exposes both cleanup categories and raw-log
 
 Accepted incoming transfer reservations are released only after a confirmed removal tombstone. Missing archive files alone never release quota. Historical begin/finish replies still return the completion receipt after expiration; a new install or transfer using unavailable output returns `ARTIFACT_EXPIRED`. Artifact listings and operation output metadata make expiration visible without rewriting the original evidence.
 
-Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, unconfirmed build output, Git retention release, payload and backup cleanup remain separate unfinished work. Cleanup does not imply that all retained sources can expire; managed-data accounting below separately limits new admission and dispatch.
+Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, unconfirmed build output, Git retention release and payload cleanup remain separate unfinished work. Cleanup does not imply that all retained sources can expire; managed-data accounting below separately limits new admission and dispatch.
 
 `tests/storage.test.mjs`, `tests/retention.test.mjs`, `tests/owned-worktrees.test.mjs`, `tests/build-output.test.mjs` and `tests/device-transfer.test.mjs` cover terminal/pinned/unresolved decisions, stale selections, links, partial recovery, receipt replay and quota release in disposable fixtures. They do not provide physical device evidence.
+
+## Completed update backups
+
+New online SQLite backups retain directory ownership before creation and seal
+their exact files after integrity verification. SQLite finalizes each owned
+copy in standalone journal mode before hashing, so reading it does not require
+WAL/SHM sidecars. The live journal remains in WAL mode. The digest is streamed
+with bounded memory, and the receipt remains in the active journal.
+
+The regular reviewed cleanup can remove an old sealed backup only after its
+maintenance window completed and `summaryDays` elapsed (365 days by default).
+Two newer complete backups from the same host and schema must remain, with
+event/operation coverage at least as recent as the selected copy. Both retained
+copies are independently rehashed before accepting cleanup. Generation ordering
+comes from the journal, not the wall clock. Pinned, unfinished, interrupted,
+unacknowledged peer work, potentially live retained processes and held
+maintenance block backup cleanup. No automatic backup eviction or restoration
+occurs.
+
+Unknown older backups, unfinished creation, modified files, links, replacements
+and incomplete update receipts stay protected. A stale review, changed policy
+or damaged newer backup stops removal. Partial cleanup uses the same retained
+request and unchanged remaining file subset; new files are preserved. Backup
+receipts and explicit removal tombstones remain readable after bytes expire.
+The census allows at most 1,000 backup creation records; larger inventories
+require a future paged implementation. `tests/backup-retention.test.mjs` and
+the existing maintenance fixtures verify these rules using disposable SQLite
+data, without installing or updating the application.
 
 ## Managed-data accounting and admission
 

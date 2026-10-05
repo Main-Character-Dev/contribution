@@ -226,3 +226,26 @@ confirmed the dispatch guard. No native UI changed and no physical device
 command ran. Response parsers follow documented command help and primary tool
 consumers; real response-schema, initial ownership and physical launch proof
 remain required as recorded in `DEVICE_EXECUTION.md`.
+
+## Reviewed backup retirement
+
+New update backups now retain creation ownership before SQLite writes and seal
+their verified standalone output. Their digest is streamed with bounded memory.
+The normal storage review can retire an old completed backup only after the
+configured summary-retention interval and while two newer independently
+rehashed recovery copies remain. Pins, unresolved/interrupted work, peer
+acknowledgments, potentially live retained processes and maintenance holds
+preserve backup evidence. Old unrecorded or partially created backups remain
+protected; partial removal retains its exact request and cannot consume new
+files or replacement paths. Receipts and removal tombstones stay in the journal.
+
+All 320 Node tests, generated drift, strict compilation, contract type checks
+and foundation preservation with 259 local links passed
+(`.build/check-backup-retention.log`). Seven new backup groups cover newest-copy
+retention, stale reviews, damage, pins, interrupted output and standalone SQLite
+integrity. Existing update-stop/relaunch and storage tests passed as well. An
+initial test caught read-only verification creating WAL/SHM sidecars; SQLite now
+finalizes only the new backup copy in standalone mode before sealing, with the
+live journal remaining in WAL mode. No installed update or real backup cleanup
+occurred. Payload retirement, summary compaction and Git retention release
+remain separate implementation work.

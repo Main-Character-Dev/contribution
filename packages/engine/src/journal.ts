@@ -1,6 +1,5 @@
 import { DatabaseSync, backup } from 'node:sqlite';
 import { chmodSync, readFileSync, appendFileSync, openSync, closeSync, fsyncSync, statSync, existsSync, lstatSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { assertContract } from '@contribution/contracts';
 import type { Response } from '@contribution/contracts';
@@ -8,6 +7,8 @@ import { canonical, digest, Fault, id, now, redact, requireValue, terminal } fro
 import type { ObjectValue, State } from './core.js';
 import { privateDirectory } from './private-files.js';
 import { ManagedStorage } from './managed-storage.js';
+import { BackupOutput } from './backup-output.js';
+import { stableFileDigest } from './bounded-file.js';
 
 export interface Operation {
   operationId: string; requestId: string; repositoryId: string; kind: string; input: ObjectValue;
@@ -192,25 +193,29 @@ export class Journal {
   }
   async backup(path: string): Promise<void> { await backup(this.db, path); chmodSync(path, 0o600); }
   async checkpointBackup(payload: string, windowId: string): Promise<ObjectValue> {
-    const root = join(this.directory, 'backups'); privateDirectory(root);
-    const directory = join(root, id()); privateDirectory(directory);
+    const output = new BackupOutput(this), owner = output.begin(payload, windowId), directory = owner.directory, root = join(this.directory, 'backups');
     const path = join(directory, 'journal.sqlite');
     const fd = openSync(path, 'wx', 0o600); closeSync(fd);
     await this.backup(path);
-    const probe = new DatabaseSync(path, { readOnly: true, allowExtension: false });
+    // The online backup is our new private output, not the live journal. Let
+    // SQLite finish it as a standalone database and remove its own WAL/SHM
+    // before hashing. Read-only WAL inspection otherwise creates sidecars.
+    const probe = new DatabaseSync(path, { allowExtension: false });
     let schemaVersion: number, lastEvent: number, operations: number;
     try {
+      requireValue(probe.prepare('PRAGMA journal_mode=DELETE').get()?.['journal_mode'] === 'delete', 'BACKUP_INVALID', 'The update backup could not become a standalone recovery copy.', 3);
       requireValue(probe.prepare('PRAGMA quick_check').get()?.['quick_check'] === 'ok', 'BACKUP_INVALID', 'The update backup failed its integrity check.', 3);
       schemaVersion = Number(probe.prepare('PRAGMA user_version').get()?.['user_version']);
       lastEvent = Number(probe.prepare('SELECT COALESCE(MAX(sequence),0) AS n FROM events').get()?.['n']);
       operations = Number(probe.prepare('SELECT COUNT(*) AS n FROM operations').get()?.['n']);
     } finally { probe.close(); }
     const receipt = { schemaVersion, payload, windowId, hostId: this.hostId, createdAt: now(), operations, lastEvent,
-      sha256: createHash('sha256').update(readFileSync(path)).digest('hex'), path, restoration: 'manual_compatibility_review_required' };
+      sha256: stableFileDigest(path, 4 * 1024 ** 3, 'BACKUP_INVALID').sha256, path, restoration: 'manual_compatibility_review_required' };
     writeFileSync(join(directory, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     for (const target of [path, join(directory, 'receipt.json'), directory, root]) {
       const handle = openSync(target, 'r'); try { fsyncSync(handle); } finally { closeSync(handle); }
     }
+    output.seal(owner, receipt);
     return receipt;
   }
   close(): void { this.db.close(); }

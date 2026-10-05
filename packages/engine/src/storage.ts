@@ -8,10 +8,12 @@ import { validateContractFormat } from '@contribution/contracts';
 import { outputFile, outputManifest, sameOutputFile } from './output-files.js';
 import type { OutputFile } from './output-files.js';
 import type { BuildOutputOwner } from './build-output.js';
+import type { BackupOutputOwner } from './backup-output.js';
+import { stableFileDigest } from './bounded-file.js';
 import { alive, processIdentity } from './process.js';
 
 type FileIdentity = OutputFile;
-interface Candidate { key: string; kind: 'artifact' | 'incoming' | 'legacy' | 'build'; directory: string; repositoryId: string; operationId?: string; attemptId?: string; artifactId?: string; transferId?: string; bytes: number; files: FileIdentity[] }
+interface Candidate { key: string; kind: 'artifact' | 'incoming' | 'legacy' | 'build' | 'backup'; directory: string; repositoryId: string; operationId?: string; attemptId?: string; artifactId?: string; transferId?: string; bytes: number; files: FileIdentity[] }
 interface Preview { token: string; createdAt: string; candidates: Candidate[]; policy: ObjectValue }
 interface Cleanup { requestId: string; token: string; preview: Preview; completed: string[]; state: 'removing' | 'completed'; result?: ObjectValue }
 interface Incoming { manifest: { transferId: string; provenance: RetainedDeviceArtifact['provenance']; repositoryId: string }; directory: string; path: string; accepted?: { retainedAt: string } }
@@ -26,7 +28,7 @@ export function requireArtifactAvailable(store: Journal, artifact: RetainedDevic
 }
 
 /** Only reproducible, positively owned terminal output is eligible. Source
- * worktrees, Git bundles/retention refs, backups, manifests and request/effect
+ * worktrees, Git bundles/retention refs, manifests and request/effect
  * receipts are deliberately outside this removal boundary. */
 export class StorageRetention {
   constructor(readonly store: Journal) {}
@@ -42,6 +44,7 @@ export class StorageRetention {
   private census(observedAt: number): { candidates: Candidate[]; protected: ObjectValue[]; policy: ObjectValue } {
     const operations = this.store.list(10001); requireValue(operations.length <= 10000, 'STORAGE_CENSUS_LIMIT', 'Large journals require a paged retention census before output can be removed.', 3);
     const rawLogDays = this.store.getMeta<{ retention: { rawLogDays: number } }>('settings')?.retention.rawLogDays ?? 30;
+    const summaryDays = this.store.getMeta<{ retention: { summaryDays: number } }>('settings')?.retention.summaryDays ?? 365;
     const artifactCutoff = observedAt - 30 * 86400000, logCutoff = observedAt - rawLogDays * 86400000;
     const candidates: Candidate[] = [], protectedEntries: ObjectValue[] = [], visited = new Set<string>();
     const add = (value: Omit<Candidate, 'bytes' | 'files'>, eligible: boolean, category: string, sealedFiles?: FileIdentity[]): void => {
@@ -53,7 +56,7 @@ export class StorageRetention {
           const partial = this.store.record<{ state: string }>('storageEviction', value.key)?.state === 'removing';
           const sealed = new Map(sealedFiles.map(file => [file.path, file]));
           requireValue((partial || files.length === sealedFiles.length) && files.every(file => sealed.has(file.path) && sameOutputFile(sealed.get(file.path)!, file)),
-            'STORAGE_OUTPUT_UNCONFIRMED', 'Build output changed after its completion snapshot.', 3);
+            'STORAGE_OUTPUT_UNCONFIRMED', 'Output changed after its completion snapshot.', 3);
         }
         candidates.push({ ...value, files, bytes });
       } catch { protectedEntries.push({ key: value.key, reason: 'OUTPUT_IDENTITY_UNCONFIRMED' }); }
@@ -97,8 +100,46 @@ export class StorageRetention {
           checkout?.kind === 'build' && checkout.operationId === owner.operationId && checkout.directory === source && removal?.operationId === owner.operationId && removal.directory === source && !present(source)),
         'device-builds', owner.files);
     }
+    const backups = this.store.records<BackupOutputOwner>('backupOutput');
+    requireValue(backups.length <= 1000, 'STORAGE_CENSUS_LIMIT', 'Large backup inventories require a paged cleanup census.', 3);
+    const history = this.store.records<ObjectValue>('maintenanceHistory');
+    const completedBackup = (owner: BackupOutputOwner): ObjectValue | undefined => history.find(value => value['id'] === owner.windowId && ['activated', 'cancelled'].includes(String(value['outcome'])) &&
+      typeof value['completedAt'] === 'string' && owner.receipt && digest(value['backup']) === digest(owner.receipt));
+    const intact = (owner: BackupOutputOwner): boolean => {
+      try {
+        return Boolean(owner.phase === 'sealed' && owner.hostId === this.store.hostId && owner.directory === join(this.store.directory, 'backups', owner.id) &&
+          owner.receipt?.['schemaVersion'] === 1 && owner.receipt['hostId'] === this.store.hostId && owner.receipt['path'] === join(owner.directory, 'journal.sqlite') &&
+          owner.root && owner.parent && [owner.root, owner.parent].every(entry => {
+            const current = outputFile(entry.path); return current.directory && current.dev === entry.dev && current.ino === entry.ino;
+          }) && owner.files && completedBackup(owner));
+      } catch { return false; }
+    };
+    const complete = backups.filter(owner => {
+      if (!intact(owner) || this.store.record('storageEviction', `backup:${owner.id}`)) return false;
+      try {
+        const files = outputManifest(owner.directory), sealed = new Map(owner.files!.map(file => [file.path, file]));
+        return files.length === sealed.size && files.every(file => sealed.has(file.path) && sameOutputFile(sealed.get(file.path)!, file));
+      } catch { return false; }
+    }).sort((a, b) => b.generation - a.generation);
+    // Independently rehash the two recovery copies we will retain. Filesystem
+    // metadata alone must not make a damaged backup sufficient redundancy.
+    const retainedBackups = complete.slice(0, 2).filter(owner => {
+      try { return stableFileDigest(String(owner.receipt!['path']), 4 * 1024 ** 3, 'BACKUP_INVALID').sha256 === owner.receipt!['sha256']; }
+      catch { return false; }
+    });
+    const backupIdle = !this.store.getMeta('maintenance') && !this.store.getMeta('maintenanceWindow') && !operations.some(op => op.pinned ||
+      !['succeeded', 'failed', 'cancelled'].includes(op.state) || this.store.record('peerOperation', op.operationId) ||
+      (op.result['processes'] as { pid: number; start: string | null }[] | undefined)?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start)));
+    for (const owner of backups) {
+      const completed = completedBackup(owner), cutoff = observedAt - summaryDays * 86400000;
+      const newer = retainedBackups.filter(other => other.generation > owner.generation && Number(other.receipt!['lastEvent']) >= Number(owner.receipt?.['lastEvent']) &&
+        Number(other.receipt!['operations']) >= Number(owner.receipt?.['operations']));
+      add({ key: `backup:${owner.id}`, kind: 'backup', directory: owner.directory, repositoryId: this.store.hostId },
+        Boolean(backupIdle && intact(owner) && completed && Date.parse(String(completed['completedAt'])) <= cutoff && newer.length >= 2), 'backups', owner.files);
+    }
     return { candidates: candidates.sort((a, b) => a.key.localeCompare(b.key)), protected: protectedEntries,
-      policy: { artifactsDays: 30, legacyRawOutputDays: rawLogDays, buildOutputDays: rawLogDays, buildSourceRemoval: 'requires_prior_confirmed_git_cleanup', preserved: ['request_and_effect_receipts', 'provenance', 'source_worktrees', 'git_transfers_and_refs', 'backups', 'unresolved_or_pinned_dependencies'] } };
+      policy: { artifactsDays: 30, legacyRawOutputDays: rawLogDays, buildOutputDays: rawLogDays, buildSourceRemoval: 'requires_prior_confirmed_git_cleanup', backupDays: summaryDays, minimumNewerBackups: 2,
+        preserved: ['request_and_effect_receipts', 'provenance', 'source_worktrees', 'git_transfers_and_refs', 'latest_two_complete_backups', 'unresolved_or_pinned_dependencies'] } };
   }
   preview(): ObjectValue {
     const observedAt = Date.now(), census = this.census(observedAt), preview: Preview = { token: id(), createdAt: new Date(observedAt).toISOString(), candidates: census.candidates, policy: census.policy };
