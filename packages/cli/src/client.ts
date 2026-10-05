@@ -53,6 +53,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
       response.result = { commands: ['version', 'doctor', 'repos list|discover|add|create|initialize|inspect|configure|relocate|remove', 'status [--refresh]',
         'submit --repo ID --source-path PATH --source-tip OID --base OID --request-id ID [--metadata-file PATH]',
         'submit --repo ID --request-id ID --resume',
+        'repos configure --repo ID --file PATH --expected-revision REV --request-id UUID', 'repos configure --repo ID --resume --request-id UUID',
         'push --repo ID --preview', 'push --repo ID --expected-tip OID --scope-token TOKEN --request-id ID [--wait]',
         'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',
         'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'service storage [--worktrees] --preview', 'service storage [--worktrees] --scope-token TOKEN --request-id UUID', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',

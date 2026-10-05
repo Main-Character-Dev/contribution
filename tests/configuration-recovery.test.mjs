@@ -22,10 +22,18 @@ test('configuration recovery reconciles the file/journal boundary and returns th
       if (boundary === 'concurrent_edit') {
         assert.equal(JSON.parse(readFileSync(join(path, 'contribution.json'), 'utf8')).name, 'Concurrent owner edit');
         assert.equal((await f.call('push', { repo: repo.id, preview: true })).error.code, 'CONFIGURATION_RECONCILIATION_REQUIRED');
+        const retained = await f.call('repos.configure', { repo: repo.id, resume: true, requestId });
+        assert.equal(retained.error.code, 'POLICY_CHANGED'); assert.equal(retained.result.requestRetained, true); assert.equal(retained.result.requestId, requestId);
+        assert.equal((await f.call('repos.configure', { repo: repo.id, config: { ...config, name: 'Changed selection' }, expectedRevision: repo.revision, requestId })).result?.requestRetained, undefined);
+        assert.equal((await f.call('repos.configure', { repo: repo.id, resume: true, config, requestId })).error.code, 'INVALID_USAGE');
+        writeFileSync(join(path, 'contribution.json'), JSON.stringify(repo.config));
+        const recovered = await f.call('repos.configure', { repo: repo.id, resume: true, requestId }); assert.equal(recovered.error, null); assert.equal(recovered.result.repository.revision, updated.revision);
       } else {
         assert.equal((await f.call('repos.inspect', { repo: repo.id })).result.revision, updated.revision);
         const replay = await f.call('repos.configure', { repo: repo.id, config, expectedRevision: repo.revision, requestId });
         assert.equal(replay.error, null); assert.equal(replay.result.repository.revision, updated.revision);
+        const resumed = f.cli(['repos', 'configure', '--repo', repo.id, '--resume', '--request-id', requestId, '--json']);
+        assert.equal(resumed.status, 0, resumed.stderr); assert.equal(JSON.parse(resumed.stdout).result.repository.revision, updated.revision);
       }
     } finally { await f.cleanup(); }
   }

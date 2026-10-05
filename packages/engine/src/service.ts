@@ -50,7 +50,7 @@ const allowed: Record<string, string[]> = {
   'repos.resolve': ['repo', 'host', 'path', 'expectedRevision'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
   'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'prepareExistingAdoption', 'originalTip', 'migrationTip', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
-  'repos.initialize': ['repo', 'requestId', 'expectedRevision'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
+  'repos.initialize': ['repo', 'requestId', 'expectedRevision'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId', 'resume'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata', 'resume'],
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
@@ -288,6 +288,33 @@ export class Engine {
           response.result = { ...response.result, requestRetained: true, requestId, repositoryId, sourceTip: task?.input['tip'] ?? history?.manifest.tip, admission: 'not_completed' };
           response.error.nextActions = [{ id: 'resume-capture', label: 'Resolve the reported condition and resume the same selected history', argv: ['contribution',
             ...(command === 'submit' ? ['submit', '--resume'] : ['repos', String(command).slice('repos.'.length)]), '--repo', repositoryId, '--request-id', requestId, '--json'] }];
+        }
+      }
+      if (command === 'repos.configure' && response.error && typeof args?.['requestId'] === 'string') {
+        const requestId = args['requestId'], intent = this.store.record<{ identity: string; previous: Enrolled }>('configurationIntent', requestId);
+        const selectorMatches = intent && [intent.previous.id, intent.previous.path].includes(String(args['repo']));
+        const matches = intent && (args['resume'] === true && Object.keys(args).every(key => ['repo', 'requestId', 'resume'].includes(key)) ||
+          intent.identity === digest({ repo: intent.previous.id, config: args['config'], expectedRevision: args['expectedRevision'] }));
+        if (selectorMatches && matches) {
+          response.result = { ...response.result, requestRetained: true, requestId, repositoryId: intent.previous.id };
+          response.error.nextActions = [{ id: 'resume-configuration', label: 'Resolve the reported condition and resume the original reviewed configuration',
+            argv: ['contribution', 'repos', 'configure', '--repo', intent.previous.id, '--resume', '--request-id', requestId, '--json'] }];
+        }
+      }
+      if (command === 'repos.migration' && response.error && typeof args?.['requestId'] === 'string') {
+        const requestId = args['requestId'], retained = this.store.record<{ input: string; result?: ObjectValue }>('adoptionCommand', requestId);
+        const choices = [['applyAdoption', 'apply', '--apply-adoption'], ['activateAdoption', 'activate', '--activate-adoption'], ['rollbackAdoption', 'rollback', '--rollback-adoption']] as const;
+        const selected = choices.filter(([key]) => typeof args[key] === 'string');
+        if (retained && selected.length === 1) {
+          const [key, action, flag] = selected[0]!, planId = String(args[key]);
+          const plan = this.store.record<{ repositoryId: string; phase: string; before: Enrolled }>('adoptionPlan', planId);
+          if (plan && [plan.repositoryId, plan.before.path].includes(String(args['repo'])) &&
+              retained.input === digest({ repositoryId: plan.repositoryId, planId, action, expectedRevision: args['expectedRevision'] }) &&
+              (retained.result || ['applying', 'rolling_back'].includes(plan.phase))) {
+            response.result = { ...response.result, requestRetained: true, requestId, repositoryId: plan.repositoryId, proposalId: planId, phase: plan.phase };
+            response.error.nextActions = [{ id: 'resume-migration', label: 'Resolve the reported condition and resume this exact reviewed migration step', argv: ['contribution', 'repos', 'migration',
+              '--repo', plan.repositoryId, flag, planId, '--expected-revision', String(args['expectedRevision']), '--request-id', requestId, '--json'] }];
+          }
         }
       }
       if (command === 'repos.create' && response.error && typeof args?.['requestId'] === 'string' && typeof args['path'] === 'string') {
@@ -587,11 +614,20 @@ export class Engine {
         return completed(await new RepositoryRemoval(this.store, this.repos).remove(repo));
       }
       if (command === 'repos.configure') {
-        const requestId = string(args['requestId'], 'requestId'), config = args['config'] as unknown as Repository;
-        const requestDigest = digest({ repo: repo.id, config, expectedRevision: args['expectedRevision'] });
+        requireValue(args['resume'] === undefined || args['resume'] === true, 'INVALID_USAGE', 'Use --resume with only the repository and retained request ID.', 2);
+        const requestId = string(args['requestId'], 'requestId');
+        let selection = args;
+        if (args['resume'] === true) {
+          requireValue(Object.keys(args).every(key => ['repo', 'requestId', 'resume'].includes(key)), 'INVALID_USAGE', 'Resuming configuration cannot select replacement values.', 2);
+          const intent = this.store.record<{ previous: Enrolled; updated: Enrolled }>('configurationIntent', requestId);
+          requireValue(intent?.previous.id === repo.id, 'CONFIGURATION_INTENT_REQUIRED', 'No retained configuration belongs to this repository and request.', 3);
+          selection = { config: intent.updated.config, expectedRevision: intent.previous.revision };
+        }
+        const config = selection['config'] as unknown as Repository;
+        const requestDigest = digest({ repo: repo.id, config, expectedRevision: selection['expectedRevision'] });
         const prior = this.store.record<{ digest: string; result: ObjectValue }>('configurationRequests', requestId);
         if (prior) { requireValue(prior.digest === requestDigest, 'REQUEST_ID_CONFLICT', 'Configuration request ID was reused with different inputs.'); return completed(prior.result); }
-        const result = { repository: this.repos.configure(repo, config, string(args['expectedRevision'], 'expectedRevision'), requestId) };
+        const result = { repository: this.repos.configure(repo, config, string(selection['expectedRevision'], 'expectedRevision'), requestId) };
         this.store.put('configurationRequests', requestId, { digest: requestDigest, result }); return completed(result);
       }
       if (command === 'repos.initialize') {

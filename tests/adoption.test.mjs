@@ -11,7 +11,7 @@ import { LegacyPrimaryLease } from '../packages/engine/dist/legacy-lease.js';
 import { LegacyLandingFlight } from '../packages/engine/dist/legacy-flight.js';
 import { adoptionPolicies, projectPins } from '../packages/adapters/dist/index.js';
 import { repository, git } from './integration/service.mjs';
-import { digest } from '../packages/engine/dist/core.js';
+import { digest, Fault } from '../packages/engine/dist/core.js';
 
 const quote = word => "'" + word.replaceAll("'", "'\\''") + "'";
 async function fixture(adapter = 'maincharacter-v1') {
@@ -209,5 +209,27 @@ test('existing adoption activation rechecks local dispatcher, snapshot and autho
       const result = await second.call({ activateAdoption: review.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() }); assert.ok(result.error);
       assert.equal(second.store.record('adoptedHooks', second.repo.id), undefined);
     } finally { lease?.release(); second?.cleanup(); await f.cleanup(); }
+  }
+});
+
+
+test('partial adoption and rollback replies retain the exact native continuation through a maintenance refusal', async t => {
+  for (const action of ['applyAdoption', 'rollbackAdoption']) {
+    const f = await fixture(); try {
+      const { plan } = await f.prepare();
+      if (action === 'rollbackAdoption') assert.equal((await f.change('applyAdoption', plan)).error, null);
+      const requestId = randomUUID(), original = f.engine.adoptions.replace.bind(f.engine.adoptions); let stopped = false;
+      const mock = t.mock.method(f.engine.adoptions, 'replace', (...args) => { original(...args); if (!stopped) { stopped = true; throw new Fault('FIXTURE_STOPPED', 'Interrupted after one reviewed file write.'); } });
+      const failed = await f.change(action, plan, f.repo.revision, requestId); mock.mock.restore();
+      assert.equal(failed.error.code, 'FIXTURE_STOPPED'); assert.equal(failed.result.requestRetained, true); assert.equal(failed.result.requestId, requestId);
+      assert.equal(failed.result.phase, action === 'applyAdoption' ? 'applying' : 'rolling_back');
+      f.store.setMeta('maintenance', true);
+      const held = await f.change(action, plan, f.repo.revision, requestId); assert.equal(held.error.code, 'SERVICE_MAINTENANCE'); assert.equal(held.result.requestRetained, true);
+      assert.equal((await f.change(action, plan, 'changed-revision', requestId)).result?.requestRetained, undefined);
+      f.store.setMeta('maintenance', false); writeFileSync(join(f.path, 'unrelated-draft'), 'preserve');
+      const finished = await f.change(action, plan, f.repo.revision, requestId); assert.equal(finished.error, null, JSON.stringify(finished));
+      assert.equal(finished.result.phase, action === 'applyAdoption' ? 'applied' : 'rolled_back'); assert.equal(readFileSync(join(f.path, 'unrelated-draft'), 'utf8'), 'preserve');
+      assert.deepEqual((await f.change(action, plan, f.repo.revision, requestId)).result, finished.result);
+    } finally { t.mock.restoreAll(); await f.cleanup(); }
   }
 });
