@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, readdirSync, chmodSync, rmSync, statSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, readdirSync, chmodSync, rmSync, statSync, realpathSync, truncateSync, linkSync, unlinkSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
@@ -34,6 +34,23 @@ try {
   assert.deepEqual(updated.args, ['version', '--json']);
   const altered = join(updated.path, 'cli.cjs'); chmodSync(altered, 0o600); writeFileSync(altered, 'tampered');
   assert.equal(call().status, 3); assert.equal(readFileSync(altered, 'utf8'), 'tampered', 'A damaged retained payload is not silently overwritten');
+  writeVersion(3);
+  const manifestBytes = readFileSync(join(source, 'manifest.json'));
+  truncateSync(join(source, 'manifest.json'), 4_194_305);
+  assert.equal(call().status, 3, 'Oversized manifest is refused before allocation');
+  writeFileSync(join(source, 'manifest.json'), manifestBytes);
+  truncateSync(join(source, 'cli.cjs'), 536_870_913);
+  assert.equal(call().status, 3, 'Oversized file is refused before allocation');
+  writeVersion(3);
+  for (const kind of ['fifo', 'hardlink', 'symlink']) {
+    const extra = join(source, 'extra');
+    if (kind === 'fifo') assert.equal(spawnSync('mkfifo', [extra]).status, 0);
+    if (kind === 'hardlink') linkSync(join(source, 'cli.cjs'), extra);
+    if (kind === 'symlink') symlinkSync('cli.cjs', extra);
+    const refused = call(); assert.equal(refused.status, 3, `${kind}: ${refused.stderr}`);
+    unlinkSync(extra);
+  }
+  assert.equal(call().status, 0, 'Valid payload still launches after malformed source is corrected');
   console.log('Native launch retains immutable payloads across bundle replacement and rejects retained tampering.');
 } finally {
   if (running && running.exitCode === null) { running.kill(); await once(running, 'exit'); }

@@ -350,3 +350,26 @@ No live source ref, project file, installed payload or user export was removed.
 Git ref release, failed/unconfirmed transport cleanup, summary compaction and
 retained payload retirement remain separate work. The new route deliberately
 keeps those sources and lifecycle records intact.
+
+## Bounded installed payload verification
+
+Engine and native launch verification now stream regular files through bounded
+buffers. Manifests are limited to four MiB, individual files to 512 MiB and
+aggregate payload contents to four GiB; inventories and directory depth also
+have explicit limits. Both readers reject shared hard links, symlinks and special
+files before reading, open without following links, and compare file identity
+and metadata before and after reading. Source app ownership is not restricted
+to the current user, so an administrator-owned application remains eligible.
+
+Eight focused engine cases cover a valid manifest, oversized sparse files and
+manifests, FIFOs, hard links, symlinks, deep directories and escaped entrypoints.
+The compiled native launcher fixture also rejects oversized files/manifests and
+special/shared files, then resumes valid launch after correcting the fixture.
+Its existing replacement and retained-tampering checks still pass. These checks
+use disposable unsigned payloads; they do not qualify signed installation,
+physical update/restart or a running user's installation.
+
+The full 352-test Node suite, strict/generated contracts, type regressions and
+foundation preservation passed (`.build/check-payload-bounds-unrestricted.log`).
+The sandboxed attempt could not establish fixture process identity; the rerun
+used the process/socket access required by the existing integration harness.
