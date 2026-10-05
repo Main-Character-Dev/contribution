@@ -6,14 +6,19 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
+import importlib.util
 from pathlib import Path
+
+sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parent.parent
 PIN = json.loads((ROOT / 'config/go-ios.json').read_text())
 if platform.system() != 'Darwin' or platform.machine() != 'arm64':
     raise SystemExit('This prototype pin targets macOS arm64.')
-if len(sys.argv) != 2 or not Path(sys.argv[1]).is_absolute():
-    raise SystemExit('Pass one new absolute output directory.')
+if len(sys.argv) not in (2, 3) or not Path(sys.argv[1]).is_absolute() or len(sys.argv) == 3 and sys.argv[2] != '--private-transport':
+    raise SystemExit('Pass one new absolute output directory and optional --private-transport.')
+private_transport = len(sys.argv) == 3
 OUTPUT = Path(sys.argv[1])
 if OUTPUT.exists():
     raise SystemExit('Output already exists; preserve the earlier build receipt.')
@@ -49,6 +54,22 @@ if module.get('Sum') != PIN['sum'] or module.get('GoModSum') != PIN['goModSum'] 
     raise SystemExit('Pinned source identity or Go checksum mismatch.')
 source = Path(module['Dir'])
 go('mod', 'verify', cwd=source)
+patches = None
+private_copy = None
+if private_transport:
+    private_copy = tempfile.TemporaryDirectory(prefix='private-backend-', dir=CACHE / 'tmp')
+    copied = Path(private_copy.name) / 'source'
+    shutil.copytree(source, copied, copy_function=shutil.copyfile)
+    for directory in [copied, *[entry for entry in copied.rglob('*') if entry.is_dir()]]:
+        directory.chmod(0o700)
+    spec = importlib.util.spec_from_file_location('private_go_ios', ROOT / 'scripts/private-go-ios.py')
+    overlay = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(overlay)
+    patches = overlay.apply(copied)
+    source = copied
+    # These named transport tests use temporary files, in-memory pipes and local
+    # sockets. They never enumerate, pair or contact an Apple device.
+    print(go('test', './ios', '-run', '^TestContribution', '-count=1', cwd=source), end='')
 modules = {PIN['module']: module}
 for package in records(go('list', '-deps', '-json', '.', cwd=source)):
     dependency = package.get('Module')
@@ -78,5 +99,7 @@ go('build', '-trimpath', '-buildvcs=false', '-o', str(OUTPUT / 'ios'), '.', cwd=
 (OUTPUT / 'build-info.txt').write_text(go('version', '-m', str(OUTPUT / 'ios')))
 files = {str(file.relative_to(OUTPUT)): sha(file) for file in sorted(OUTPUT.rglob('*')) if file.is_file()}
 (OUTPUT / 'manifest.json').write_text(json.dumps({'schemaVersion': 1, 'pin': PIN, 'toolchain': observed_toolchain, 'CGO_ENABLED': '0', 'GOWORK': 'off',
-    'modules': module_receipts, 'files': files, 'productEnabled': False, 'runtimeExecuted': False}, indent=2) + '\n')
-print(json.dumps({'output': str(OUTPUT), 'revision': PIN['revision'], 'binarySHA256': files['ios'], 'linkedModules': len(module_receipts), 'runtimeExecuted': False}))
+    'modules': module_receipts, 'files': files, 'privateTransportOverlay': patches, 'productEnabled': False, 'runtimeExecuted': False}, indent=2) + '\n')
+if private_copy:
+    private_copy.cleanup()
+print(json.dumps({'output': str(OUTPUT), 'revision': PIN['revision'], 'binarySHA256': files['ios'], 'linkedModules': len(module_receipts), 'privateTransport': private_transport, 'runtimeExecuted': False}))
