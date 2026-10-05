@@ -12,7 +12,7 @@
       "format": "uuid"
     },
     "adapterId": {
-      "const": "xcode-ios-v1"
+      "enum": ["xcode-ios-v1", "roboty-ios-v1"]
     },
     "app": {
       "$ref": "urn:contribution:schema:artifact-provenance:v1#/properties/app"

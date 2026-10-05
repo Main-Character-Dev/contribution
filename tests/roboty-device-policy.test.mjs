@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { Repositories } from '../packages/engine/dist/repositories.js';
 import { RobotyDevicePolicy } from '../packages/engine/dist/roboty-device-policy.js';
+import { RobotyOfflineBuild } from '../packages/engine/dist/roboty-offline-build.js';
+import { DeviceBuilds } from '../packages/engine/dist/device-builds.js';
 import { projectPins } from '../packages/adapters/dist/index.js';
 import { run } from '../packages/engine/dist/process.js';
 import { repository, git } from './integration/service.mjs';
@@ -96,4 +99,104 @@ test('Roboty offline selection refuses policy or phone compatibility changes dur
     try { await assert.rejects(f.policy.inspect(f.repo, f.profile, f.deviceId), { code: change === 'source' ? 'DIRTY_PRIMARY' : 'ROBOTY_DEVICE_POLICY_CHANGED' }); }
     finally { f.cleanup(); }
   }
+});
+
+async function buildFixture(failure = '') {
+  const f = await fixture();
+  const put = (path, content) => { mkdirSync(join(f.path, path, '..'), { recursive: true }); writeFileSync(join(f.path, path), content); };
+  put('apps/ios/Info.plist', JSON.stringify({ CFBundleIdentifier: f.profile.app.bundleId, CFBundleVersion: '1', CFBundleShortVersionString: '1.0', MinimumOSVersion: '20.0' }));
+  put('apps/ios/Roboty.xcodeproj/project.pbxproj', 'fixture project');
+  put('packages/workbench-api-swift/generate.py', '# fixture generator, never executed\n');
+  put('scripts/ios-device.mjs', program + `
+import {createHash} from 'node:crypto'; import {readdirSync,readFileSync,lstatSync} from 'node:fs';
+export async function hashTree(root){ const hash=createHash('sha256');const visit=path=>{for(const name of readdirSync(path).sort()){const file=join(path,name);hash.update(name);if(lstatSync(file).isDirectory())visit(file);else hash.update(readFileSync(file));}};visit(root);return hash.digest('hex');}
+export function assertAppInfo(info, revision, inputs){if(info.RobotyBuildIdentity!==inputs||info.CFBundleVersion!==revision||info.CFBundleIdentifier!==identity.bundle)throw Error('Original app identity refused');}
+export function assertEntitlements(value){if(value['get-task-allow']!==true||value['application-identifier']!==identity.team+'.'+identity.bundle)throw Error('Original entitlements refused');}
+`);
+  put('scripts/lib/ios-build-host-circuit.mjs', `export function assertIOSBuildHostReady(){${failure === 'circuit' ? "throw Error('Original host circuit open');" : ''}}`);
+  put('scripts/lib/ios-build-lease.mjs', `import {writeFileSync,unlinkSync} from 'node:fs';import {join} from 'node:path';
+export async function acquireIOSBuildLease(options){${failure === 'lease' ? "throw Error('Original shared pool busy');" : ''}options.signal.throwIfAborted();writeFileSync(join(options.runId,'lease.json'),JSON.stringify(options));return {leasePath:options.runId,owner:{token:'fixture-owner'}};}
+export async function releaseIOSBuildLease(lease){writeFileSync(join(lease.leasePath,'released'),'yes');unlinkSync(join(lease.leasePath,'lease.json'));return true;}`);
+  put('scripts/lib/ios-simulator-lease.mjs', `import {appendFileSync} from 'node:fs';import {join} from 'node:path';export async function updateIOSSimulatorLease(lease,values){appendFileSync(join(lease.leasePath,'child-updates.jsonl'),JSON.stringify(values)+'\\n');return lease;}`);
+  put('scripts/lib/supervised-command.mjs', `
+import {readFileSync,writeFileSync,mkdirSync,appendFileSync} from 'node:fs';import {join,basename} from 'node:path';import {execFileSync} from 'node:child_process';import assert from 'node:assert/strict';
+export const COMMAND_TERMINATION_GRACE_MS=5000,IOS_BUILD_COMMAND_TIMEOUT_MS=1200000;
+export async function runSupervisedCommand(executable,args,options){
+ const tool=basename(executable);if(['xcrun','devicectl','ios'].includes(tool))throw Error('Phone must not be contacted');
+ await options.onSpawn({childPid:process.pid,childProcessGroup:process.pid,childStartTime:execFileSync('/bin/ps',['-p',String(process.pid),'-o','lstart='],{encoding:'utf8'}).trim(),startedAt:new Date().toISOString(),deadlineAt:new Date(Date.now()+30000).toISOString()});
+ if(tool==='xcodebuild'&&args[0]==='-version')return {output:'Xcode 27.0\\nBuild version fixture-build\\n'};
+ if(tool==='python3'){assert.deepEqual(args,['packages/workbench-api-swift/generate.py','--check']);${failure === 'generator' ? "throw Error('Original generator refused');" : ''}return {output:''};}
+ if(tool==='plutil'&&args[1]==='xml1'){writeFileSync(args[3],readFileSync(args[4]));return {output:''};}
+ if(tool==='plutil'&&args[0]==='-insert'){const file=args[4],info=JSON.parse(readFileSync(file));info[args[1]]=args[3];writeFileSync(file,JSON.stringify(info));return {output:''};}
+ if(tool==='xcodebuild'){
+  assert.ok(args.includes('CODE_SIGN_STYLE=Manual'));assert.ok(args.includes('PROVISIONING_PROFILE_SPECIFIER=fixture-profile'));assert.ok(!args.some(value=>value.startsWith('-allowProvisioning')));
+  const products=args.find(value=>value.startsWith('CONFIGURATION_BUILD_DIR=')).split('=').slice(1).join('='),app=join(products,'Roboty.app');mkdirSync(app);
+  const source=args.find(value=>value.startsWith('INFOPLIST_FILE=')).split('=').slice(1).join('='),info=JSON.parse(readFileSync(source));info.CFBundleVersion='42';writeFileSync(join(app,'Info.plist'),JSON.stringify(info));writeFileSync(join(app,'binary'),'fixture-only');return {output:'fixture build completed\\n'};
+ }
+ if(tool==='codesign'&&args[0]==='--verify')return {output:''};
+ if(tool==='codesign'&&args[0]==='-d'){writeFileSync(args[2],JSON.stringify({'get-task-allow':${failure === 'entitlements' ? 'false' : 'true'},'application-identifier':'FIXTURE123.dev.fixture.roboty'}));return {output:''};}
+ if(tool==='plutil'&&args[1]==='json')return {output:readFileSync(args[4],'utf8')};
+ throw Error('Unexpected original worker command '+tool);
+}
+`);
+  git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Fixture original offline build exports');
+  const source = join(f.root, 'snapshot'); git(f.path, 'worktree', 'add', '--detach', source, 'HEAD');
+  Object.assign(f.profile.builds[0], { timeoutSeconds: 60, developerDirectory: execFileSync('/usr/bin/xcode-select', ['-p'], { encoding: 'utf8' }).trim(), xcodeVersion: '27.0', provisioningProfileSpecifier: 'fixture-profile' });
+  const directory = join(f.root, 'attempt'); mkdirSync(directory, { mode: 0o700 });
+  const builder = new RobotyOfflineBuild(f.store, { verify: async () => ({ adoptionId: 'fixture-reviewed' }) });
+  return { ...f, source: realpathSync(source), directory, builder };
+}
+
+test('Roboty offline worker preserves original generator, app validation and shared lease while excluding phone/provisioning calls', async () => {
+  const f = await buildFixture(); try {
+    const children = [], result = await f.builder.build(f.repo, f.source, f.profile, f.profile.builds[0], f.directory, f.deviceId, { started: (pid, start) => children.push({ pid, start }) });
+    assert.equal(result.appPath, join(f.directory, 'products/Roboty.app')); assert.equal(result.evidence.originalBuildPool, true); assert.equal(result.evidence.phoneContacted, false);
+    assert.ok(children.length >= 5 && children.every(child => child.pid > 0 && child.start)); assert.equal(readFileSync(join(f.directory, 'released'), 'utf8'), 'yes');
+    const updates = readFileSync(join(f.directory, 'child-updates.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.ok(updates.some(value => value.childPid > 0)); assert.equal(updates.at(-1).childPid, null);
+    assert.equal(git(f.path, 'status', '--porcelain'), ''); assert.equal(git(f.source, 'status', '--porcelain'), '');
+  } finally { f.cleanup(); }
+});
+
+test('Roboty offline worker preserves original circuit, lease, generator and entitlement refusals', async () => {
+  for (const failure of ['circuit', 'lease', 'generator', 'entitlements']) {
+    const f = await buildFixture(failure); try {
+      await assert.rejects(f.builder.build(f.repo, f.source, f.profile, f.profile.builds[0], f.directory, f.deviceId, {}), { code: 'BUILD_FAILED' });
+      if (['generator', 'entitlements'].includes(failure)) assert.equal(readFileSync(join(f.directory, 'released'), 'utf8'), 'yes');
+      assert.equal(f.store.records('deviceArtifact').length, 0); assert.equal(git(f.path, 'status', '--porcelain'), '');
+    } finally { f.cleanup(); }
+  }
+});
+
+test('Roboty registration binds original policy and cannot be selected for another project or generic bypass', async () => {
+  const f = await buildFixture(); try {
+    new Repositories(f.store).save(f.repo); f.profile.adapterId = 'roboty-ios-v1';
+    const driver = { recordMode: 'fixture', host: async () => ({ hostId: f.store.hostId, model: null, architecture: 'arm64', macOSVersion: 'fixture', macOSBuild: 'fixture', xcodeVersion: '27.0', xcodeBuild: 'fixture-build' }) };
+    const builds = new DeviceBuilds(f.store, 'fixture', driver, { verify: async () => ({ adoptionId: 'fixture-registration' }) });
+    const requestId = '77777777-7777-4777-8777-777777777777';
+    const registered = await builds.configure(f.repo, f.profile, 'none', requestId);
+    assert.notEqual(registered.revision, (await import('../packages/engine/dist/core.js')).digest(f.profile));
+    assert.equal((await builds.observe(f.repo, f.deviceId, 'development')).reasonCodes[0], 'PHONE_NOT_CONTACTED');
+    const generic = structuredClone(f.profile); generic.adapterId = 'xcode-ios-v1';
+    await assert.rejects(builds.configure(f.repo, generic, registered.revision, 'another'), { code: 'ADAPTER_MIGRATION_REQUIRED' });
+    const foreign = { ...f.repo, config: { ...f.repo.config, integration: { ...f.repo.config.integration, adapter: 'generic-v1' } } };
+    await assert.rejects(builds.configure(foreign, f.profile, registered.revision, 'another'), { code: 'ADAPTER_MIGRATION_REQUIRED' });
+    writeFileSync(join(f.path, 'scripts/lib/ios-app-configuration.mjs'), 'export const changed=true;\n'); git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Fixture changed original helper');
+    await assert.rejects(builds.observe(f.repo, f.deviceId, 'development'), { code: 'ROBOTY_DEVICE_POLICY_CHANGED' });
+    assert.deepEqual(await builds.configure(f.repo, f.profile, 'none', requestId), registered, 'historical completed registration stays replayable');
+  } finally { f.cleanup(); }
+});
+
+test('a concurrent enrollment change cannot acquire a Roboty build profile from an earlier review', async () => {
+  const f = await buildFixture(); try {
+    const repos = new Repositories(f.store); repos.save(f.repo); f.profile.adapterId = 'roboty-ios-v1';
+    let calls = 0;
+    const builds = new DeviceBuilds(f.store, 'fixture', undefined, { verify: async () => {
+      if (++calls === 2) repos.save({ ...f.repo, canonicalHostId: '88888888-8888-4888-8888-888888888888' });
+      return { adoptionId: 'fixture' };
+    } });
+    await assert.rejects(builds.configure(f.repo, f.profile, 'none', '77777777-7777-4777-8777-777777777777'), { code: 'STALE_CONFIGURATION' });
+    assert.equal(f.store.record('deviceBuildProfile', f.repo.id), undefined);
+    assert.equal(repos.all()[0].canonicalHostId, '88888888-8888-4888-8888-888888888888');
+  } finally { f.cleanup(); }
 });

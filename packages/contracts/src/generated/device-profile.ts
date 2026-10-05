@@ -3,7 +3,7 @@
 export interface DeviceProfile {
   schemaVersion: 1;
   repositoryId: string;
-  adapterId: "xcode-ios-v1";
+  adapterId: "xcode-ios-v1" | "roboty-ios-v1";
   app: App;
   permitsForeground: boolean;
   /**

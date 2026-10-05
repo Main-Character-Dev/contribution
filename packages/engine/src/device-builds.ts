@@ -15,6 +15,9 @@ import { privateDirectory } from './private-files.js';
 import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
 import { artifactRetention, requireArtifactAvailable } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
+import type { AdoptedHooks } from './adopted-hooks.js';
+import { RobotyDevicePolicy } from './roboty-device-policy.js';
+import { RobotyOfflineBuild } from './roboty-offline-build.js';
 
 type Build = DeviceProfileConfiguration['builds'][number];
 type Host = DeviceContext['host'];
@@ -25,22 +28,23 @@ export interface DeviceBuildDriver {
   build(repo: Enrolled, config: DeviceProfileConfiguration, build: Build, directory: string, deviceId: string, options: RunOptions): Promise<Prepared>;
   archive(appPath: string, archivePath: string, options: RunOptions): Promise<void>;
 }
-interface Registration { config: DeviceProfileConfiguration; revision: string; registeredAt: string }
+interface Registration { config: DeviceProfileConfiguration; revision: string; registeredAt: string; robotyPolicy?: { policyFiles: Record<string, string>; adoptionDigest: string } }
 
 /** Offline host preparation never calls the physical-device backend. */
 export class DeviceBuilds {
   readonly driver: DeviceBuildDriver | undefined;
-  constructor(readonly store: Journal, readonly mode: 'fixture' | 'observed', driver?: DeviceBuildDriver) {
-    this.driver = driver ?? (mode === 'observed' ? new XcodeDeviceBuildDriver(store) : undefined);
+  constructor(readonly store: Journal, readonly mode: 'fixture' | 'observed', driver?: DeviceBuildDriver, readonly hooks?: Pick<AdoptedHooks, 'verify'>) {
+    this.driver = driver ?? (mode === 'observed' ? new XcodeDeviceBuildDriver(store, hooks) : undefined);
     requireValue(!this.driver || this.driver.recordMode === mode, 'FIXTURE_AUTHORITY_REJECTED', 'A build driver must match this service evidence mode.', 3);
   }
-  configure(repo: Enrolled, input: unknown, expectedRevision: string, requestId: string): ObjectValue {
+  async configure(repo: Enrolled, input: unknown, expectedRevision: string, requestId: string): Promise<ObjectValue> {
     try { assertContract('device-profile', input); } catch { throw new Fault('DEVICE_PROFILE_INVALID', 'The project device profile does not match the installed schema.', 2); }
     const config = input as DeviceProfileConfiguration;
     requireValue(config.repositoryId === repo.id && config.app.applicationIdentifier.endsWith(`.${config.app.bundleId}`) && /^[A-Z0-9]{10}\./.test(config.app.applicationIdentifier), 'APP_IDENTITY_MISMATCH', 'Profile repository and signed application identity must agree.', 2);
-    requireValue(repo.config.integration.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Existing project source-selection and activation rules need their preserved device adapter before registration.', 3);
     const requestDigest = digest({ repo: repo.id, config, expectedRevision }), prior = this.store.record<{ digest: string; result: ObjectValue }>('deviceProfileRequest', requestId);
     if (prior) { requireValue(prior.digest === requestDigest, 'REQUEST_ID_CONFLICT', 'Profile request identity was reused with different inputs.'); return prior.result; }
+    const roboty = repo.config.integration.adapter === 'roboty-v1' && config.adapterId === 'roboty-ios-v1';
+    requireValue(roboty || repo.config.integration.adapter === 'generic-v1' && config.adapterId === 'xcode-ios-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Select the preserved device adapter for this project; existing policy cannot use the generic build route.', 3);
     requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id && ['device', 'device_transfer', 'artifact_transfer'].includes(op.kind)), 'DEVICE_JOBS_PENDING', 'Drain or reconcile existing device jobs before replacing their policy.');
     const old = this.store.record<Registration>('deviceBuildProfile', repo.id);
     requireValue((old?.revision ?? 'none') === expectedRevision, 'STALE_CONFIGURATION', 'The device profile changed; inspect its current revision first.');
@@ -51,7 +55,20 @@ export class DeviceBuilds {
       requireValue(isAbsolute(build.developerDirectory) && existsSync(build.developerDirectory) && lstatSync(build.developerDirectory).isDirectory(), 'XCODE_UNAVAILABLE', 'Select an installed developer directory.', 3);
       for (const value of [build.scheme, build.configuration, build.provisioningProfileSpecifier]) requireValue(!/[\x00-\x1f]/.test(value) && !value.startsWith('-'), 'DEVICE_PROFILE_INVALID', 'Build selections must be bounded literal values.', 2);
     }
-    const registration: Registration = { config, revision: digest(config), registeredAt: now() };
+    let robotyPolicy: Registration['robotyPolicy'];
+    if (roboty) {
+      requireValue(this.hooks, 'ADAPTER_MIGRATION_REQUIRED', 'The preserved Roboty adapter needs verified original hook registration.', 3);
+      for (const device of config.eligibleDeviceRefs) {
+        const selected = await new RobotyDevicePolicy(this.store, this.hooks).inspect(repo, config, device);
+        const binding = { policyFiles: selected.policyFiles, adoptionDigest: selected.adoptionDigest };
+        requireValue(!robotyPolicy || digest(robotyPolicy) === digest(binding), 'ROBOTY_DEVICE_POLICY_CHANGED', 'Original project policy changed during device profile review.', 3); robotyPolicy = binding;
+      }
+      const current = this.store.db.prepare('SELECT body FROM repositories WHERE id=?').get(repo.id);
+      requireValue(current && digest(JSON.parse(String(current['body']))) === digest(repo) && digest(this.store.record('deviceBuildProfile', repo.id) ?? null) === digest(old ?? null),
+        'STALE_CONFIGURATION', 'Repository ownership or device configuration changed during policy review.', 3);
+      requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id && ['device', 'device_transfer', 'artifact_transfer'].includes(op.kind)), 'DEVICE_JOBS_PENDING', 'New device work must drain before this policy can change.');
+    }
+    const registration: Registration = { config, revision: robotyPolicy ? digest({ config, robotyPolicy }) : digest(config), registeredAt: now(), ...(robotyPolicy ? { robotyPolicy } : {}) };
     const plans = config.qualificationPlans ?? [];
     requireValue(new Set(plans.map(plan => plan.id)).size === plans.length, 'DEVICE_PROFILE_INVALID', 'Qualification plan IDs must be unique.', 2);
     for (const plan of plans) {
@@ -97,7 +114,13 @@ export class DeviceBuilds {
   }
   async observe(repo: Enrolled, deviceId: string, profileId: string): Promise<DeviceObservation> {
     requireValue(this.driver, 'BUILD_DRIVER_UNAVAILABLE', 'This fixture has no offline build driver.', 3);
-    const { build } = this.selected(repo, profileId, deviceId), host = await this.driver.host(build);
+    const { build, registration } = this.selected(repo, profileId, deviceId);
+    if (registration.config.adapterId === 'roboty-ios-v1') {
+      requireValue(this.hooks && registration.robotyPolicy, 'ADAPTER_MIGRATION_REQUIRED', 'The original Roboty build policy needs reviewed registration.', 3);
+      const selected = await new RobotyDevicePolicy(this.store, this.hooks).inspect(repo, registration.config, deviceId);
+      requireValue(digest({ policyFiles: selected.policyFiles, adoptionDigest: selected.adoptionDigest }) === digest(registration.robotyPolicy), 'ROBOTY_DEVICE_POLICY_CHANGED', 'Re-review the changed original Roboty policy before preparing more builds.', 3);
+    }
+    const host = await this.driver.host(build);
     requireValue(host.hostId === this.store.hostId && host.xcodeVersion === build.xcodeVersion && host.xcodeBuild === build.xcodeBuild && host.macOSVersion && host.macOSBuild,
       'BUILD_TOOLCHAIN_CHANGED', 'The selected Xcode or host identity differs from the registered build configuration.', 3);
     const context: DeviceContext = { host, device: { deviceId, model: null, iOSVersion: null, iOSBuild: null }, tailscale: { hostVersion: null, deviceVersion: null },
@@ -167,7 +190,7 @@ export class DeviceBuilds {
 
 export class XcodeDeviceBuildDriver implements DeviceBuildDriver {
   readonly recordMode = 'observed' as const;
-  constructor(readonly store: Journal) {}
+  constructor(readonly store: Journal, readonly hooks?: Pick<AdoptedHooks, 'verify'>) {}
   async host(build: Build): Promise<Host> {
     const [os, xcode] = await Promise.all([run('/usr/bin/sw_vers', [], { timeoutMs: 5000 }), run(join(build.developerDirectory, 'usr/bin/xcodebuild'), ['-version'], { timeoutMs: 10000, env: { DEVELOPER_DIR: build.developerDirectory } })]);
     requireValue(os.code === 0 && xcode.code === 0, 'XCODE_UNAVAILABLE', 'The registered host toolchain could not be observed.', 3);
@@ -180,6 +203,17 @@ export class XcodeDeviceBuildDriver implements DeviceBuildDriver {
     // inventory or developer connection is needed during this local build.
     const selection = this.store.record<{ udid: string }>('coreDeviceSelection', deviceId);
     requireValue(selection?.udid, 'DEVICE_IDENTITY_REQUIRED', 'Provisioning needs this phone’s previously verified local identity; refresh inventory once during setup.', 3);
+    if (config.adapterId === 'roboty-ios-v1') {
+      requireValue(this.hooks, 'ADAPTER_MIGRATION_REQUIRED', 'The original Roboty registration is unavailable.', 3);
+      const row = this.store.db.prepare('SELECT body FROM repositories WHERE id=?').get(repo.id);
+      requireValue(row, 'REPOSITORY_NOT_FOUND', 'The original primary enrollment is unavailable.', 3);
+      const primary = JSON.parse(String(row['body'])) as Enrolled;
+      requireValue(primary.commonDir === repo.commonDir, 'BUILD_SOURCE_UNCONFIRMED', 'The primary clone changed before Roboty preparation.', 3);
+      const prepared = await new RobotyOfflineBuild(this.store, this.hooks).build(primary, repo.path, config, build, directory, deviceId, options);
+      appTreeDigest(prepared.appPath);
+      const signing = await inspectSignedApp(prepared.appPath, config.app, build.signingMode, [{ deviceId, udid: selection.udid }]);
+      return { appPath: prepared.appPath, app: config.app, signing, evidence: prepared.evidence };
+    }
     const products = join(directory, 'products'); privateDirectory(products);
     const command = join(build.developerDirectory, 'usr/bin/xcodebuild');
     const argv = [`-${build.containerKind}`, contained(repo.path, build.containerPath), '-scheme', build.scheme, '-configuration', build.configuration,

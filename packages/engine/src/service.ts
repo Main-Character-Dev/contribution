@@ -110,7 +110,7 @@ export class Engine {
     this.peers.cancelLocal = op => this.cancel(op);
     this.peers.prepareFence = repo => this.workflows.ensureHook(repo);
     this.peers.dispatchLocal = (command, args) => this.dispatch({ schemaVersion: 1, command, args, cwd: this.store.directory });
-    this.devices = new Devices(store, deviceRuntime?.backend ?? new CoreDeviceBackend(store), payload.identity, deviceRuntime?.mode ?? 'observed', deviceRuntime?.buildDriver);
+    this.devices = new Devices(store, deviceRuntime?.backend ?? new CoreDeviceBackend(store), payload.identity, deviceRuntime?.mode ?? 'observed', deviceRuntime?.buildDriver, this.workflows.adopted);
     this.artifacts = new DeviceArtifactTransfers(store, deviceRuntime?.mode ?? 'observed', (host, action, body) => this.peers.call(host, action, body));
     this.peers.receiveArtifact = (repo, from, action, body) => this.artifacts.receive(repo, from, action, body);
     this.deviceOwnership = new DeviceOwnershipTransfers(store, this.devices, (host, action, body) => this.peers.call(host, action, body));
@@ -573,7 +573,7 @@ export class Engine {
         return completed({ inventory, sourceTip: (await identity(repo.path)).tip, branch: repo.config.integration.branch, hookOwner: repo.hookPath,
           mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });
       }
-      if (command === 'devices.configure') return completed(this.devices.builds.configure(repo, args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
+      if (command === 'devices.configure') return completed(await this.devices.builds.configure(repo, args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
       if (command === 'devices.evidence.record') return completed(this.devices.recordEvidence(repo, args['config'], string(args['requestId'], 'requestId')));
       if (command === 'devices.evidence.get') return completed(this.devices.inspectEvidence(repo, string(args['evidence'], 'evidence')));
       if (command === 'devices.evidence.review') return completed(this.devices.reviewEvidence(repo, string(args['evidence'], 'evidence'), string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));

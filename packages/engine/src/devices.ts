@@ -10,6 +10,7 @@ import { artifactFileDigest } from './device-artifacts.js';
 import { DeviceBuilds } from './device-builds.js';
 import { requireArtifactAvailable } from './storage.js';
 import type { DeviceBuildDriver } from './device-builds.js';
+import type { AdoptedHooks } from './adopted-hooks.js';
 
 type DeviceAction = DeviceCapability['operation'];
 type Effect = DeviceOperation['effects'][number];
@@ -44,8 +45,8 @@ export interface RetainedDeviceArtifact { provenance: ArtifactProvenance; path: 
 /** Devices use the same journal and scheduler. No backend is authority by itself. */
 export class Devices {
   readonly builds: DeviceBuilds;
-  constructor(readonly store: Journal, readonly backend: DeviceBackend, readonly payload: string, readonly mode: Mode = 'observed', buildDriver?: DeviceBuildDriver) {
-    this.builds = new DeviceBuilds(store, mode, buildDriver);
+  constructor(readonly store: Journal, readonly backend: DeviceBackend, readonly payload: string, readonly mode: Mode = 'observed', buildDriver?: DeviceBuildDriver, hooks?: Pick<AdoptedHooks, 'verify'>) {
+    this.builds = new DeviceBuilds(store, mode, buildDriver, hooks);
     requireValue(backend.recordMode === mode, 'FIXTURE_AUTHORITY_REJECTED', 'Fixture backends cannot run in the installed production service.', 3);
   }
   profile(repo: Enrolled): DeviceProfile {

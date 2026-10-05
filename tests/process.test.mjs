@@ -47,3 +47,13 @@ test('failed output and ownership callbacks stop the child and reject without es
       { code: mode === 'owner' ? 'PROCESS_OBSERVER_FAILED' : 'OUTPUT_SINK_FAILED' });
   }
 });
+
+test('a bounded outer grace lets a supervised worker finish its owned child cleanup', { timeout: 10000 }, async () => {
+  const controller = new AbortController(); let cleanup = '';
+  const result = await run(process.execPath, ['-e', 'process.on("SIGTERM",()=>setTimeout(()=>{process.stdout.write("cleanup-confirmed\\n");process.exit(0)},1800));process.stdout.write("ready\\n");setInterval(()=>{},1000)'], {
+    signal: controller.signal, timeoutMs: 7000, terminationGraceMs: 3500,
+    output: text => { cleanup += text; if (text.includes('ready')) controller.abort(); }
+  });
+  assert.equal(result.code, 130); assert.equal(result.actualExitCode, 0); assert.match(cleanup, /cleanup-confirmed/);
+  for (const terminationGraceMs of [-1, 0.5, 30001, Infinity]) await assert.rejects(run('/bin/sh', ['-c', 'exit 0'], { terminationGraceMs }), { code: 'INVALID_TERMINATION_BOUND' });
+});

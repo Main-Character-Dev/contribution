@@ -57,11 +57,13 @@ export function gitPushAncestor(caller: { pid: number; start: string }): { pid: 
   return null;
 }
 export interface ProcessResult { code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean; outputLimited?: boolean }
-export interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number;
+export interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number; terminationGraceMs?: number;
   stdoutSink?: { maxBytes: number; write: (data: Buffer) => void };
   signal?: AbortSignal; output?: (text: string) => void; started?: (pid: number, start: string | null) => void }
 export async function run(executable: string, argv: readonly string[], options: RunOptions = {}): Promise<ProcessResult> {
   requireValue(executable.startsWith('/'), 'INVALID_EXECUTABLE', 'Executables must resolve to an absolute approved path.', 2);
+  requireValue(options.terminationGraceMs === undefined || Number.isSafeInteger(options.terminationGraceMs) && options.terminationGraceMs >= 0 && options.terminationGraceMs <= 30000,
+    'INVALID_TERMINATION_BOUND', 'Process termination grace must remain between zero and thirty seconds.', 2);
   requireValue(!options.stdoutSink || (Number.isSafeInteger(options.stdoutSink.maxBytes) && options.stdoutSink.maxBytes >= 0 && options.stdoutSink.maxBytes <= 4 * 1024 ** 3),
     'INVALID_OUTPUT_BOUND', 'Binary process output requires a finite byte limit.', 2);
   if (options.signal?.aborted) throw new Fault('CANCELLED', 'Operation cancelled before dispatch.', 130);
@@ -84,7 +86,7 @@ export async function run(executable: string, argv: readonly string[], options: 
         const current = groupMembers(child.pid!);
         if (current.some(member => members.some(prior => prior.pid === member.pid && prior.start === member.start)))
           try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* group exited */ }
-      }, 1500);
+      }, options.terminationGraceMs ?? 1500);
     };
     const cancel = (): void => { cancelled = true; stop(); };
     options.signal?.addEventListener('abort', cancel, { once: true });
