@@ -1,5 +1,5 @@
 import { DatabaseSync, backup } from 'node:sqlite';
-import { chmodSync, readFileSync, appendFileSync, openSync, closeSync, fsyncSync, statSync, existsSync, lstatSync } from 'node:fs';
+import { chmodSync, readFileSync, appendFileSync, openSync, closeSync, fsyncSync, statSync, existsSync, lstatSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertContract } from '@contribution/contracts';
 import type { Response } from '@contribution/contracts';
@@ -15,6 +15,7 @@ export interface Operation {
 export class Journal {
   readonly db: DatabaseSync;
   readonly hostId: string;
+  private cachedLogBytes: number | undefined;
   constructor(readonly directory: string) {
     privateDirectory(directory); privateDirectory(join(directory, 'logs'));
     const path = join(directory, 'journal.sqlite');
@@ -59,6 +60,8 @@ export class Journal {
   }
   admit(requestId: string, kind: string, repositoryId: string, input: ObjectValue, payload: string, state: State = 'queued', initialResult?: (op: Operation) => ObjectValue): Operation {
     const prior = this.existing(requestId, kind, repositoryId, input); if (prior) return prior;
+    const storage = this.retention(true);
+    requireValue(!storage.admissionBlocked, 'STORAGE_PRESSURE', 'Retained logs reached the cap. Protected evidence remains preserved; raise the cap or export and release eligible evidence.', 3);
     const op: Operation = { operationId: id(), requestId, repositoryId, kind, input, payload, state, stage: 'accepted',
       result: {}, error: null, createdAt: now(), attemptId: id(), pinned: false, effectDispatched: false };
     if (initialResult) op.result = initialResult(op);
@@ -79,6 +82,7 @@ export class Journal {
   unsettled(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state NOT IN ('succeeded','failed','cancelled','interrupted') ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
   update(op: Operation, patch: Partial<Operation>, type = 'operation.changed', mutation?: () => void): Operation {
     const updated = { ...op, ...patch };
+    if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(updated.state) && !updated.result['completedAt']) updated.result = { ...updated.result, completedAt: now() };
     this.transaction(() => {
       mutation?.();
       this.db.prepare('UPDATE operations SET state=?,body=? WHERE id=?').run(updated.state, canonical(updated), op.operationId);
@@ -101,19 +105,49 @@ export class Journal {
   }
   logPath(op: Operation): string { return join(this.directory, 'logs', `${op.attemptId}.log`); }
   log(op: Operation, text: string): void {
-    const path = this.logPath(op), limit = 8 * 1024 * 1024;
+    const path = this.logPath(op), maxLogBytes = this.getMeta<{ retention: { maxLogBytes: number } }>('settings')?.retention.maxLogBytes ?? 2147483648;
+    const usage = this.cachedLogBytes ?? this.retention().totalBytes, limit = Math.min(8 * 1024 * 1024, statSync(path).size + Math.max(0, maxLogBytes - usage));
     const size = statSync(path).size, bytes = Buffer.from(redact(text));
-    if (size >= limit) return;
+    if (size >= limit) { this.put('logTruncation', op.attemptId, { occurredAt: now(), limit, reason: 'STORAGE_QUOTA' }); return; }
     if (size + bytes.length >= limit) {
       const marker = Buffer.from('\n[Contribution log quota reached; further output omitted]\n');
-      appendFileSync(path, Buffer.concat([bytes.subarray(0, Math.max(0, limit - size - marker.length)), marker]));
+      appendFileSync(path, Buffer.concat([bytes.subarray(0, Math.max(0, limit - size - marker.length)), marker.subarray(0, limit - size)]));
       this.put('logTruncation', op.attemptId, { occurredAt: now(), limit });
     } else appendFileSync(path, bytes, { mode: 0o600 });
+    this.cachedLogBytes = usage + statSync(path).size - size;
   }
-  logs(op: Operation, tail = 200): string { try { return readFileSync(this.logPath(op), 'utf8').split('\n').slice(-Math.min(10000, tail)).join('\n'); } catch { throw new Fault('LOG_UNAVAILABLE', 'The retained log is unavailable on this host.', 3); } }
+  logs(op: Operation, tail = 200): string {
+    requireValue(Number.isInteger(tail) && tail > 0 && tail <= 10000, 'INVALID_LOG_RANGE', 'Request between 1 and 10000 retained lines.', 2);
+    if (!existsSync(this.logPath(op)) && this.record('logEviction', op.attemptId)) throw new Fault('LOG_EXPIRED', 'Raw output expired under retention. Its operation summary and replay identity remain retained.', 3);
+    try { return readFileSync(this.logPath(op), 'utf8').split('\n').slice(-tail).join('\n'); } catch { throw new Fault('LOG_UNAVAILABLE', 'The retained log is unavailable on this host.', 3); }
+  }
+  retention(prune = false, observedAt = Date.now()): { totalBytes: number; eligibleBytes: number; protectedBytes: number; maxLogBytes: number; admissionBlocked: boolean; removed: string[]; policy: ObjectValue } {
+    const policy = this.getMeta<{ retention?: { rawLogDays: number; summaryDays: number; maxLogBytes: number } }>('settings')?.retention ?? { rawLogDays: 30, summaryDays: 365, maxLogBytes: 2147483648 };
+    let totalBytes = 0, eligibleBytes = 0, protectedBytes = 0; const removed: string[] = [];
+    const operations = new Map(this.list(100000).map(op => [`${op.attemptId}.log`, op]));
+    for (const name of readdirSync(join(this.directory, 'logs'))) {
+      const path = join(this.directory, 'logs', name), info = lstatSync(path), op = operations.get(name);
+      const bytes = info.size; totalBytes += bytes;
+      const completed = op?.result['completedAt'];
+      const eligible = info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() && op && !op.pinned
+        && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof completed === 'string'
+        && Date.parse(completed) <= observedAt - policy.rawLogDays * 86400000
+        && !this.record('peerOperation', op.operationId);
+      if (!eligible) { protectedBytes += bytes; continue; }
+      eligibleBytes += bytes;
+      if (prune) {
+        this.put('logEviction', op.attemptId, { operationId: op.operationId, bytes, expiredAt: new Date(observedAt).toISOString(), reason: 'RAW_LOG_RETENTION' });
+        unlinkSync(path); removed.push(op.attemptId); totalBytes -= bytes; eligibleBytes -= bytes;
+      }
+    }
+    this.cachedLogBytes = totalBytes;
+    return { totalBytes, eligibleBytes, protectedBytes, maxLogBytes: policy.maxLogBytes, admissionBlocked: totalBytes >= policy.maxLogBytes, removed,
+      policy: { ...policy, summaries: 'Retained with immutable request identities; summary compaction pending', protects: ['pinned', 'active', 'unresolved', 'unacknowledged peer evidence'] } };
+  }
   response(op: Operation): Response {
     return { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
+        logRetention: { truncated: this.record('logTruncation', op.attemptId) ?? null, expired: this.record('logEviction', op.attemptId) ?? null },
         acceptance: op.kind === 'device' ? op.result['acceptance'] : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
   }

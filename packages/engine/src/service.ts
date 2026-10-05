@@ -1,5 +1,4 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { assertContract, buildIdentity } from '@contribution/contracts';
 import type { Response, Machine, Repository, DeviceOperation } from '@contribution/contracts';
 import { completed, rejected, requireValue, string, object, digest, Fault, terminal, now } from './core.js';
@@ -159,9 +158,6 @@ export class Engine {
   private admit(requestId: unknown, kind: string, repositoryId: string, input: ObjectValue): Response {
     const identity = string(requestId, 'requestId'), existing = this.store.existing(identity, kind, repositoryId, input);
     if (existing) return this.store.response(existing);
-    const settings = this.settings();
-    const logBytes = readdirSync(join(this.store.directory, 'logs')).reduce((total, name) => total + statSync(join(this.store.directory, 'logs', name)).size, 0);
-    requireValue(logBytes < settings.retention.maxLogBytes, 'STORAGE_PRESSURE', 'Retained logs reached the configured quota. Free or export eligible evidence before more work.', 3);
     const op = this.store.admit(identity, kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
   }
   private cancel(op: Operation): Response {
@@ -192,7 +188,7 @@ export class Engine {
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
         maintenance: this.store.getMeta('maintenance') ?? false, active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, payload: this.payload.identity });
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
-        database: { version: 1, journalMode: 'wal', synchronous: 'full' }, repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
+        database: { version: 1, journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
         devices: { enabled: this.settings().remoteDevices?.enabled ?? false, physicalQualification: 'unverified' } });
       if (command === 'service.pause' || command === 'service.resume') {
         this.store.setMeta('paused', command === 'service.pause'); this.kick(); return completed({ paused: command === 'service.pause' });
@@ -372,9 +368,15 @@ export class Engine {
         return completed(await this.workflows.hook(repo, args, controller.signal));
       }
       if (command === 'codex.open') {
-        const url = new URL('codex://threads/new'); url.searchParams.set('path', repo.path);
-        if (args['operationId']) url.searchParams.set('prompt', `Inspect Contribution operation ${string(args['operationId'], 'operationId')} using repair-context. Preserve unrelated work and existing publication authority.`);
-        return completed({ url: url.toString(), opensComposerOnly: true, projectRegistration: 'manual_if_needed', localPath: repo.path });
+        // Installed CLI help documents `codex app PATH`, but also says it may
+        // open an installer when the desktop app is missing. Do not invent a
+        // deep link or trigger installation without a qualified platform route.
+        const operationId = args['operationId'] ? string(args['operationId'], 'operationId') : null;
+        if (operationId) requireValue(this.store.get(operationId).repositoryId === repo.id, 'OPERATION_REPOSITORY_MISMATCH', 'Select an operation belonging to this repository.', 2);
+        return completed({ state: 'manual_action_required', reason: 'DOCUMENTED_OPEN_ROUTE_UNVERIFIED', localPath: repo.path,
+          projectRegistration: 'manual', nextStep: 'Use Add Project in Codex and select this exact local folder.',
+          suggestedPrompt: operationId ? `Inspect Contribution operation ${operationId} using repair-context. Preserve unrelated work and existing publication authority.` : null,
+          promptSubmitted: false });
       }
       throw new Fault('OPERATION_UNSUPPORTED', 'This command is not implemented.', 3);
     } catch (error) { return rejected(error); }

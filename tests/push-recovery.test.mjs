@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fixture, repository, commit, git } from './integration/service.mjs';
+import { Journal } from '../packages/engine/dist/journal.js';
 
 async function configured(f, script = 'exit 0', gate = 'enabled') {
   const repo = repository(f.root); commit(repo); const remote = join(f.root, 'remote.git'); mkdirSync(remote); git(remote, 'init', '--bare'); git(repo, 'remote', 'add', 'origin', remote);
@@ -14,6 +15,26 @@ async function configured(f, script = 'exit 0', gate = 'enabled') {
   return { repo, remote, id: added.id };
 }
 async function select(f, repo) { const preview = await f.call('push', { repo, preview: true }); assert.equal(preview.error, null); return { repo, expectedTip: preview.result.expectedTip, scopeToken: preview.result.scopeToken, requestId: randomUUID() }; }
+
+test('restart reconciles uncertain push delivery by observing the frozen remote without replaying transport', async () => {
+  for (const delivered of [true, false]) {
+    const f = await fixture(); try {
+      const c = await configured(f); await f.call('service.pause'); const selected = await select(f, c.id), accepted = await f.call('push', selected);
+      if (delivered) git(c.repo, '-c', 'core.hooksPath=/dev/null', 'push', 'origin', 'dev');
+      await f.stop();
+      const journal = new Journal(f.state), op = journal.get(accepted.operationId);
+      journal.update(op, { state: 'running', effectDispatched: true, result: { gate: { state: 'passed' }, delivery: 'unknown' } }); journal.close();
+      const marker = join(c.remote, 'transport-replayed');
+      writeFileSync(join(c.remote, 'hooks/pre-receive'), '#!/bin/sh\ntouch "' + marker + '"\nexit 1\n', { mode: 0o700 });
+      await f.start(); const result = await f.call('runs.get', { operationId: op.operationId });
+      assert.equal(result.operationState, delivered ? 'succeeded' : 'outcome_unknown');
+      assert.equal(result.result.delivery, delivered ? 'delivered' : 'unknown');
+      if (delivered) assert.equal(result.result.observedBy, 'remote_ref_reconciliation');
+      const { existsSync } = await import('node:fs'); assert.equal(existsSync(marker), false);
+      assert.equal((await f.call('push', selected)).operationId, op.operationId);
+    } finally { await f.cleanup(); }
+  }
+});
 
 test('push comparison and delivery observation use the selected push URL, independently of fetch URL', async () => {
   const f = await fixture(); try {

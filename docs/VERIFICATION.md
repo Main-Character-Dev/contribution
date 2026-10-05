@@ -1,8 +1,8 @@
 # Verification and outstanding access
 
-Current status: **S0 development source/build foundation implemented; no application or physical-device acceptance performed.** [SETUP_STATUS.md](SETUP_STATUS.md) records exact setup commands, pins and limitations. Visual window/menu inspection remains pending with existing GUI inspection access. The original dated review evidence below remains historical; S0 build/contract proof does not pass application cases.
+Current status: **M0–M6 and D0–D4 implementation is in progress, with partial executable fixture and native-build evidence. No full application, two-Mac, signed-release or physical-device acceptance is claimed.** [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) records current proof and remaining implementation. [SETUP_STATUS.md](SETUP_STATUS.md) is the historical S0 record.
 
-Subsequent acceptance-hardening addendum: [fifteen requested robustness areas were mapped](ACCEPTANCE_HARDENING.md), with five missing cases added as AT-R01–05. The ledger now contains 59 core and 24 device cases (83 total), all unrun in this review checkout. Original review counts below describe the preserved baseline; setup proceeding in another chat must report its own current evidence.
+The [acceptance ledger](verification/acceptance-status.json) retains all 59 core and 24 device cases. It now links implemented subsets to focused proof sources and names missing work. Core `partial_fixture` means only the described subset passed fixtures; physical-device rows remain `not_run` even when shared guards have fixture proof. The original requirements, 83 identities and source mappings are unchanged. Foundation checks now validate those identities and evidence boundaries instead of forcing a permanently unstarted planning ledger.
 
 ## S0 development evidence
 

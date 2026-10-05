@@ -10,6 +10,8 @@ Settings exposes explicit service registration through `SMAppService` and CLI in
 
 The background service is a user agent. Pre-login execution is not provided. Actual post-login registration, owner approval, signing, app-update installation and physical-device teardown remain separate qualification. No launchd policy is changed to produce an endless restart loop.
 
+Raw logs expire after the configured age (30 days by default) when a new durable request performs cleanup. `doctor` reports current bytes, protected bytes, eligible bytes and admission pressure. Every admission route uses the same cap; active output is bounded with visible truncation evidence. Pinned records, active/unresolved/interrupted operations and unacknowledged peer evidence are not evicted. An expired log returns `LOG_EXPIRED`; summaries and immutable replay identities remain. Automatic summary, remote-cache and artifact compaction remains pending, so this is not a claim of complete retention qualification.
+
 Independent proof commands:
 
 - `bash scripts/check-native-client.sh`: real Swift and Node clients share authenticated IPC, admission and retained results.

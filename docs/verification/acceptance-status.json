@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "reviewDate": "2026-10-04",
-  "scope": "Planning ledger; not device-test-evidence schema or observed acceptance",
+  "reviewDate": "2026-10-05",
+  "scope": "Implementation evidence ledger; partial fixtures and builds do not establish full case or physical acceptance",
   "coreRelease": "not_verified",
   "fullRemoteTarget": "not_verified",
   "cases": [
@@ -9,55 +9,91 @@
       "id": "AT-A01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/integration/native-client.mjs",
+          "scope": "Compiled Swift and Node clients share real private IPC, payload identity and durable operations. Native UI interaction remains unverified."
+        }
+      ],
+      "nextStep": "Native UI interaction remains unverified."
     },
     {
       "id": "AT-A02",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Disposable installed payload, CLI/service request identity and generic Git workflows. Complete adversarial variants and actual application routes remain open."
+        }
+      ],
+      "nextStep": "Complete adversarial variants and actual application routes remain open."
     },
     {
       "id": "AT-A03",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Disposable installed payload, CLI/service request identity and generic Git workflows. Complete adversarial variants and actual application routes remain open."
+        }
+      ],
+      "nextStep": "Complete adversarial variants and actual application routes remain open."
     },
     {
       "id": "AT-A04",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Disposable installed payload, CLI/service request identity and generic Git workflows. Complete adversarial variants and actual application routes remain open."
+        }
+      ],
+      "nextStep": "Complete adversarial variants and actual application routes remain open."
     },
     {
       "id": "AT-A05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/configuration-recovery.test.mjs",
+          "scope": "Approved configuration recovers across file/journal boundaries and preserves owner edits. Full native configuration UI remains open."
+        }
+      ],
+      "nextStep": "Full native configuration UI remains open."
     },
     {
       "id": "AT-H01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-H02",
@@ -72,28 +108,40 @@
       "id": "AT-H03",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-H04",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-H05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
       "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "nextStep": "Exercise all source integration crash boundaries and post-promotion receipt recovery; bootstrap recovery is covered separately by AT-H07."
     },
     {
       "id": "AT-H06",
@@ -108,82 +156,136 @@
       "id": "AT-H07",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-H08",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Generic detached committed-source landing preserves dirty task work and idempotent replay. Full topology, metadata and adopted policy variants remain open."
+        }
+      ],
+      "nextStep": "Full topology, metadata and adopted policy variants remain open."
     },
     {
       "id": "AT-M01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-M02",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-M03",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-M04",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Generic detached committed-source landing preserves dirty task work and idempotent replay. Full topology, metadata and adopted policy variants remain open."
+        }
+      ],
+      "nextStep": "Full topology, metadata and adopted policy variants remain open."
     },
     {
       "id": "AT-P01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Real disposable Git publication distinguishes gate, transport, no-op and inactive states. Full native presentation and live repository parity remain open."
+        }
+      ],
+      "nextStep": "Full native presentation and live repository parity remain open."
     },
     {
       "id": "AT-P02",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Real disposable Git publication distinguishes gate, transport, no-op and inactive states. Full native presentation and live repository parity remain open."
+        }
+      ],
+      "nextStep": "Full native presentation and live repository parity remain open."
     },
     {
       "id": "AT-P03",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/push-recovery.test.mjs",
+          "scope": "Frozen publication selection, uncertain remote delivery, cancellation and separate attempts are exercised against disposable Git fixtures. Actual host/network variants remain open."
+        }
+      ],
+      "nextStep": "Actual host/network variants remain open."
     },
     {
       "id": "AT-P04",
@@ -198,37 +300,61 @@
       "id": "AT-P05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Real disposable Git publication distinguishes gate, transport, no-op and inactive states. Full native presentation and live repository parity remain open."
+        }
+      ],
+      "nextStep": "Full native presentation and live repository parity remain open."
     },
     {
       "id": "AT-P06",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/push-recovery.test.mjs",
+          "scope": "Frozen publication selection, uncertain remote delivery, cancellation and separate attempts are exercised against disposable Git fixtures. Actual host/network variants remain open."
+        }
+      ],
+      "nextStep": "Actual host/network variants remain open."
     },
     {
       "id": "AT-P07",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/push-recovery.test.mjs",
+          "scope": "Frozen publication selection, uncertain remote delivery, cancellation and separate attempts are exercised against disposable Git fixtures. Actual host/network variants remain open."
+        }
+      ],
+      "nextStep": "Actual host/network variants remain open."
     },
     {
       "id": "AT-P08",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Real disposable Git publication distinguishes gate, transport, no-op and inactive states. Full native presentation and live repository parity remain open."
+        }
+      ],
+      "nextStep": "Full native presentation and live repository parity remain open."
     },
     {
       "id": "AT-P09",
@@ -243,37 +369,61 @@
       "id": "AT-P10",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     },
     {
       "id": "AT-P11",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/push-recovery.test.mjs",
+          "scope": "Frozen publication selection, uncertain remote delivery, cancellation and separate attempts are exercised against disposable Git fixtures. Actual host/network variants remain open."
+        }
+      ],
+      "nextStep": "Actual host/network variants remain open."
     },
     {
       "id": "AT-V01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/adapters.test.mjs",
+          "scope": "Four policy-family inventories and exact project runtimes retain the inactive Glass Alpha gate. Shared lease, hook cutover, original gate and imported-source parity remain open."
+        }
+      ],
+      "nextStep": "Shared lease, hook cutover, original gate and imported-source parity remain open."
     },
     {
       "id": "AT-V02",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Real disposable Git publication distinguishes gate, transport, no-op and inactive states. Full native presentation and live repository parity remain open."
+        }
+      ],
+      "nextStep": "Full native presentation and live repository parity remain open."
     },
     {
       "id": "AT-V03",
@@ -297,82 +447,124 @@
       "id": "AT-V05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Inactive gates remain inactive and real process results retain gate/transport distinctions. Adopted receipt reuse and all skip/optional policy variants remain open."
+        }
+      ],
+      "nextStep": "Adopted receipt reuse and all skip/optional policy variants remain open."
     },
     {
       "id": "AT-V06",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Canonical checks select the owner or report it unavailable; remote waiting, logs and cancellation retain owner identity. Dirty local check scope variants remain open."
+        }
+      ],
+      "nextStep": "Dirty local check scope variants remain open."
     },
     {
       "id": "AT-G01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/github.test.mjs",
+          "scope": "Controlled API fixtures cover required-check head/test-merge association, current rerun ID selection, review/draft/unknown merge state, nonblocking checks and auth/rate/API errors. Full workflow history, notices and live qualification remain open."
+        }
+      ],
+      "nextStep": "Hosted logs, classic statuses, notifications and live destination qualification remain open."
     },
     {
       "id": "AT-G02",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/github.test.mjs",
+          "scope": "Controlled API fixtures cover required-check head/test-merge association, current rerun ID selection, review/draft/unknown merge state, nonblocking checks and auth/rate/API errors. Full workflow history, notices and live qualification remain open."
+        }
+      ],
+      "nextStep": "Hosted logs, classic statuses, notifications and live destination qualification remain open."
     },
     {
       "id": "AT-G03",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/github.test.mjs",
+          "scope": "Controlled API fixtures cover required-check head/test-merge association, current rerun ID selection, review/draft/unknown merge state, nonblocking checks and auth/rate/API errors. Full workflow history, notices and live qualification remain open."
+        }
+      ],
+      "nextStep": "Hosted logs, classic statuses, notifications and live destination qualification remain open."
     },
     {
       "id": "AT-G04",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/github.test.mjs",
+          "scope": "Controlled API fixtures cover required-check head/test-merge association, current rerun ID selection, review/draft/unknown merge state, nonblocking checks and auth/rate/API errors. Full workflow history, notices and live qualification remain open."
+        }
+      ],
+      "nextStep": "Hosted logs, classic statuses, notifications and live destination qualification remain open."
     },
     {
       "id": "AT-G05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
       "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "nextStep": "Finish and exercise external/manual/scheduled activity discovery, historical PR transitions, hosted logs and notification delivery."
     },
     {
       "id": "AT-G06",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
       "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "nextStep": "Finish and exercise external/manual/scheduled activity discovery, historical PR transitions, hosted logs and notification delivery."
     },
     {
       "id": "AT-O01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/push-recovery.test.mjs",
+          "scope": "Frozen publication selection, uncertain remote delivery, cancellation and separate attempts are exercised against disposable Git fixtures. Actual host/network variants remain open."
+        }
+      ],
+      "nextStep": "Actual host/network variants remain open."
     },
     {
       "id": "AT-O02",
@@ -405,10 +597,16 @@
       "id": "AT-O05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/retention.test.mjs",
+          "scope": "Central raw-log quota and aging preserve pinned, active, unresolved and unacknowledged evidence plus immutable receipts. Summary/cache/artifact lifecycle completion remains open."
+        }
+      ],
+      "nextStep": "Summary/cache/artifact lifecycle completion remains open."
     },
     {
       "id": "AT-E01",
@@ -441,37 +639,61 @@
       "id": "AT-E04",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Disposable installed payload, CLI/service request identity and generic Git workflows. Complete adversarial variants and actual application routes remain open."
+        }
+      ],
+      "nextStep": "Complete adversarial variants and actual application routes remain open."
     },
     {
       "id": "AT-U01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/integration/native-payload.mjs",
+          "scope": "Compiled native launcher materializes verified immutable payloads and survives simulated bundle replacement. Signing, notarization and real updater paths remain open."
+        }
+      ],
+      "nextStep": "Signing, notarization and real updater paths remain open."
     },
     {
       "id": "AT-U02",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/integration/native-payload.mjs",
+          "scope": "Compiled native launcher materializes verified immutable payloads and survives simulated bundle replacement. Signing, notarization and real updater paths remain open."
+        }
+      ],
+      "nextStep": "Signing, notarization and real updater paths remain open."
     },
     {
       "id": "AT-U03",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Explicit protocol/schema negotiation and adjacent patch bounds reject incompatible peers. Two separately released app versions and physical hosts remain open."
+        }
+      ],
+      "nextStep": "Two separately released app versions and physical hosts remain open."
     },
     {
       "id": "AT-U04",
@@ -486,19 +708,31 @@
       "id": "AT-U05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/lifecycle.test.mjs",
+          "scope": "Same-process idle restart retains paused queued work and private endpoint checks. Real login, background approval and Mac reboot qualification remain open."
+        }
+      ],
+      "nextStep": "Real login, background approval and Mac reboot qualification remain open."
     },
     {
       "id": "AT-01",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-02",
@@ -558,10 +792,16 @@
       "id": "AT-08",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-09",
@@ -576,82 +816,136 @@
       "id": "AT-10",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-11",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-12",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-13",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-14",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-15",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-16",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "build",
+          "source": "apps/ios-qualification/README.md",
+          "scope": "Meaningful fixture app compiles unsigned for Simulator with local records, draft, settings, pending data and Keychain continuity checks. No installation or persistence across physical updates has been tested."
+        }
+      ],
+      "nextStep": "No installation or persistence across physical updates has been tested."
     },
     {
       "id": "AT-17",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-18",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-19",
@@ -684,73 +978,121 @@
       "id": "AT-22",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-23",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-24",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/devices.test.mjs",
+          "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        }
+      ],
+      "nextStep": "No physical operation or network capability is qualified."
     },
     {
       "id": "AT-R01",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Detached committed task landing preserves staged, unstaged, untracked and ignored source work and idempotent replay. Adopted cleanliness policies and every disconnect/head-advance variant remain open."
+        }
+      ],
+      "nextStep": "Complete adopted source policy parity and remaining disconnect/head-advance variants."
     },
     {
       "id": "AT-R02",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/service.test.mjs",
+          "scope": "Detached committed task landing preserves staged, unstaged, untracked and ignored source work and idempotent replay. Adopted cleanliness policies and every disconnect/head-advance variant remain open."
+        }
+      ],
+      "nextStep": "Complete adopted source policy parity and remaining disconnect/head-advance variants."
     },
     {
       "id": "AT-R03",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/history-boundaries.test.mjs",
+          "scope": "Public generic submission rejects shallow history, submodule pointers and unresolved LFS content before source capture while preserving dirty task files. Prerequisite repair and any adopted supported routes remain open."
+        }
+      ],
+      "nextStep": "Verify repaired prerequisite retries and each adopted adapter support boundary."
     },
     {
       "id": "AT-R04",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/github.test.mjs",
+          "scope": "Controlled API fixtures cover required-check head/test-merge association, current rerun ID selection, review/draft/unknown merge state, nonblocking checks and auth/rate/API errors. Full workflow history, notices and live qualification remain open."
+        }
+      ],
+      "nextStep": "Hosted logs, classic statuses, notifications and live destination qualification remain open."
     },
     {
       "id": "AT-R05",
       "track": "core",
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": [],
-      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        }
+      ],
+      "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
     }
   ],
   "acceptanceHardening": {

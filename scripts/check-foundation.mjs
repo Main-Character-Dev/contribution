@@ -14,7 +14,9 @@ assert.equal(canonical.length, 26);
 for (const item of canonical) assert.equal(hash('docs/' + item.destination), item.sourceSha256, item.destination);
 assert(!existsSync(resolve(root, 'docs/schemas')) && !existsSync(resolve(root, 'docs/examples')));
 const baseline = json('docs/verification/s0-retained-baseline.json');
-for (const [path, digest] of Object.entries(baseline.maintainedSha256)) assert.equal(hash(path), digest, path);
+// The S0 acceptance hash is historical. Implementation evidence now evolves;
+// the original definitions and complete case identities remain preserved below.
+for (const [path, digest] of Object.entries(baseline.maintainedSha256)) if (path !== 'docs/verification/acceptance-status.json') assert.equal(hash(path), digest, path);
 assert.equal(new Set(read('docs/requirements/01-PRODUCT_REQUIREMENTS.md').match(/PRD-[A-Z]+-\d+(?=:)/g)).size, 63);
 assert.equal(new Set(read('docs/requirements/08-REMOTE_IPHONE_DEVELOPMENT.md').match(/RDEV-\d+(?= —)/g)).size, 40);
 const ledger = json('docs/verification/acceptance-status.json');
@@ -23,9 +25,19 @@ assert.equal(ledger.cases.filter(c => c.track === 'core' && c.id.startsWith('AT-
 assert.equal(ledger.cases.filter(c => c.track === 'remote-device').length, 24);
 assert.equal(new Set(ledger.cases.map(c => c.id)).size, 83);
 for (const c of ledger.cases) {
-  assert.equal(c.outcome, 'not_run'); assert.equal(c.implementation, 'not_started');
-  assert.equal(c.evidence.length, 0);
+  assert(['not_run', 'partial_fixture'].includes(c.outcome), `${c.id}: no physical/release acceptance is recorded at this checkpoint`);
+  assert(['not_started', 'partial'].includes(c.implementation));
+  if (c.outcome === 'partial_fixture') assert(c.evidence.length > 0);
+  if (c.track === 'remote-device') assert.equal(c.outcome, 'not_run', 'Fixture support never becomes physical-device acceptance');
+  for (const evidence of c.evidence) {
+    assert(['fixture', 'build'].includes(evidence.level));
+    assert(existsSync(resolve(root, evidence.source)), `${c.id}: missing evidence source`);
+    assert(evidence.scope && evidence.scope.length > 20);
+  }
 }
+const caseIds = [read('docs/requirements/06-ACCEPTANCE_TESTS.md'), read('docs/requirements/08-REMOTE_IPHONE_DEVELOPMENT.md')]
+  .flatMap(text => [...text.matchAll(/^\| (AT-(?:[A-Z])?\d{2}) \|/gm)].map(match => match[1]));
+assert.deepEqual([...new Set(ledger.cases.map(c => c.id))].sort(), [...new Set(caseIds)].sort());
 const pins = json('toolchain.json'), pkg = json('package.json');
 assert.equal(pkg.engines.node, pins.node); assert.equal(read('.node-version').trim(), pins.node);
 assert.equal(pkg.packageManager, 'pnpm@' + pins.pnpm);
@@ -66,4 +78,4 @@ for (const file of files(root)) {
     links++;
   }
 }
-console.log(`Foundation checked: MIT, 26 byte-identical JSON imports, 63 PRD/40 RDEV requirements, 83 unrun cases (54 original core + 5 robustness + 24 device), pins, payload boundary, privacy and ${links} local links.`);
+console.log(`Foundation checked: MIT, 26 byte-identical JSON imports, 63 PRD/40 RDEV requirements, all 83 acceptance identities with explicit partial evidence, pins, payload boundary, privacy and ${links} local links.`);
