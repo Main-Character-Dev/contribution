@@ -23,7 +23,8 @@ test('restart reconciles uncertain push delivery by observing the frozen remote 
       if (delivered) git(c.repo, '-c', 'core.hooksPath=/dev/null', 'push', 'origin', 'dev');
       await f.stop();
       const journal = new Journal(f.state), op = journal.get(accepted.operationId);
-      journal.update(op, { state: 'running', effectDispatched: true, result: { gate: { state: 'passed' }, delivery: 'unknown' } }); journal.close();
+      journal.update(op, { state: 'running', effectDispatched: true, result: { delivery: 'unknown' } });
+      journal.put('gate', op.operationId, { state: 'passed', sourceTip: selected.expectedTip }); journal.close();
       const marker = join(c.remote, 'transport-replayed');
       writeFileSync(join(c.remote, 'hooks/pre-receive'), '#!/bin/sh\ntouch "' + marker + '"\nexit 1\n', { mode: 0o700 });
       await f.start(); const result = await f.call('runs.get', { operationId: op.operationId });
@@ -31,6 +32,24 @@ test('restart reconciles uncertain push delivery by observing the frozen remote 
       assert.equal(result.result.delivery, delivered ? 'delivered' : 'unknown');
       if (delivered) assert.equal(result.result.observedBy, 'remote_ref_reconciliation');
       const { existsSync } = await import('node:fs'); assert.equal(existsSync(marker), false);
+      assert.equal((await f.call('push', selected)).operationId, op.operationId);
+    } finally { await f.cleanup(); }
+  }
+});
+
+test('a matching remote never turns absent, failed or differently bound gate evidence into recovered success', async () => {
+  for (const state of ['missing', 'failed', 'wrong-tip']) {
+    const f = await fixture(); try {
+      const c = await configured(f); await f.call('service.pause');
+      const selected = await select(f, c.id), accepted = await f.call('push', selected);
+      git(c.repo, '-c', 'core.hooksPath=/dev/null', 'push', 'origin', 'dev'); await f.stop();
+      const journal = new Journal(f.state), op = journal.get(accepted.operationId);
+      journal.update(op, { state: 'running', effectDispatched: true, result: { delivery: 'unknown' } });
+      if (state !== 'missing') journal.put('gate', op.operationId, { state: state === 'failed' ? 'failed' : 'passed', sourceTip: state === 'wrong-tip' ? 'a'.repeat(40) : selected.expectedTip });
+      journal.close(); await f.start();
+      const result = await f.call('runs.reconcile', { operationId: op.operationId });
+      assert.equal(result.operationState, 'outcome_unknown'); assert.equal(result.result.delivery, 'delivered');
+      assert.equal(result.result.gateReconciliationRequired, true);
       assert.equal((await f.call('push', selected)).operationId, op.operationId);
     } finally { await f.cleanup(); }
   }

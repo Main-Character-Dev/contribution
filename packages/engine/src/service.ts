@@ -476,8 +476,15 @@ export class Engine {
       } else if (op.kind === 'push') {
         const scope = op.input['scope'] as { destination: string; ref: string; tip: string };
         const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
-        if (observed.code === 0 && observed.stdout.split('\t')[0] === scope.tip)
-          this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null, result: { ...op.result, delivery: 'delivered', observedBy: 'remote_ref_reconciliation' } });
+        if (observed.code === 0 && observed.stdout.split('\t')[0] === scope.tip) {
+          // A crash may precede copying the hook's durable receipt into the
+          // outer operation. Remote delivery alone never proves that gate.
+          const gate = this.store.record<ObjectValue>('gate', op.operationId) ?? op.result['gate'] as ObjectValue | undefined;
+          const gateObserved = gate && ['passed', 'inactive'].includes(String(gate['state'])) && gate['sourceTip'] === scope.tip;
+          const result = { ...op.result, gate: gate ?? { state: 'not_run' }, delivery: 'delivered', observedBy: 'remote_ref_reconciliation', gateReconciliationRequired: !gateObserved };
+          if (gateObserved) this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null, result });
+          else this.store.update(op, { stage: 'gate_reconciliation_required', result });
+        }
       } else if (op.kind === 'submit' && typeof op.result['landedTip'] === 'string') {
         const current = await identity(repo.path);
         if (current.tip === op.result['landedTip']) {

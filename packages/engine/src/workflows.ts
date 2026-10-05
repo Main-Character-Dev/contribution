@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, fsyncSync, lstatSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, fsyncSync, lstatSync, realpathSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { Journal } from './journal.js';
 import type { Operation } from './journal.js';
@@ -167,8 +167,10 @@ export class Workflows {
     const config = await git(repo.path, ['config', '--get', 'core.hooksPath']);
     requireValue(config.code === 1, 'EXISTING_HOOK_OWNER', 'Preserve the configured hook dispatcher; adopt its adapter before publication.', 3);
     const path = await gitText(repo.path, ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push']);
+    const hookDirectory = join(path, '..');
+    if (existsSync(hookDirectory)) requireValue(lstatSync(hookDirectory).isDirectory() && !lstatSync(hookDirectory).isSymbolicLink() && realpathSync(hookDirectory).startsWith(realpathSync(repo.commonDir) + '/'), 'EXISTING_HOOK_OWNER', 'The hook directory must remain inside this repository before Contribution can own its dispatcher.', 3);
     const content = `#!/bin/sh\n# Contribution managed pre-push v1\nexec ${quote(this.payload.node)} ${quote(this.payload.cli)} hook pre-push --repo ${quote(repo.id)} --state-dir ${quote(this.store.directory)} --remote "$1" --url "$2"\n`;
-    if (existsSync(path)) requireValue(readFileSync(path, 'utf8') === content, 'EXISTING_HOOK_OWNER', 'Existing pre-push content differs; do not replace its policy.', 3);
+    if (existsSync(path)) requireValue(lstatSync(path).isFile() && !lstatSync(path).isSymbolicLink() && lstatSync(path).uid === process.getuid?.() && (lstatSync(path).mode & 0o100) !== 0 && readFileSync(path, 'utf8') === content, 'EXISTING_HOOK_OWNER', 'Existing pre-push content or executable ownership differs; reconcile its policy before publication.', 3);
     else { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, content, { mode: 0o755, flag: 'wx' }); }
     this.store.put('hook', repo.id, { path, digest: digest(content) });
   }
@@ -195,6 +197,11 @@ export class Workflows {
     const gate = this.store.record<ObjectValue>('gate', op.operationId) ?? { state: 'not_run' };
     const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
     const remoteTip = observed.code === 0 ? observed.stdout.split('\t')[0]?.trim() : null;
+    if (remoteTip === scope.tip && (!['passed', 'inactive'].includes(String(gate['state'])) || gate['sourceTip'] !== scope.tip)) {
+      if (result.code === 0 && /^=\t/m.test(result.stdout) && gate['state'] === 'not_run') return { delivery: 'up_to_date', gate, remoteTip, observedBy: 'git_no_op_after_admission', gitExit: result.code };
+      throw new Fault('PUBLICATION_GATE_UNOBSERVED', 'The requested remote tip is present, but this attempt has no successful or explicitly inactive gate receipt. Preserve both observations and investigate before another push.', 6,
+        { delivery: 'delivered', gate, remoteTip, gitExit: result.code, gateReconciliationRequired: true });
+    }
     if (result.code === 0 && remoteTip === scope.tip) return { delivery: 'delivered', gate, remoteTip, observedBy: 'outer_git_and_remote_ref', gitExit: result.code };
     if (remoteTip === scope.tip) return { delivery: 'delivered', gate, remoteTip, observedBy: 'remote_ref_reconciliation', gitExit: result.code };
     const details = { gate, remoteTip, gitExit: result.code, delivery: 'unknown' };

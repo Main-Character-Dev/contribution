@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-05",
+  "scope": "Landing-flight coordination only; no original gate, candidate promotion or live cutover qualification",
+  "environment": "Disposable Git repositories; four original modules imported read-only",
+  "proof": "tests/integration/legacy-flight-parity.mjs",
+  "result": "passed",
+  "sources": [
+    {
+      "project": "mathy",
+      "head": "7a9f503aac5c8d18f400421966b5c9e67660d76f",
+      "branch": "mathy-30",
+      "flightFileSha256": "b0c04dfe9873f1e635090025dc017f901a12266980d0ab2facd73e8f235a4c01",
+      "flightFileDirty": false
+    },
+    {
+      "project": "maincharacter",
+      "head": "9d20ff9803b9bd305204e02d100bae337d0d02c4",
+      "branch": "mc-ai-129",
+      "flightFileSha256": "f397caa3592f43d136edb8a3ab46810429433d8c73765a66f8378d6313c48ce8",
+      "flightFileDirty": false
+    },
+    {
+      "project": "roboty",
+      "head": "38ac66be63384faa5dc94e932978c75e21d11a80",
+      "branch": "roboty-1",
+      "flightFileSha256": "f397caa3592f43d136edb8a3ab46810429433d8c73765a66f8378d6313c48ce8",
+      "flightFileDirty": false
+    },
+    {
+      "project": "glassalpha",
+      "head": "871532fb343150ec3b896a11505d43019a6b26d3",
+      "branch": "ga-ai-1",
+      "flightFileSha256": "f397caa3592f43d136edb8a3ab46810429433d8c73765a66f8378d6313c48ce8",
+      "flightFileDirty": false
+    }
+  ]
+}

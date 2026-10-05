@@ -30,7 +30,7 @@ export async function run(executable: string, argv: readonly string[], options: 
   if (options.signal?.aborted) throw new Fault('CANCELLED', 'Operation cancelled before dispatch.', 130);
   const environment: NodeJS.ProcessEnv = { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_OPTIONAL_LOCKS: '0' };
   // A caller's Git repository/index overrides must never retarget the service.
-  for (const key of Object.keys(environment)) if (/^GIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG_COUNT|CONFIG_KEY_|CONFIG_VALUE_)/.test(key)) delete environment[key];
+  for (const key of Object.keys(environment)) if (/^GIT_(?:DIR$|COMMON_DIR$|WORK_TREE$|INDEX_FILE$|OBJECT_DIRECTORY$|ALTERNATE_OBJECT_DIRECTORIES$|NAMESPACE$|PREFIX$|CONFIG(?:$|_)|REPLACE_REF_BASE$)/.test(key)) delete environment[key];
   Object.assign(environment, options.env ?? {});
   return new Promise((resolveResult, reject) => {
     const child = spawn(executable, [...argv], { cwd: options.cwd, env: environment, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
