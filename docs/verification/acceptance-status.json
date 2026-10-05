@@ -1,0 +1,767 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-10-04",
+  "scope": "Planning ledger; not device-test-evidence schema or observed acceptance",
+  "coreRelease": "not_verified",
+  "fullRemoteTarget": "not_verified",
+  "cases": [
+    {
+      "id": "AT-A01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-A02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-A03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-A04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-A05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H06",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H07",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-H08",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-M01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-M02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-M03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-M04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P06",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P07",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P08",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P09",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P10",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-P11",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-V01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-V02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-V03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-V04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-V05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-V06",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-G01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-G02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-G03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-G04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-G05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-G06",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-O01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-O02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-O03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-O04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-O05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-E01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-E02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-E03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-E04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-U01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-U02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-U03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-U04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-U05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-01",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-02",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-03",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-04",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-05",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-06",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-07",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-08",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-09",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-10",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-11",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-12",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-13",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-14",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-15",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-16",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-17",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-18",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-19",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-20",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-21",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-22",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-23",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-24",
+      "track": "remote-device",
+      "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone, then run the original case in its required environment."
+    },
+    {
+      "id": "AT-R01",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+    },
+    {
+      "id": "AT-R02",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+    },
+    {
+      "id": "AT-R03",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+    },
+    {
+      "id": "AT-R04",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+    },
+    {
+      "id": "AT-R05",
+      "track": "core",
+      "source": "requirements/06-ACCEPTANCE_TESTS.md",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": [],
+      "nextStep": "Implement the owning milestone and run this focused robustness case; see docs/ACCEPTANCE_HARDENING.md."
+    }
+  ],
+  "acceptanceHardening": {
+    "date": "2026-10-04",
+    "scope": "Existing behavior only; S0 unchanged",
+    "addedCases": [
+      "AT-R01",
+      "AT-R02",
+      "AT-R03",
+      "AT-R04",
+      "AT-R05"
+    ]
+  }
+}

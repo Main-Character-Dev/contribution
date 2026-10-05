@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "recordMode": "fixture",
+  "operationId": "fixture-install-launch-1",
+  "requestId": "fixture-request-install-launch-1",
+  "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+  "executionHostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+  "deviceId": "device-fixture-phone-01",
+  "intent": {
+    "operation": "install_and_launch",
+    "app": {
+      "bundleId": "dev.example.remote.fixture",
+      "teamId": "EXAMPLE123",
+      "applicationIdentifier": "EXAMPLE123.dev.example.remote.fixture",
+      "marketingVersion": "1.0-fixture",
+      "buildVersion": "42"
+    },
+    "artifactRef": {
+      "artifactId": "8d794750-c9dc-4e20-9c7e-80a61886d201",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "installedAppRef": null,
+    "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configurationId": "fixture-development-profile",
+    "adapterId": "fixture-ios-adapter",
+    "policyRevision": "fixture-policy-1",
+    "authorizedOperations": [
+      "install",
+      "launch"
+    ],
+    "mode": "routine",
+    "qualification": null
+  },
+  "context": {
+    "host": {
+      "hostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+      "model": null,
+      "architecture": "unknown",
+      "macOSVersion": null,
+      "macOSBuild": null,
+      "xcodeVersion": null,
+      "xcodeBuild": null
+    },
+    "device": {
+      "deviceId": "device-fixture-phone-01",
+      "model": null,
+      "iOSVersion": null,
+      "iOSBuild": null
+    },
+    "tailscale": {
+      "hostVersion": null,
+      "deviceVersion": null
+    },
+    "backend": {
+      "id": "go-ios",
+      "version": "fixture-only",
+      "revision": "fixture-only"
+    },
+    "engineVersion": null,
+    "network": {
+      "scenario": "remote_wifi",
+      "hostUnderlay": "wifi",
+      "phoneUnderlay": "wifi",
+      "tailnetPath": "relay",
+      "developerSession": "fresh",
+      "internetState": "ready"
+    },
+    "signingMode": "development",
+    "bootstrapMethod": "existing"
+  },
+  "capabilityIds": [
+    "fixture-install-remote-wifi",
+    "fixture-launch-remote-wifi"
+  ],
+  "ownershipId": "6c41fc33-df5d-4dcb-966c-24c328478f24",
+  "requestedAt": "2026-10-04T23:00:00Z",
+  "startedAt": "2026-10-04T23:00:00Z",
+  "completedAt": "2026-10-04T23:02:00Z",
+  "operationState": "failed",
+  "stage": "launching",
+  "resultCertainty": "confirmed",
+  "effects": [
+    {
+      "effectId": "fixture-install-effect",
+      "operation": "install",
+      "state": "succeeded",
+      "certainty": "confirmed",
+      "startedAt": "2026-10-04T23:00:00Z",
+      "completedAt": "2026-10-04T23:01:30Z",
+      "installReadback": {
+        "deviceId": "device-fixture-phone-01",
+        "bundleId": "dev.example.remote.fixture",
+        "teamId": null,
+        "marketingVersion": "1.0-fixture",
+        "buildVersion": "42",
+        "observedAt": "2026-10-04T23:01:30Z",
+        "method": "illustrative installed-app inventory"
+      },
+      "launchReadback": null,
+      "evidenceRefs": [
+        "fixture-install-readback"
+      ],
+      "reasonCodes": [],
+      "missingProof": []
+    },
+    {
+      "effectId": "fixture-launch-effect",
+      "operation": "launch",
+      "state": "failed",
+      "certainty": "confirmed",
+      "startedAt": "2026-10-04T23:01:31Z",
+      "completedAt": "2026-10-04T23:02:00Z",
+      "installReadback": null,
+      "launchReadback": {
+        "deviceId": "device-fixture-phone-01",
+        "bundleId": "dev.example.remote.fixture",
+        "processState": "not_running",
+        "processId": null,
+        "observedAt": "2026-10-04T23:02:00Z",
+        "method": "illustrative process observation"
+      },
+      "evidenceRefs": [
+        "fixture-launch-failure"
+      ],
+      "reasonCodes": [
+        "UNLOCK_REQUIRED"
+      ],
+      "missingProof": []
+    }
+  ],
+  "reconciliation": {
+    "status": "not_required",
+    "attempts": 0,
+    "lastObservedAt": "2026-10-04T23:02:00Z",
+    "nextObservation": null
+  },
+  "logRefs": [
+    "fixture-private-operation-log"
+  ],
+  "reasonCodes": [
+    "UNLOCK_REQUIRED"
+  ],
+  "missingProof": [
+    "This is a non-live fixture. No physical-device acceptance or app-data retention is established."
+  ]
+}

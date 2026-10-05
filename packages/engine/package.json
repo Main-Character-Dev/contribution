@@ -1,0 +1,13 @@
+{
+  "name": "@contribution/engine",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@contribution/contracts": "workspace:*",
+    "@contribution/adapters": "workspace:*"
+  }
+}

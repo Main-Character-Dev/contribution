@@ -1,0 +1,441 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:device-capability:v1",
+  "title": "Contribution operation capability qualification v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "recordMode": {
+      "enum": [
+        "observed",
+        "fixture"
+      ]
+    },
+    "capabilityId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operation": {
+      "enum": [
+        "connect",
+        "prepare",
+        "install",
+        "launch",
+        "logs",
+        "test",
+        "ui",
+        "debug",
+        "screenshot",
+        "screen_capture",
+        "native_xcode_destination"
+      ]
+    },
+    "support": {
+      "enum": [
+        "unverified",
+        "supported",
+        "unsupported",
+        "requires_action"
+      ]
+    },
+    "context": {
+      "$ref": "urn:contribution:schema:device-capability:v1#/$defs/context"
+    },
+    "qualifiedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "evidenceIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "reasonCodes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "recordMode",
+    "capabilityId",
+    "operation",
+    "support",
+    "context",
+    "qualifiedAt",
+    "evidenceIds",
+    "limitations",
+    "reasonCodes"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "context": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "object",
+          "properties": {
+            "hostId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "architecture": {
+              "enum": [
+                "arm64",
+                "x86_64",
+                "unknown"
+              ]
+            },
+            "macOSVersion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "macOSBuild": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "xcodeVersion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "xcodeBuild": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            }
+          },
+          "required": [
+            "hostId",
+            "model",
+            "architecture",
+            "macOSVersion",
+            "macOSBuild",
+            "xcodeVersion",
+            "xcodeBuild"
+          ],
+          "additionalProperties": false
+        },
+        "device": {
+          "type": "object",
+          "properties": {
+            "deviceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "iOSVersion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "iOSBuild": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            }
+          },
+          "required": [
+            "deviceId",
+            "model",
+            "iOSVersion",
+            "iOSBuild"
+          ],
+          "additionalProperties": false
+        },
+        "tailscale": {
+          "type": "object",
+          "properties": {
+            "hostVersion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "deviceVersion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            }
+          },
+          "required": [
+            "hostVersion",
+            "deviceVersion"
+          ],
+          "additionalProperties": false
+        },
+        "backend": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "enum": [
+                "coredevice",
+                "go-ios",
+                "pymobiledevice3-research",
+                "private-ota",
+                "bridge-research"
+              ]
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            },
+            "revision": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "revision"
+          ],
+          "additionalProperties": false
+        },
+        "engineVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "network": {
+          "type": "object",
+          "properties": {
+            "scenario": {
+              "enum": [
+                "same_lan_wifi",
+                "remote_wifi",
+                "isolated_guest_wifi",
+                "warm_cellular",
+                "cold_cellular",
+                "tethered",
+                "mixed",
+                "unknown"
+              ]
+            },
+            "hostUnderlay": {
+              "enum": [
+                "ethernet",
+                "wifi",
+                "cellular_tether",
+                "unknown"
+              ]
+            },
+            "phoneUnderlay": {
+              "enum": [
+                "wifi",
+                "cellular",
+                "unknown"
+              ]
+            },
+            "tailnetPath": {
+              "enum": [
+                "direct",
+                "relay",
+                "unknown"
+              ]
+            },
+            "developerSession": {
+              "enum": [
+                "fresh",
+                "existing",
+                "none",
+                "unknown"
+              ]
+            },
+            "internetState": {
+              "enum": [
+                "ready",
+                "captive_portal",
+                "offline",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "scenario",
+            "hostUnderlay",
+            "phoneUnderlay",
+            "tailnetPath",
+            "developerSession",
+            "internetState"
+          ],
+          "additionalProperties": false
+        },
+        "signingMode": {
+          "enum": [
+            "development",
+            "ad_hoc",
+            "not_applicable",
+            "unknown"
+          ]
+        },
+        "bootstrapMethod": {
+          "enum": [
+            "existing",
+            "wireless",
+            "usb",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "host",
+        "device",
+        "tailscale",
+        "backend",
+        "engineVersion",
+        "network",
+        "signingMode",
+        "bootstrapMethod"
+      ],
+      "additionalProperties": false
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "scenario": {
+          "enum": [
+            "same_lan_wifi",
+            "remote_wifi",
+            "isolated_guest_wifi",
+            "warm_cellular",
+            "cold_cellular",
+            "tethered",
+            "mixed",
+            "unknown"
+          ]
+        },
+        "hostUnderlay": {
+          "enum": [
+            "ethernet",
+            "wifi",
+            "cellular_tether",
+            "unknown"
+          ]
+        },
+        "phoneUnderlay": {
+          "enum": [
+            "wifi",
+            "cellular",
+            "unknown"
+          ]
+        },
+        "tailnetPath": {
+          "enum": [
+            "direct",
+            "relay",
+            "unknown"
+          ]
+        },
+        "developerSession": {
+          "enum": [
+            "fresh",
+            "existing",
+            "none",
+            "unknown"
+          ]
+        },
+        "internetState": {
+          "enum": [
+            "ready",
+            "captive_portal",
+            "offline",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "scenario",
+        "hostUnderlay",
+        "phoneUnderlay",
+        "tailnetPath",
+        "developerSession",
+        "internetState"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "support": {
+            "const": "supported"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "qualifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

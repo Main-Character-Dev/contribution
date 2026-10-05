@@ -1,0 +1,45 @@
+# Roadmap
+
+S0 now supplies the development foundation described in [SETUP_STATUS.md](SETUP_STATUS.md). All application and hardware acceptance remains unrun. This roadmap adds S0 before the supplied implementation milestones; it removes none of them.
+
+## Immediate next step
+
+**S0 — Repository foundation implemented.** The reproducible build, native shell, shared packages, schema validation, focused checks, privacy exclusions, short agent guidance and toolchain records are present. Visual window/menu inspection remains explicitly pending with available GUI access. See [SETUP_STATUS.md](SETUP_STATUS.md) for proof. S0 is a subset of M0 preparation, not completion of M0 or authorization to continue through M6.
+
+The next bounded implementation task is the remaining **M0 installed-payload boundary**: immutable app/helper/engine/CLI/runtime packaging and discovery identity. Then qualify M1 storage, migrations and durable admission. This setup stops before either task.
+
+## Core product
+
+| Milestone | Outcome | Depends on | Status |
+|---|---|---|---|
+| M0 | Buildable app/CLI/engine with one identity, installed-payload boundary, initial storage migration and maintained instructions | S0 | Foundation subset only; installed payload/storage pending |
+| M1 | Durable service, admission, journal, events, logs, cancellation and recovery foundation | M0 | Planned |
+| M2 | First useful explicit push workflow, exact preview scope, one gate, observed delivery | M1 | Planned |
+| M3 | GitHub/PR observation, information design, logs and notifications | M2 | Planned |
+| M4 | Shared mechanics extracted with repository-specific policy and migration parity | M1–M3 foundations | Planned |
+| M5 | Durable two-Mac enrollment, bootstrap, handoff, authority cutover and safe mirrors | M4 and real host access | Planned |
+| M6 | Signed packaging, safe updates, lifecycle and complete core qualification | Core behavior and release credentials | Planned |
+
+M2 should use a generic disposable fixture before migrating real repositories. M4 begins with reporting parity, then extraction, then one-repository-at-a-time adoption. Neither these milestones nor repository setup authorizes GitHub publication or changing unrelated live project configuration.
+
+## Remote Devices
+
+| Phase | Outcome | Dependency and timing | Status |
+|---|---|---|---|
+| D0 | Observed inventory, ownership, independently approved trust/signing, backend/license/privilege review and actual travel caller | Read-only setup inventory begins in S0; complete alongside M0 | Local read-only toolchain recorded; peer/phone/trust/signing/caller unknown |
+| D1 | Bounded native baseline, remote Wi-Fi, warm cellular, fresh cellular and restart experiments | Start as soon as M1 provides journal, authorization and scoped dispatch; do not wait for M4/M5 | Unverified |
+| D2 | Offline preparation, immutable artifact transfer, verified in-place installation and meaningful data continuity on each Mac | M1/M2 plus relevant project adapter parity and qualified route | Unverified |
+| D3 | Independently qualified launch, logs, native tests, UI interaction and debugging | D2 and per-operation backend proof | Unverified |
+| D4 | Two-host ownership, uncertainty, recovery, revocation, compatibility, retention and release proof | D2/D3 coordinated with M6 | Unverified |
+
+D1 starts with at most three connection attempts per recorded case under a finite deadline. The package's initial investigation budget is two focused engineering days plus one assisted session up to 90 minutes, adjusted before testing to owner availability. A new experiment needs a distinct hypothesis. This budget applies to future authorized investigation, not an instruction to wait or experiment during setup.
+
+AT-08, AT-09 and AT-10 remain open until fresh cellular and restart evidence exists. An experiment that correctly reports a blocker may verify error handling while leaving the intended remote capability unresolved. OTA fallback never silently closes the direct developer-session target.
+
+## Completion and continuation
+
+Track each original case in [the acceptance ledger](verification/acceptance-status.json). Add evidence per context; do not replace the overall case with one success from a different host or operation. Track core release, enabled capability availability, and full remote-target completion separately.
+
+The [acceptance hardening review](ACCEPTANCE_HARDENING.md) adds AT-R01–05 to the existing plan: 59 core and 24 device cases now remain tracked. Implement these with M2/M3 or M4/M5 as assigned, reusing existing scenarios for already-covered checks. S0 and approved product scope are unchanged.
+
+Missing hardware, signing, unlock/trust prompts, or network switching blocks only dependent proof. Continue authorized independent work. Preserve every unresolved requirement with its blocker, next decisive proof, and relevant IDs. See [VERIFICATION.md](VERIFICATION.md) for the current access matrix and later evidence standard.

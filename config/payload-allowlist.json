@@ -1,0 +1,18 @@
+{
+  "status": "development-only; M0 must define and verify immutable installed payloads",
+  "developmentAppInputs": [
+    "apps/macos/Sources/ContributionApp.swift",
+    "apps/macos/Packages/ContributionPlatform/Sources/ContributionPlatform/*.swift",
+    "apps/macos/Config/Info.plist",
+    "apps/macos/Config/Version.xcconfig"
+  ],
+  "developmentCLIInputs": [
+    "packages/cli/dist/*.js",
+    "packages/engine/dist/*.js",
+    "packages/adapters/dist/*.js",
+    "packages/contracts/dist/**/*.js",
+    "packages/contracts/schemas/*.json"
+  ],
+  "releasePackaging": "unavailable",
+  "releaseInputs": []
+}

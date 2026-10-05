@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+engineStrict: true
+saveExact: true
+storeDir: .cache/pnpm-store
+cacheDir: .cache/pnpm-cache
+minimumReleaseAge: 0
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+allowBuilds: {}

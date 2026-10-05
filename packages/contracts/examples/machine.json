@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "hostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+  "label": "MacBook Pro",
+  "role": "companion",
+  "primaryHostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+  "primarySshAlias": "mini",
+  "projectRoots": [
+    "/Users/example/Projects"
+  ],
+  "repositories": [
+    {
+      "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+      "path": "/Users/example/Projects/example-project",
+      "availability": "both-macs"
+    }
+  ],
+  "notifications": {
+    "preferredHostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+    "success": true,
+    "failure": true
+  },
+  "retention": {
+    "rawLogDays": 30,
+    "summaryDays": 365,
+    "maxLogBytes": 2147483648
+  },
+  "contributionSourcePath": "/Users/example/Projects/contribution"
+}

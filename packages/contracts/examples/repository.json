@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+  "name": "Example Project",
+  "integration": {
+    "branch": "dev",
+    "adapter": "generic-v1"
+  },
+  "publication": {
+    "remote": null,
+    "branch": null,
+    "pullRequestBase": null,
+    "mode": "explicit"
+  },
+  "validation": {
+    "profile": "local-development",
+    "gate": "enabled",
+    "adapter": "generic-v1",
+    "builtins": [
+      "clean-primary",
+      "source-ownership",
+      "safe-ref-update"
+    ],
+    "checks": []
+  },
+  "runtime": {
+    "node": "repository",
+    "packageManager": "repository"
+  }
+}

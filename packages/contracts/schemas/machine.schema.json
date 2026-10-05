@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:machine:v1",
+  "title": "Contribution private machine configuration v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "hostId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "role": {
+      "enum": [
+        "primary",
+        "companion",
+        "standalone"
+      ]
+    },
+    "primaryHostId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "primarySshAlias": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projectRoots": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "repositoryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "availability": {
+            "enum": [
+              "this-mac",
+              "both-macs"
+            ]
+          }
+        },
+        "required": [
+          "repositoryId",
+          "path",
+          "availability"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "properties": {
+        "preferredHostId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "failure": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "preferredHostId",
+        "success",
+        "failure"
+      ],
+      "additionalProperties": false
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "rawLogDays": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30
+        },
+        "summaryDays": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 365
+        },
+        "maxLogBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 2147483648
+        }
+      },
+      "required": [
+        "rawLogDays",
+        "summaryDays",
+        "maxLogBytes"
+      ],
+      "additionalProperties": false
+    },
+    "contributionSourcePath": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional private local source checkout registration. Never a runtime executable source."
+    },
+    "remoteDevices": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "maintainSession": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "enabled",
+        "maintainSession"
+      ],
+      "additionalProperties": false,
+      "description": "Optional private per-host module settings. Absence disables Remote Devices. Neither setting grants a device operation."
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "hostId",
+    "label",
+    "role",
+    "primaryHostId",
+    "primarySshAlias",
+    "projectRoots",
+    "repositories",
+    "notifications",
+    "retention"
+  ],
+  "additionalProperties": false
+}

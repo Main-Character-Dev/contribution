@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:device-ownership:v1",
+  "title": "Contribution private device ownership record v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "recordMode": {
+      "enum": [
+        "observed",
+        "fixture"
+      ]
+    },
+    "ownershipId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "deviceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ownerHostId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "selectedHostId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "previousHostId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "state": {
+      "enum": [
+        "unowned",
+        "owned",
+        "transfer_pending",
+        "previous_owner_unconfirmed",
+        "busy_external",
+        "blocked"
+      ]
+    },
+    "mutationsPermitted": {
+      "type": "boolean"
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "activeOperationIds": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "leaseExpiresAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "priorSession": {
+      "enum": [
+        "none",
+        "released",
+        "active",
+        "unknown"
+      ]
+    },
+    "releaseReceiptRef": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "recoveryEvidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "externalSession": {
+      "enum": [
+        "absent",
+        "present",
+        "unknown"
+      ]
+    },
+    "observedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "reasonCodes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "recordMode",
+    "ownershipId",
+    "deviceId",
+    "ownerHostId",
+    "selectedHostId",
+    "previousHostId",
+    "state",
+    "mutationsPermitted",
+    "revision",
+    "activeOperationIds",
+    "leaseExpiresAt",
+    "priorSession",
+    "releaseReceiptRef",
+    "recoveryEvidenceRefs",
+    "externalSession",
+    "observedAt",
+    "reasonCodes"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "owned"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ownerHostId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "unowned",
+              "transfer_pending",
+              "previous_owner_unconfirmed",
+              "busy_external",
+              "blocked"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "mutationsPermitted": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

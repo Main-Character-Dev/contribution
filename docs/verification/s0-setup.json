@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "observedDate": "2026-10-04",
+  "timezone": "America/New_York",
+  "scope": "S0 independent repository foundation only",
+  "checkout": "/Users/gabe/.codex/worktrees/0e4e/contribution",
+  "branch": "codex/s0-foundation",
+  "baseCommit": "4a23aaebfbf51dbf33eba30b479a0a8fea4c76ca",
+  "pins": {
+    "node": "24.21.0",
+    "nodeDarwinArm64Sha256": "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
+    "pnpm": "11.23.0",
+    "pnpmIntegrity": "sha512-8ACC5bKDoZm3Tgedoo0VXACP4jL0TIoG6n3foBTs9xn8Ni95DsxnsoEG3awq+yTEmpoHkVnaVgss59Hpjv0Rrw==",
+    "typescript": "5.9.3",
+    "xcode": "27.0",
+    "xcodeBuild": "27A266a",
+    "swift": "6.4",
+    "swiftLanguageMode": "6",
+    "macOSSDK": "27.0",
+    "macOSDeploymentTarget": "14.0",
+    "architecture": "arm64"
+  },
+  "buildIdentity": {
+    "version": "0.1.0",
+    "build": "1",
+    "channel": "development",
+    "schemaVersion": 1
+  },
+  "checks": [
+    {
+      "command": "bash scripts/setup.sh",
+      "outcome": "passed",
+      "exit": 0
+    },
+    {
+      "command": "bash scripts/dev.sh check",
+      "outcome": "passed",
+      "exit": 0,
+      "testsPassed": 31,
+      "schemas": 12,
+      "examples": 14,
+      "negativeShapesRejected": 23,
+      "formats": [
+        "date-time",
+        "uuid",
+        "uri"
+      ],
+      "generatedOutputs": 15,
+      "localLinksChecked": 197
+    },
+    {
+      "command": "bash scripts/dev.sh check:foundation",
+      "outcome": "passed",
+      "exit": 0,
+      "finalLocalLinksChecked": 200
+    },
+    {
+      "command": "bash scripts/dev.sh native:test",
+      "outcome": "passed",
+      "exit": 0,
+      "xctestMethods": 2,
+      "positiveEnvelopeCases": 9,
+      "negativeEnvelopeCases": 11,
+      "developmentResponsesCompared": 2
+    },
+    {
+      "command": "bash scripts/dev.sh native:build",
+      "outcome": "passed",
+      "exit": 0,
+      "minimumOS": "14.0",
+      "architecture": "arm64",
+      "bundleFiles": [
+        "Contents/Info.plist",
+        "Contents/PkgInfo",
+        "Contents/MacOS/Contribution"
+      ],
+      "releaseSigningQualified": false
+    },
+    {
+      "command": ".build/native/Build/Products/Debug/Contribution.app/Contents/MacOS/Contribution",
+      "outcome": "process_launch_passed",
+      "durationSeconds": 3,
+      "terminatedOwnChild": true,
+      "visualWindowMenu": "pending",
+      "missingProof": "Existing Screen Recording permission absent; no new permission requested."
+    },
+    {
+      "command": "git diff --check; git diff --cached --check",
+      "outcome": "passed",
+      "exit": 0
+    }
+  ],
+  "cleanSnapshot": {
+    "path": "/private/tmp/contribution-s0-clean-v4_2fqwd",
+    "stagedTree": "a623a3d444bf45740d0e8889b26452415bb45776",
+    "method": "git checkout-index --all",
+    "commands": [
+      "bash scripts/setup.sh",
+      "bash scripts/dev.sh check",
+      "bash scripts/dev.sh native:test",
+      "bash scripts/dev.sh native:build"
+    ],
+    "allExitZero": true,
+    "independentToolsAndDependencies": true,
+    "emptyInitialBuildOutputs": true
+  },
+  "retained": {
+    "originalCoreCases": 54,
+    "robustnessAdditions": 5,
+    "deviceCases": 24,
+    "allOutcomes": "not_run",
+    "prdRequirements": 63,
+    "rdevRequirements": 40,
+    "canonicalJsonImportsByteIdentical": 26,
+    "mitLicenseUnchanged": true,
+    "handoffWorkPreserved": true
+  },
+  "qualification": {
+    "foundationFixtureProof": "passed",
+    "oneMacDevelopmentBuild": "passed",
+    "visualWindowMenu": "pending",
+    "coreRelease": "not_verified",
+    "twoMac": "not_run",
+    "physicalDeviceOperations": "not_run",
+    "M0Complete": false
+  },
+  "sideEffects": {
+    "serviceRegistered": false,
+    "globalCLIInstalled": false,
+    "otherRepositoriesOrHooksChanged": false,
+    "pairingOrSigningImported": false,
+    "networkOrSecurityChanged": false,
+    "physicalDeviceOperated": false,
+    "pushedPublishedDeployed": false
+  },
+  "nextBoundedTask": "Remaining M0 immutable installed payload and discovery identity; M1 journal/admission and further D0 inventory follow only when authorized."
+}

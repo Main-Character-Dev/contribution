@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "requestStatus": "completed",
+  "operationId": null,
+  "operationState": null,
+  "result": {
+    "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+    "canonicalHostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+    "canonicalBranch": "dev",
+    "canonicalTip": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "publication": {
+      "remote": "origin",
+      "branch": "dev",
+      "remoteTip": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "relation": "ahead",
+      "ahead": 2,
+      "behind": 0,
+      "observedAt": "2026-10-04T18:00:00Z",
+      "freshness": "fresh",
+      "action": "push",
+      "enabled": true,
+      "blockedReason": null
+    },
+    "pending": {
+      "localSubmissions": 1,
+      "landingJobs": 0,
+      "dirtyWorktrees": 0
+    }
+  },
+  "error": null
+}

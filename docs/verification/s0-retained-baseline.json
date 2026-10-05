@@ -1,0 +1,14 @@
+{
+  "baseCommit": "4a23aaebfbf51dbf33eba30b479a0a8fea4c76ca",
+  "maintainedSha256": {
+    "docs/requirements/01-PRODUCT_REQUIREMENTS.md": "ddc1dba832f137be1e01f14a024f265422a774d14ba3bda736d229184f82cd19",
+    "docs/requirements/02-ARCHITECTURE.md": "c43a8ec9a9d56552249958b4d4e2efaad25958900cc88a700182753f144f428e",
+    "docs/requirements/03-AGENT_CONTRACT.md": "6293a918e55bdd20150940b065e4035651f7215a1b03aa0007ffa86b99fb37df",
+    "docs/requirements/04-REPOSITORY_MIGRATION.md": "69c0e8027b7948ca6cfd78b09265e5d2b3305b051ce8f3b25938226922850db0",
+    "docs/requirements/05-IMPLEMENTATION_PLAN.md": "6530b4790e3d04087fe9a2a551c168736bede458d468bd2e09538aa39ce2448e",
+    "docs/requirements/06-ACCEPTANCE_TESTS.md": "8302d0dfb7e9dd033fafc0e79390d6976191e35f05e4908ed308185ec87d5117",
+    "docs/requirements/07-SOURCES_AND_DECISIONS.md": "87e0a06772021911c809a003f32a825dce8d32330fb6b1d2156fadd074ee82cb",
+    "docs/requirements/08-REMOTE_IPHONE_DEVELOPMENT.md": "65bfb61fa51936c81c8c54e89e395898c7c0fc1389366c33025a000ca4d6121e",
+    "docs/verification/acceptance-status.json": "a7103fa909530fd129934ee0d71cb91ad25ca82d437a3c0c65c5250d330bc301"
+  }
+}

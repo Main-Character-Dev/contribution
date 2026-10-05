@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "eventId": "a11f4bda-2d3e-468a-84be-9963120e8a41",
+  "originHostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+  "sequence": 42,
+  "operationId": "019bf410-3c40-729c-a1f1-67fb7a20cbea",
+  "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+  "occurredAt": "2026-10-04T18:01:00Z",
+  "type": "submission.accepted",
+  "payload": {
+    "requestId": "f23ccfb5-fb8f-4a19-a08c-06a0509939de",
+    "operationState": "queued",
+    "sourceTip": "cccccccccccccccccccccccccccccccccccccccc",
+    "sourceRetained": true,
+    "acceptance": {
+      "localDurable": true,
+      "canonicalHostAccepted": true,
+      "canonicalHostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+      "acceptedAt": "2026-10-04T18:01:00Z"
+    }
+  }
+}

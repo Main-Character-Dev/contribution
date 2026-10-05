@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:artifact-provenance:v1",
+  "title": "Contribution signed artifact provenance v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "recordMode": {
+      "enum": [
+        "observed",
+        "fixture"
+      ]
+    },
+    "artifactId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "tree": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "inputDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "configurationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configurationDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "adapterId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapterVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policyRevision": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "commit",
+        "tree",
+        "inputDigest",
+        "configurationId",
+        "configurationDigest",
+        "adapterId",
+        "adapterVersion",
+        "policyRevision"
+      ],
+      "additionalProperties": false
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "hostId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attemptId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preparedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "macOSVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "macOSBuild": {
+          "type": "string",
+          "minLength": 1
+        },
+        "xcodeVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "xcodeBuild": {
+          "type": "string",
+          "minLength": 1
+        },
+        "engineVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "hostId",
+        "attemptId",
+        "preparedAt",
+        "macOSVersion",
+        "macOSBuild",
+        "xcodeVersion",
+        "xcodeBuild",
+        "engineVersion"
+      ],
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "format": {
+          "enum": [
+            "ipa",
+            "signed_app_archive"
+          ]
+        }
+      },
+      "required": [
+        "sha256",
+        "bytes",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "app": {
+      "type": "object",
+      "properties": {
+        "bundleId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "teamId": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{10}$"
+        },
+        "applicationIdentifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "marketingVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "buildVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "bundleId",
+        "teamId",
+        "applicationIdentifier",
+        "marketingVersion",
+        "buildVersion"
+      ],
+      "additionalProperties": false
+    },
+    "signing": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "development",
+            "ad_hoc"
+          ]
+        },
+        "signatureVerified": {
+          "const": true
+        },
+        "provisioningVerified": {
+          "const": true
+        },
+        "entitlementsDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "provisioningProfileDigest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "eligibleDeviceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "mode",
+        "signatureVerified",
+        "provisioningVerified",
+        "entitlementsDigest",
+        "provisioningProfileDigest",
+        "eligibleDeviceRefs",
+        "verifiedAt"
+      ],
+      "additionalProperties": false
+    },
+    "deviceAcceptance": {
+      "const": "not_established_by_preparation"
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "recordMode",
+    "artifactId",
+    "repositoryId",
+    "source",
+    "build",
+    "artifact",
+    "app",
+    "signing",
+    "deviceAcceptance",
+    "evidenceRefs"
+  ],
+  "additionalProperties": false
+}

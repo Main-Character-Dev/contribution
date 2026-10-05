@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "recordMode": "fixture",
+  "ownershipId": "6c41fc33-df5d-4dcb-966c-24c328478f24",
+  "deviceId": "device-fixture-phone-01",
+  "ownerHostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+  "selectedHostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+  "previousHostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+  "state": "previous_owner_unconfirmed",
+  "mutationsPermitted": false,
+  "revision": "fixture-ownership-revision-3",
+  "activeOperationIds": [
+    "fixture-install-uncertain"
+  ],
+  "leaseExpiresAt": "2026-10-04T22:59:00Z",
+  "priorSession": "unknown",
+  "releaseReceiptRef": null,
+  "recoveryEvidenceRefs": [],
+  "externalSession": "unknown",
+  "observedAt": "2026-10-04T23:00:00Z",
+  "reasonCodes": [
+    "PREVIOUS_OWNER_UNCONFIRMED",
+    "OUTCOME_UNCERTAIN"
+  ]
+}

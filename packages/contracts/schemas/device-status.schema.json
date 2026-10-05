@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:device-status:v1",
+  "title": "Contribution completed private device status response v1",
+  "allOf": [
+    {
+      "$ref": "urn:contribution:schema:response:v1"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "requestStatus": {
+          "const": "completed"
+        },
+        "operationId": {
+          "type": "null"
+        },
+        "operationState": {
+          "type": "null"
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "recordMode": {
+              "enum": [
+                "observed",
+                "fixture"
+              ]
+            },
+            "repositoryId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "executionHostId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "canonicalHostId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "deviceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "observedAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "freshness": {
+              "enum": [
+                "fresh",
+                "stale",
+                "unknown"
+              ]
+            },
+            "network": {
+              "$ref": "urn:contribution:schema:device-capability:v1#/$defs/network"
+            },
+            "host": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "online",
+                    "offline",
+                    "unavailable",
+                    "unknown"
+                  ]
+                },
+                "tailnet": {
+                  "enum": [
+                    "ready",
+                    "route_unavailable",
+                    "access_denied",
+                    "offline",
+                    "unknown"
+                  ]
+                },
+                "reasonCodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$"
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "state",
+                "tailnet",
+                "reasonCodes"
+              ],
+              "additionalProperties": false
+            },
+            "trust": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "trusted",
+                    "unpaired",
+                    "verification_failed",
+                    "revoked",
+                    "unknown"
+                  ]
+                },
+                "observedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "reasonCodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$"
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "state",
+                "observedAt",
+                "reasonCodes"
+              ],
+              "additionalProperties": false
+            },
+            "developerService": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "ready",
+                    "unavailable",
+                    "unlock_required",
+                    "developer_mode_required",
+                    "incompatible",
+                    "busy",
+                    "unknown"
+                  ]
+                },
+                "session": {
+                  "enum": [
+                    "owned",
+                    "external",
+                    "none",
+                    "unknown"
+                  ]
+                },
+                "sessionRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "reasonCodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$"
+                  },
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "state",
+                "session",
+                "sessionRef",
+                "reasonCodes"
+              ],
+              "additionalProperties": false
+            },
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "$ref": "urn:contribution:schema:device-capability:v1"
+              }
+            },
+            "availability": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "enum": [
+                      "connect",
+                      "prepare",
+                      "install",
+                      "launch",
+                      "logs",
+                      "test",
+                      "ui",
+                      "debug",
+                      "screenshot",
+                      "screen_capture",
+                      "native_xcode_destination"
+                    ]
+                  },
+                  "callable": {
+                    "type": "boolean"
+                  },
+                  "capabilityId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "reasonCodes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]*$"
+                    },
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "operation",
+                  "callable",
+                  "capabilityId",
+                  "reasonCodes"
+                ],
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "callable": {
+                          "const": false
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "reasonCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Z][A-Z0-9_]*$"
+                          },
+                          "minItems": 1
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "ownership": {
+              "$ref": "urn:contribution:schema:device-ownership:v1"
+            },
+            "unresolvedOperationIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "nextActions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "argv": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "argv"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "recordMode",
+            "repositoryId",
+            "executionHostId",
+            "canonicalHostId",
+            "deviceId",
+            "observedAt",
+            "freshness",
+            "network",
+            "host",
+            "trust",
+            "developerService",
+            "capabilities",
+            "availability",
+            "ownership",
+            "unresolvedOperationIds",
+            "nextActions"
+          ],
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    }
+  ]
+}

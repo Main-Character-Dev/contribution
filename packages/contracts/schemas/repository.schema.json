@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:repository:v1",
+  "title": "Contribution repository configuration v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "integration": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "branch",
+        "adapter"
+      ],
+      "additionalProperties": false
+    },
+    "publication": {
+      "type": "object",
+      "properties": {
+        "remote": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pullRequestBase": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "const": "explicit"
+        }
+      },
+      "required": [
+        "remote",
+        "branch",
+        "pullRequestBase",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "enum": [
+            "local-development",
+            "standard"
+          ]
+        },
+        "gate": {
+          "enum": [
+            "enabled",
+            "inactive"
+          ]
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        },
+        "builtins": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "profiles": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "local-development",
+                    "standard"
+                  ]
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "argv": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              "cwd": {
+                "type": "string",
+                "minLength": 1,
+                "description": "A relative directory resolved and validated within the intended repository context."
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "reuse": {
+                "enum": [
+                  "never",
+                  "adapter"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "profiles",
+              "argv",
+              "cwd",
+              "timeoutSeconds",
+              "reuse"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "gate",
+        "adapter",
+        "builtins",
+        "checks"
+      ],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "const": "repository"
+        },
+        "packageManager": {
+          "const": "repository"
+        }
+      },
+      "required": [
+        "node",
+        "packageManager"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "repositoryId",
+    "name",
+    "integration",
+    "publication",
+    "validation",
+    "runtime"
+  ],
+  "additionalProperties": false
+}

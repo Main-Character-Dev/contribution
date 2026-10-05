@@ -1,0 +1,14 @@
+{
+  "node": "24.21.0",
+  "nodeDarwinArm64Sha256": "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
+  "pnpm": "11.23.0",
+  "pnpmIntegrity": "sha512-8ACC5bKDoZm3Tgedoo0VXACP4jL0TIoG6n3foBTs9xn8Ni95DsxnsoEG3awq+yTEmpoHkVnaVgss59Hpjv0Rrw==",
+  "typescript": "5.9.3",
+  "xcode": "27.0",
+  "xcodeBuild": "27A266a",
+  "swift": "6.4",
+  "swiftLanguageMode": "6",
+  "macOSSDK": "27.0",
+  "macOSDeploymentTarget": "14.0",
+  "architecture": "arm64"
+}

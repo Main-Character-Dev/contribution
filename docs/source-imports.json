@@ -1,0 +1,222 @@
+{
+  "packageRevision": 2,
+  "archiveSha256": "ab9ce17f9f34af27276666af9312fbc1d8106b8715ac7b5fd7cf071358faa20a",
+  "imports": [
+    {
+      "source": "docs/01-PRODUCT_REQUIREMENTS.md",
+      "destination": "requirements/01-PRODUCT_REQUIREMENTS.md",
+      "sourceSha256": "f5dc7a56cc73e9f0c12bd6b07798601f21648025f566d91d60126eb996cae094",
+      "treatment": "maintained import; private links replaced; historical branch examples generalized where present"
+    },
+    {
+      "source": "docs/02-ARCHITECTURE.md",
+      "destination": "requirements/02-ARCHITECTURE.md",
+      "sourceSha256": "c82ccd4fd1fe6160ca91d94a92865a8d55e4c140de65054731b7239302306364",
+      "treatment": "maintained import; private links replaced; historical branch examples generalized where present"
+    },
+    {
+      "source": "docs/03-AGENT_CONTRACT.md",
+      "destination": "requirements/03-AGENT_CONTRACT.md",
+      "sourceSha256": "612fd2fc3fea3c9f321ac72ae94339b93582c07408af815a6e1b0288a5cba0e1",
+      "treatment": "maintained import; private links replaced; historical branch examples generalized where present"
+    },
+    {
+      "source": "docs/05-IMPLEMENTATION_PLAN.md",
+      "destination": "requirements/05-IMPLEMENTATION_PLAN.md",
+      "sourceSha256": "dc618f5ad5d518d9f19d3629ac594337173b25c0de24125e18172985faa606a8",
+      "treatment": "maintained import; private links replaced; historical branch examples generalized where present"
+    },
+    {
+      "source": "docs/06-ACCEPTANCE_TESTS.md",
+      "destination": "requirements/06-ACCEPTANCE_TESTS.md",
+      "sourceSha256": "1f3b5f77a7bc701a105b57c1260544d328979a6fda8572f2b48e5a6b48dcfc34",
+      "treatment": "maintained import; private links replaced; historical branch examples generalized where present"
+    },
+    {
+      "source": "docs/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "destination": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+      "sourceSha256": "eefbf676a55e2b8ea450bbfbfc6ddea1e2830574d6c59534745c284f8d2dd13b",
+      "treatment": "maintained import; private links replaced; historical branch examples generalized where present"
+    },
+    {
+      "source": "schemas/README.md",
+      "destination": "../packages/contracts/schemas/README.md",
+      "sourceSha256": "d4931bb7c349d0456b972c6b10a52d361ead5764e66a126e23fdf4b7e4f0e6e8",
+      "treatment": "relative documentation links updated"
+    },
+    {
+      "source": "schemas/artifact-provenance.schema.json",
+      "destination": "../packages/contracts/schemas/artifact-provenance.schema.json",
+      "sourceSha256": "337680768cf3a6893c59ef9c8867c9d7edb8468520b5c7029924db031c3d86cb",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/device-capability.schema.json",
+      "destination": "../packages/contracts/schemas/device-capability.schema.json",
+      "sourceSha256": "2f7db8a44bbb16295868646241f5fb41722fd480c172af2ba9d720c580811958",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/device-operation.schema.json",
+      "destination": "../packages/contracts/schemas/device-operation.schema.json",
+      "sourceSha256": "7de2962c2ab2b234c3c857fb9d59957c771ecf5295a88dd7fdd1961f2cf8f751",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/device-ownership.schema.json",
+      "destination": "../packages/contracts/schemas/device-ownership.schema.json",
+      "sourceSha256": "1c62858c9fd91860040c51bf5e2ac1a694771d15cba9766fc69f4d0cd0316580",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/device-status.schema.json",
+      "destination": "../packages/contracts/schemas/device-status.schema.json",
+      "sourceSha256": "9a532d58642e1847d32073541e5b2d9706de9edeb4fa274bb3c84d0802aa726b",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/device-test-evidence.schema.json",
+      "destination": "../packages/contracts/schemas/device-test-evidence.schema.json",
+      "sourceSha256": "fea885ea5917540e72fa8f11e6567e28210d4105aba07673502ffadf2cf5a62f",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/event.schema.json",
+      "destination": "../packages/contracts/schemas/event.schema.json",
+      "sourceSha256": "98e90b512226c07804b950ddbddd0a1e729384dc5597aeac736565808bc122eb",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/machine.schema.json",
+      "destination": "../packages/contracts/schemas/machine.schema.json",
+      "sourceSha256": "93db2f704d21c7b89904e9c4fdd1c0b4ce994fbd3003b270e59e52f8bd70d4f5",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/repository.schema.json",
+      "destination": "../packages/contracts/schemas/repository.schema.json",
+      "sourceSha256": "59fe3c606550079d4a627680bbb7099703b5ae2ef2b776a7ce0554e4d0d442a1",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/response.schema.json",
+      "destination": "../packages/contracts/schemas/response.schema.json",
+      "sourceSha256": "18a2ee34264e5d65f142e6b347359b85a65e8f88148e4516da05ea9684e08e28",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/status.schema.json",
+      "destination": "../packages/contracts/schemas/status.schema.json",
+      "sourceSha256": "579e7d8f4161dc2b3ea75a5f275f43a2854d52279bc5e12b1747cc2038e9426f",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "schemas/submission-metadata.schema.json",
+      "destination": "../packages/contracts/schemas/submission-metadata.schema.json",
+      "sourceSha256": "b7bbe95f04e3a6df42ef4df2e76c8aa5c29f3bd034c9b652d5bc96767f420fe4",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/README.md",
+      "destination": "../packages/contracts/examples/README.md",
+      "sourceSha256": "8b053ca25c5f52ebeab99dbc7bf712cb146de169f772ce909580f748bd8b00ef",
+      "treatment": "relative documentation links updated"
+    },
+    {
+      "source": "examples/accepted-submission.json",
+      "destination": "../packages/contracts/examples/accepted-submission.json",
+      "sourceSha256": "7f3897309432247e63862a73f0e615b7b5c759fe32bdf657ce9837416463afc8",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/artifact-provenance.json",
+      "destination": "../packages/contracts/examples/artifact-provenance.json",
+      "sourceSha256": "6624e13c272c297951b123c3045f890615e46d913409dfa0c849008e421a92ac",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/device-capability.json",
+      "destination": "../packages/contracts/examples/device-capability.json",
+      "sourceSha256": "846bffe7be2ca771634802622624fa70425b3b1cd57c772da6e93d80b31ae15b",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/device-operation-uncertain.json",
+      "destination": "../packages/contracts/examples/device-operation-uncertain.json",
+      "sourceSha256": "38a03499df928be1e9ae1ee842404a69f347607c65aae1198104296c25ed98d2",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/device-operation.json",
+      "destination": "../packages/contracts/examples/device-operation.json",
+      "sourceSha256": "584cbc15ff71a4dfc10da355b7573c63314b41e0fc08a2c0c849fdcea94078f3",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/device-ownership.json",
+      "destination": "../packages/contracts/examples/device-ownership.json",
+      "sourceSha256": "16b345efd9c11f6f20f83809b9e9819c82bbe72f42ce66702671add3065b303a",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/device-status.json",
+      "destination": "../packages/contracts/examples/device-status.json",
+      "sourceSha256": "f08d59a133a48bcf79878dcbf2990ca5d50e61597cb2d1b65c3b49527cb2ad5b",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/device-test-evidence.json",
+      "destination": "../packages/contracts/examples/device-test-evidence.json",
+      "sourceSha256": "638ca43e2e1c3baff61204710a02ba6d304b4713f487cc9daea8a1f06bf6c094",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/machine.json",
+      "destination": "../packages/contracts/examples/machine.json",
+      "sourceSha256": "2fb241ff80e69b2364077695ae2213518910a0b1ca74bdc5799bac1c44a7c620",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/push-preview.json",
+      "destination": "../packages/contracts/examples/push-preview.json",
+      "sourceSha256": "3f95b0db332266500687e4cff8fc6097c71402456b73f0f99f94ba8fe72ec677",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/repository-status.json",
+      "destination": "../packages/contracts/examples/repository-status.json",
+      "sourceSha256": "975e435b2ca2ccd444b31f683f7fe76e21a8ed319bb27c7983af1a733c9a4dbf",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/repository.json",
+      "destination": "../packages/contracts/examples/repository.json",
+      "sourceSha256": "dc3e952e96d2c9ca01dc3ace687c1ef0efa411fe5848c441535be1ede390fce5",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/run-event.json",
+      "destination": "../packages/contracts/examples/run-event.json",
+      "sourceSha256": "52d6b8aeb740ba133c97b71d3393d7d088de8b181d7095767d72f20b9436c08f",
+      "treatment": "verbatim JSON"
+    },
+    {
+      "source": "examples/submission-metadata.json",
+      "destination": "../packages/contracts/examples/submission-metadata.json",
+      "sourceSha256": "a7770dccb5c66eeabc82fab912e506b1aab7d4274415caa433d452aeffe06b05",
+      "treatment": "verbatim JSON"
+    }
+  ],
+  "excluded": [
+    "private-reference/",
+    "PACKAGE_MANIFEST.json",
+    "PACKAGE_CHECKS.json",
+    "CODEX_START_PROMPT.md",
+    "README.md"
+  ],
+  "rewrittenAsSanitizedGuides": [
+    "requirements/04-REPOSITORY_MIGRATION.md",
+    "requirements/07-SOURCES_AND_DECISIONS.md"
+  ],
+  "S0ContractLocation": "../packages/contracts"
+}

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "recordMode": "fixture",
+  "evidenceId": "fixture-at-08-plan",
+  "acceptanceId": "AT-08",
+  "requirementIds": [
+    "RDEV-06",
+    "RDEV-19",
+    "RDEV-25"
+  ],
+  "operation": "install",
+  "context": {
+    "host": {
+      "hostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+      "model": null,
+      "architecture": "unknown",
+      "macOSVersion": null,
+      "macOSBuild": null,
+      "xcodeVersion": null,
+      "xcodeBuild": null
+    },
+    "device": {
+      "deviceId": "device-fixture-phone-01",
+      "model": null,
+      "iOSVersion": null,
+      "iOSBuild": null
+    },
+    "tailscale": {
+      "hostVersion": null,
+      "deviceVersion": null
+    },
+    "backend": {
+      "id": "go-ios",
+      "version": null,
+      "revision": null
+    },
+    "engineVersion": null,
+    "network": {
+      "scenario": "cold_cellular",
+      "hostUnderlay": "wifi",
+      "phoneUnderlay": "cellular",
+      "tailnetPath": "unknown",
+      "developerSession": "none",
+      "internetState": "unknown"
+    },
+    "signingMode": "development",
+    "bootstrapMethod": "existing"
+  },
+  "evidenceKind": "fixture",
+  "executionStatus": "not_run",
+  "outcome": "not_run",
+  "startedAt": null,
+  "completedAt": null,
+  "plannedSteps": [
+    "Record the actual host, phone, toolchain, backend, signing, and Tailscale versions.",
+    "Close the previous developer session and verify that no usable Wi-Fi or USB path remains.",
+    "Establish a fresh authenticated developer session while the phone is confirmed on cellular.",
+    "Install an owner-approved signed fixture update and read back its expected bundle/build.",
+    "Retain the source, network/session proof, operation receipt, and meaningful app-data fixture results."
+  ],
+  "observations": [],
+  "operationIds": [],
+  "evidenceRefs": [],
+  "coldStartProof": {
+    "priorDeveloperSessionAbsent": null,
+    "usableWifiAbsent": null,
+    "usbAbsent": null,
+    "phoneCellularConfirmed": null,
+    "restartKind": "not_tested"
+  },
+  "dataRetention": "not_tested",
+  "claims": [],
+  "missingProof": [
+    "The entire physical case is unrun. A warm session, ping, or browser fetch cannot satisfy this case."
+  ]
+}

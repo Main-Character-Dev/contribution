@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:status:v1",
+  "title": "Contribution single-repository status response v1",
+  "allOf": [
+    {
+      "$ref": "urn:contribution:schema:response:v1"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "requestStatus": {
+          "const": "completed"
+        },
+        "operationId": {
+          "type": "null"
+        },
+        "operationState": {
+          "type": "null"
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "repositoryId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "canonicalHostId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "canonicalBranch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "canonicalTip": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "publication": {
+              "type": "object",
+              "properties": {
+                "remote": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "branch": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "remoteTip": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "relation": {
+                  "enum": [
+                    "equal",
+                    "ahead",
+                    "behind",
+                    "diverged",
+                    "unpublished",
+                    "unconfigured",
+                    "unknown"
+                  ]
+                },
+                "ahead": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "behind": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "observedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "freshness": {
+                  "enum": [
+                    "fresh",
+                    "stale",
+                    "unknown"
+                  ]
+                },
+                "action": {
+                  "enum": [
+                    "none",
+                    "push",
+                    "publish",
+                    "configure",
+                    "reconcile",
+                    "refresh"
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "blockedReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "remote",
+                "branch",
+                "remoteTip",
+                "relation",
+                "ahead",
+                "behind",
+                "observedAt",
+                "freshness",
+                "action",
+                "enabled",
+                "blockedReason"
+              ],
+              "additionalProperties": true
+            },
+            "pending": {
+              "type": "object",
+              "properties": {
+                "localSubmissions": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "landingJobs": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "dirtyWorktrees": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "localSubmissions",
+                "landingJobs",
+                "dirtyWorktrees"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "repositoryId",
+            "canonicalHostId",
+            "canonicalBranch",
+            "canonicalTip",
+            "publication",
+            "pending"
+          ],
+          "additionalProperties": true
+        },
+        "error": {
+          "type": "null"
+        }
+      }
+    }
+  ]
+}

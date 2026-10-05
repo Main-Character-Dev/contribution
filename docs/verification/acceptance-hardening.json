@@ -1,0 +1,23 @@
+{
+  "reviewDate": "2026-10-04",
+  "scope": "Documentation coverage only; no executable product tests run",
+  "requestedAreas": 15,
+  "alreadyCoveredAreas": 10,
+  "addedCases": [
+    "AT-R01",
+    "AT-R02",
+    "AT-R03",
+    "AT-R04",
+    "AT-R05"
+  ],
+  "coreCaseCount": 59,
+  "deviceCaseCount": 24,
+  "ledgerCaseCount": 83,
+  "originalCoreRowsPreservedVerbatim": 54,
+  "originalDeviceRowsPreservedVerbatim": 24,
+  "rdevStatementsPreservedVerbatim": 40,
+  "uniqueIdsAndLedgerCoverage": "passed",
+  "relativeLinksChecked": 181,
+  "missingLinksOrAnchors": 0,
+  "setupScopeChanged": false
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "recordMode": "fixture",
+  "artifactId": "8d794750-c9dc-4e20-9c7e-80a61886d201",
+  "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+  "source": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "inputDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "configurationId": "fixture-development-profile",
+    "configurationDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "adapterId": "fixture-ios-adapter",
+    "adapterVersion": "fixture-only",
+    "policyRevision": "fixture-policy-1"
+  },
+  "build": {
+    "hostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+    "attemptId": "fixture-build-1",
+    "preparedAt": "2026-10-04T23:00:00Z",
+    "macOSVersion": "fixture-only",
+    "macOSBuild": "fixture-only",
+    "xcodeVersion": "fixture-only",
+    "xcodeBuild": "fixture-only",
+    "engineVersion": "fixture-only"
+  },
+  "artifact": {
+    "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "bytes": 1048576,
+    "format": "signed_app_archive"
+  },
+  "app": {
+    "bundleId": "dev.example.remote.fixture",
+    "teamId": "EXAMPLE123",
+    "applicationIdentifier": "EXAMPLE123.dev.example.remote.fixture",
+    "marketingVersion": "1.0-fixture",
+    "buildVersion": "42"
+  },
+  "signing": {
+    "mode": "development",
+    "signatureVerified": true,
+    "provisioningVerified": true,
+    "entitlementsDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "provisioningProfileDigest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "eligibleDeviceRefs": [
+      "device-fixture-phone-01"
+    ],
+    "verifiedAt": "2026-10-04T23:00:00Z"
+  },
+  "deviceAcceptance": "not_established_by_preparation",
+  "evidenceRefs": [
+    "fixture-build-signature-report"
+  ]
+}

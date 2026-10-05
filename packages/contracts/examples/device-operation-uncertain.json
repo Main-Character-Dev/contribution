@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "recordMode": "fixture",
+  "operationId": "fixture-install-uncertain",
+  "requestId": "fixture-request-install-uncertain",
+  "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+  "executionHostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+  "deviceId": "device-fixture-phone-01",
+  "intent": {
+    "operation": "install",
+    "app": {
+      "bundleId": "dev.example.remote.fixture",
+      "teamId": "EXAMPLE123",
+      "applicationIdentifier": "EXAMPLE123.dev.example.remote.fixture",
+      "marketingVersion": "1.0-fixture",
+      "buildVersion": "42"
+    },
+    "artifactRef": {
+      "artifactId": "8d794750-c9dc-4e20-9c7e-80a61886d201",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "installedAppRef": null,
+    "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configurationId": "fixture-development-profile",
+    "adapterId": "fixture-ios-adapter",
+    "policyRevision": "fixture-policy-1",
+    "authorizedOperations": [
+      "install"
+    ],
+    "mode": "qualification",
+    "qualification": {
+      "acceptanceId": "AT-08",
+      "planId": "fixture-bounded-cold-cellular-proof",
+      "fixtureId": "fixture-approved-test-app-and-data",
+      "expectedContextDigest": "2d98b1318ada8a356a7f7c443f4ebc1189b6e36364f5b5e369975239ace8d6a6",
+      "authorizedOperations": [
+        "connect",
+        "install"
+      ],
+      "maxAttempts": 1,
+      "maxDurationSeconds": 600
+    }
+  },
+  "context": {
+    "host": {
+      "hostId": "a2da35a7-11d4-46e5-a6c9-44ed2c6c7b11",
+      "model": null,
+      "architecture": "unknown",
+      "macOSVersion": null,
+      "macOSBuild": null,
+      "xcodeVersion": null,
+      "xcodeBuild": null
+    },
+    "device": {
+      "deviceId": "device-fixture-phone-01",
+      "model": null,
+      "iOSVersion": null,
+      "iOSBuild": null
+    },
+    "tailscale": {
+      "hostVersion": null,
+      "deviceVersion": null
+    },
+    "backend": {
+      "id": "go-ios",
+      "version": null,
+      "revision": null
+    },
+    "engineVersion": null,
+    "network": {
+      "scenario": "cold_cellular",
+      "hostUnderlay": "wifi",
+      "phoneUnderlay": "cellular",
+      "tailnetPath": "unknown",
+      "developerSession": "none",
+      "internetState": "unknown"
+    },
+    "signingMode": "development",
+    "bootstrapMethod": "existing"
+  },
+  "capabilityIds": [
+    "fixture-go-ios-cold-cellular-install"
+  ],
+  "ownershipId": "6c41fc33-df5d-4dcb-966c-24c328478f24",
+  "requestedAt": "2026-10-04T23:00:00Z",
+  "startedAt": "2026-10-04T23:00:00Z",
+  "completedAt": null,
+  "operationState": "outcome_unknown",
+  "stage": "reconciling",
+  "resultCertainty": "uncertain",
+  "effects": [
+    {
+      "effectId": "fixture-install-uncertain-effect",
+      "operation": "install",
+      "state": "outcome_unknown",
+      "certainty": "uncertain",
+      "startedAt": "2026-10-04T23:00:00Z",
+      "completedAt": null,
+      "installReadback": null,
+      "launchReadback": null,
+      "evidenceRefs": [],
+      "reasonCodes": [
+        "OUTCOME_UNCERTAIN"
+      ],
+      "missingProof": [
+        "Read back the selected app identity/build from the authenticated phone before any retry."
+      ]
+    }
+  ],
+  "reconciliation": {
+    "status": "required",
+    "attempts": 0,
+    "lastObservedAt": null,
+    "nextObservation": "Query the selected device for the expected installed bundle and build."
+  },
+  "logRefs": [
+    "fixture-private-operation-log"
+  ],
+  "reasonCodes": [
+    "OUTCOME_UNCERTAIN"
+  ],
+  "missingProof": [
+    "This is a non-live qualification fixture with a lost install reply. Installation may already have occurred. No device readback or physical proof is available."
+  ]
+}

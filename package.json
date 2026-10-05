@@ -1,0 +1,27 @@
+{
+  "name": "contribution-workspace",
+  "private": true,
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": "24.21.0",
+    "pnpm": "11.23.0"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check:generated": "node scripts/generate.mjs --check",
+    "build": "pnpm check:generated && tsc -b",
+    "typecheck": "tsc -b",
+    "contracts:check": "pnpm build && node --test tests/contracts.test.mjs",
+    "test": "pnpm build && node --test tests/*.test.mjs",
+    "check:foundation": "node scripts/check-foundation.mjs",
+    "check": "pnpm test && pnpm check:foundation",
+    "native:build": "bash scripts/native-build.sh",
+    "native:test": "bash scripts/native-test.sh",
+    "cli": "node packages/cli/dist/main.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "json-schema-to-typescript": "15.0.4",
+    "typescript": "5.9.3"
+  }
+}

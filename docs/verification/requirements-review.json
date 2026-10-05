@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-10-04",
+  "scope": "Package and documentation/contract validation only",
+  "result": "passed",
+  "validator": "jsonschema 4.25.1 Draft202012Validator with FormatChecker and local Registry",
+  "archiveManifestEntriesMatched": 798,
+  "schemaCount": 12,
+  "positiveExamples": [
+    "accepted-submission",
+    "artifact-provenance",
+    "device-capability",
+    "device-operation",
+    "device-operation-uncertain",
+    "device-ownership",
+    "device-status",
+    "device-test-evidence",
+    "machine",
+    "push-preview",
+    "repository",
+    "repository-status",
+    "run-event",
+    "submission-metadata"
+  ],
+  "negativeCasesRejected": [
+    "supported capability without evidence",
+    "takeover with unconfirmed previous owner",
+    "successful install without readback",
+    "successful launch with not-running readback",
+    "composite success with failed launch",
+    "requested launch missing from effects",
+    "uncertainty without reconciliation",
+    "fixture claiming physical pass",
+    "qualification intent without plan",
+    "routine intent carrying qualification",
+    "unknown repository setting",
+    "invalid machine UUID"
+  ],
+  "preservation": {
+    "prdIds": 63,
+    "rdevStatementsVerbatim": 40,
+    "coreAcceptanceRowsVerbatim": 54,
+    "remoteAcceptanceRowsVerbatim": 24,
+    "schemaAndExampleJsonByteIdentical": true
+  },
+  "applicationVerification": {
+    "performed": false,
+    "macVerified": false,
+    "twoMacVerified": false,
+    "physicalDeviceVerified": false
+  },
+  "documentation": {
+    "markdownFiles": 20,
+    "relativeLinksChecked": 175,
+    "anchorsChecked": 2,
+    "missingTargets": 0
+  },
+  "privacy": {
+    "rawPrivateReferenceImported": false,
+    "licenseUnchanged": true,
+    "knownSecretPatternMatches": 0,
+    "absoluteUserPathsLimitedToExplicitHandoffPrompt": true
+  }
+}

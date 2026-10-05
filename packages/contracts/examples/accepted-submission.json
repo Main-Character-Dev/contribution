@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "requestStatus": "accepted",
+  "operationId": "019bf410-3c40-729c-a1f1-67fb7a20cbea",
+  "operationState": "queued_local",
+  "result": {
+    "requestId": "f23ccfb5-fb8f-4a19-a08c-06a0509939de",
+    "repositoryId": "33a1b940-f11d-4d6b-a1a6-4019d7536c68",
+    "acceptance": {
+      "localDurable": true,
+      "canonicalHostAccepted": false,
+      "canonicalHostId": "8b005cff-1fdb-459c-94b2-dbd0ae438fa2",
+      "acceptedAt": null
+    },
+    "source": {
+      "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "tip": "cccccccccccccccccccccccccccccccccccccccc",
+      "retained": true
+    },
+    "waitingFor": "canonical_host_unreachable",
+    "nextActions": []
+  },
+  "error": null
+}
