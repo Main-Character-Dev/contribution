@@ -40,7 +40,7 @@ export class DeviceArtifactTransfers {
     const manifest: Manifest = { schemaVersion: 1, transferId: id(), requestId, repositoryId: repo.id, senderHostId: this.store.hostId, receiverHostId: toHost, provenance: artifact.provenance, appName: basename(artifact.appPath), appDigest: string(artifact.appDigest, 'sealed app digest') };
     return this.store.admit(requestId, 'artifact_transfer', repo.id, input, payload, 'queued', op => {
       this.store.put('artifactOutbox', op.operationId, { manifest, path: artifact.path });
-      return { transferId: manifest.transferId, artifactId, executionHostId: toHost, delivery: 'not_dispatched', phoneEffect: 'not_requested' };
+      return { transferId: manifest.transferId, artifactId, executionHostId: this.store.hostId, destinationHostId: toHost, delivery: 'not_dispatched', phoneEffect: 'not_requested' };
     });
   }
   async execute(op: Operation, signal: AbortSignal): Promise<ObjectValue> {

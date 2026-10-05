@@ -39,3 +39,15 @@ test('settings mutation and completion roll back together when the operation rec
     assert.equal(journal.getMeta('settings').label, 'Before'); assert.equal(journal.get(op.operationId).state, 'queued');
   } finally { journal.close(); rmSync(root, { recursive: true }); }
 });
+
+test('immutable outbox metadata and operation admission commit or roll back together', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ct-journal-')), journal = new Journal(root);
+  try {
+    const requestId = randomUUID();
+    journal.db.exec("CREATE TRIGGER reject_admission BEFORE INSERT ON operations BEGIN SELECT RAISE(ABORT, 'fixture admission failure'); END;");
+    assert.throws(() => journal.admit(requestId, 'artifact_transfer', randomUUID(), {}, 'fixture', 'queued', op => {
+      journal.put('artifactOutbox', op.operationId, { immutable: true }); return { delivery: 'not_dispatched' };
+    }), /fixture admission failure/);
+    assert.equal(journal.byRequest(requestId), undefined); assert.deepEqual(journal.records('artifactOutbox'), []);
+  } finally { journal.close(); rmSync(root, { recursive: true }); }
+});

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { assertContract, buildIdentity } from '@contribution/contracts';
 import type { Response, Machine, Repository, DeviceOperation } from '@contribution/contracts';
-import { completed, rejected, requireValue, string, object, digest, Fault, terminal, now } from './core.js';
+import { completed, rejected, requireValue, string, object, digest, Fault, terminal, now, isGitJob } from './core.js';
 import type { ObjectValue } from './core.js';
 import { Journal } from './journal.js';
 import type { Operation } from './journal.js';
@@ -11,7 +11,7 @@ import { discover, identity, git, gitText, inputFingerprint } from './git.js';
 import { Lease, alive, processIdentity } from './process.js';
 import type { Payload } from './payload.js';
 import { GitHubMonitor } from './github.js';
-import { Peers } from './peers.js';
+import { Peers, remoteDeviceCommands, remoteDeviceReads } from './peers.js';
 import type { PeerTransport } from './peers.js';
 import { Devices } from './devices.js';
 import type { DeviceBackend } from './devices.js';
@@ -134,7 +134,7 @@ export class Engine {
     if (this.stopping || this.store.getMeta<boolean>('paused') || this.store.getMeta<boolean>('maintenance')) return;
     for (const op of this.store.queue()) {
       if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId)) continue;
-      const blocked = this.store.unsettled().some(other => other.repositoryId === op.repositoryId && other.operationId !== op.operationId && !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
+      const blocked = isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
       if (blocked) continue;
       const controller = new AbortController(); this.active.set(op.operationId, controller); this.activeRepositories.add(op.repositoryId);
       void this.execute(op, controller.signal).finally(() => { this.active.delete(op.operationId); this.activeRepositories.delete(op.repositoryId); this.kick(); });
@@ -205,10 +205,10 @@ export class Engine {
     const op = this.store.admit(identity, kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
   }
   private cancel(op: Operation): Response {
-    if (terminal.has(op.state)) return this.store.response(op);
+    if (terminal.has(op.state) && !(op.state === 'needs_attention' && op.result['transferAttempted'] && !op.effectDispatched)) return this.store.response(op);
     const controller = this.active.get(op.operationId);
     if (controller) { controller.abort(); return this.store.response(this.store.get(op.operationId)); }
-    if (op.result['remoteOperationId'] || (op.state === 'queued_local' && op.result['transferAttempted'])) return this.store.response(this.store.update(op, { state: 'queued_local', error: null, result: { ...op.result, cancelRequested: true, nextPeerAttempt: 0 } }));
+    if (op.result['remoteOperationId'] || (['queued_local', 'needs_attention'].includes(op.state) && op.result['transferAttempted'])) return this.store.response(this.store.update(op, { state: 'queued_local', error: null, result: { ...op.result, cancelRequested: true, nextPeerAttempt: 0 } }));
     const receipt = op.result['deviceOperation'] as DeviceOperation | undefined;
     if (receipt) { receipt.operationState = 'cancelled'; receipt.completedAt = now(); for (const effect of receipt.effects) if (effect.state === 'queued') effect.state = 'cancelled'; assertContract('device-operation', receipt); }
     return this.store.response(this.store.update(op, { state: 'cancelled', stage: 'cancelled_before_dispatch', ...(receipt ? { result: { ...op.result, deviceOperation: receipt } } : {}) }));
@@ -282,10 +282,16 @@ export class Engine {
       if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list()] });
       if (command === 'hosts.pair') return completed(await this.peers.pair(string(args['sshAlias'], 'sshAlias')));
       if (command === 'peer.exchange') { const result = await this.peers.receive(object(args['envelope'])); this.kick(); return completed(result); }
-      if (command.startsWith('devices.') && command !== 'devices.artifacts.transfer') requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke the scoped device command on the selected paired host service.', 3);
+      if (command.startsWith('devices.') && command !== 'devices.artifacts.transfer' && command !== 'devices.reconcile' && !remoteDeviceCommands.has(command) && !remoteDeviceReads.has(command)) requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke this configuration or authorization command on the selected host service.', 3);
       if (command === 'devices.list') return completed({ executionHostId: this.store.hostId, devices: await this.devices.backend.inventory(), discoveryGrantsAuthority: false });
       if (command === 'devices.reconcile') {
-        const op = this.store.get(string(args['operationId'], 'operationId')); requireValue(op.kind === 'device', 'NOT_A_DEVICE_OPERATION', 'Select a retained device operation.', 2);
+        const op = this.store.get(string(args['operationId'], 'operationId'));
+        if (op.kind === 'remote.device') {
+          requireValue(args['host'] === undefined || args['host'] === op.input['destinationHostId'], 'DEVICE_IDENTITY_MISMATCH', 'Reconcile this operation on its original selected host.', 2);
+          requireValue(op.result['remoteOperationId'], 'EXECUTION_ACCEPTANCE_UNCONFIRMED', 'The remote acceptance reply is unresolved; retain the outbox and query its original request.', 3);
+          await this.peers.observeOperation(op, true); return this.store.response(this.store.get(op.operationId));
+        }
+        requireValue(op.kind === 'device' && (args['host'] === undefined || args['host'] === this.store.hostId), 'NOT_A_DEVICE_OPERATION', 'Select a retained device operation on this host.', 2);
         await this.devices.reconcile(op); return this.store.response(this.store.get(op.operationId));
       }
       if (command === 'settings.get') return completed({ settings: this.settings(), revision: digest(this.settings()) });
@@ -322,12 +328,43 @@ export class Engine {
         }
         if (command === 'repair-context') return completed({ operation: op, log: this.store.logs(op, 100), boundaries: ['Repair only the recorded failure.', 'Preserve unrelated work.', 'Publication needs a new explicit preview when scope changes.'] });
         if (command === 'runs.pin' || command === 'runs.unpin') return this.store.response(this.store.update(op, { pinned: command === 'runs.pin' }));
-        if (command === 'runs.cancel' && !terminal.has(op.state)) {
+        if (command === 'runs.cancel') {
           return this.cancel(op);
         }
         return this.store.response(op);
       }
       const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
+      if (remoteDeviceCommands.has(command) || remoteDeviceReads.has(command)) {
+        const hostId = command === 'devices.artifacts.transfer' ? args['fromHost'] : args['host'];
+        if (typeof hostId === 'string' && hostId !== this.store.hostId) {
+          const authority = this.store.record<{ phase: string; peerHostId: string }>('authority', repo.id);
+          requireValue(repo.availability === 'both-macs' && authority?.phase === 'active' && authority.peerHostId === hostId, 'REPOSITORY_PEER_UNAUTHORIZED', 'The selected execution host must be paired for this repository.', 3);
+          const remoteArgs = { ...args, repo: repo.id };
+          if (remoteDeviceReads.has(command)) {
+            const reply = await this.peers.call(hostId, 'device.observe', { repositoryId: repo.id, command, args: remoteArgs });
+            const observation = reply['response'] as Response;
+            if (command === 'devices.profile' && !observation.error && typeof observation.result?.['policyRevision'] === 'string')
+              this.store.put('remoteDeviceProfile', `${hostId}:${repo.id}`, { revision: observation.result['policyRevision'], observedAt: now() });
+            return reply['response'] as Response;
+          }
+          const requestId = string(args['requestId'], 'requestId'), input = { command, args: remoteArgs, destinationHostId: hostId };
+          const existing = this.store.existing(requestId, 'remote.device', repo.id, input); if (existing) return this.store.response(existing);
+          const profileKey = `${hostId}:${repo.id}`;
+          try {
+            const reply = await this.peers.call(hostId, 'device.observe', { repositoryId: repo.id, command: 'devices.profile', args: { repo: repo.id, host: hostId } });
+            const observation = reply['response'] as Response;
+            requireValue(!observation.error && typeof observation.result?.['policyRevision'] === 'string', 'DEVICE_ADAPTER_UNCONFIGURED', 'The selected host needs its project device profile before remote admission.', 3);
+            this.store.put('remoteDeviceProfile', profileKey, { revision: observation.result['policyRevision'], observedAt: now() });
+          } catch (error) {
+            if (!(error instanceof Fault) || !['PEER_UNAVAILABLE', 'SERVICE_UNAVAILABLE', 'SERVICE_TIMEOUT', 'SERVICE_CONNECTION_LOST'].includes(error.code)) throw error;
+          }
+          const profile = this.store.record<{ revision: string }>('remoteDeviceProfile', profileKey);
+          requireValue(profile, 'DEVICE_PROFILE_OBSERVATION_REQUIRED', 'Observe the selected host’s device profile once before queueing offline work.', 3);
+          const op = this.store.admit(requestId, 'remote.device', repo.id, input, this.payload.identity, 'queued_local', operation => ({ remotePolicyRevision: profile.revision,
+            acceptance: { localDurable: true, executionHostAccepted: false, executionHostId: hostId, acceptedAt: operation.createdAt }, executionHostId: hostId }));
+          void this.peers.tick(); return this.store.response(op);
+        }
+      }
       if (command === 'repos.runtime') return completed({ runtime: await new ProjectRuntimes(this.store).register(repo, string(args['node'], 'node'), string(args['pnpm'], 'pnpm')) });
       if (command === 'repos.migration') {
         const adapter = typeof args['adapter'] === 'string' ? args['adapter'] : identifyAdoption(repo.path)?.id;
@@ -337,7 +374,7 @@ export class Engine {
           mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });
       }
       if (command === 'devices.configure') return completed(this.devices.builds.configure(repo, args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
-      if (command === 'devices.profile') return completed(this.devices.builds.inspect(repo));
+      if (command === 'devices.profile') return completed({ ...this.devices.builds.inspect(repo), policyRevision: this.devices.profile(repo).revision });
       if (command === 'devices.artifacts.list' || command === 'devices.artifacts.get') return completed(this.devices.builds.artifacts(repo, command === 'devices.artifacts.get' ? string(args['artifact'], 'artifact') : undefined));
       if (command === 'devices.artifacts.transfer') {
         requireValue(args['fromHost'] === undefined || args['fromHost'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke artifact transfer on the selected build/source host service.', 3);

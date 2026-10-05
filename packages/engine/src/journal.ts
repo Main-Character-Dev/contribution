@@ -71,9 +71,9 @@ export class Journal {
     requireValue(!storage.admissionBlocked, 'STORAGE_PRESSURE', 'Retained logs reached the cap. Protected evidence remains preserved; raise the cap or export and release eligible evidence.', 3);
     const op: Operation = { operationId: id(), requestId, repositoryId, kind, input, payload, state, stage: 'accepted',
       result: {}, error: null, createdAt: now(), attemptId: id(), pinned: false, effectDispatched: false };
-    if (initialResult) op.result = initialResult(op);
     const log = openSync(this.logPath(op), 'wx', 0o600); fsyncSync(log); closeSync(log);
     this.transaction(() => {
+      if (initialResult) op.result = initialResult(op);
       this.db.prepare('INSERT INTO operations(id,request_id,identity,repository_id,state,body) VALUES(?,?,?,?,?,?)')
         .run(op.operationId, requestId, digest({ kind, repositoryId, input }), repositoryId, state, canonical(op));
       this.event(op, `${kind}.accepted`, { state });
@@ -83,6 +83,10 @@ export class Journal {
     const row = this.db.prepare('SELECT body FROM operations WHERE id=?').get(operationId);
     if (!row) throw new Fault('RUN_NOT_FOUND', 'No retained operation has this identity.', 2);
     return JSON.parse(String(row['body'])) as Operation;
+  }
+  byRequest(requestId: string): Operation | undefined {
+    const row = this.db.prepare('SELECT body FROM operations WHERE request_id=?').get(requestId);
+    return row ? JSON.parse(String(row['body'])) as Operation : undefined;
   }
   list(limit = 200): Operation[] { return this.db.prepare('SELECT body FROM operations ORDER BY sequence DESC LIMIT ?').all(limit).map(row => JSON.parse(String(row['body'])) as Operation); }
   queue(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state='queued' ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
@@ -155,7 +159,7 @@ export class Journal {
     return { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
         logRetention: { truncated: this.record('logTruncation', op.attemptId) ?? null, expired: this.record('logEviction', op.attemptId) ?? null },
-        acceptance: op.kind === 'device' ? op.result['acceptance'] : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
+        acceptance: ['device', 'remote.device'].includes(op.kind) ? op.result['acceptance'] : op.kind === 'artifact_transfer' ? { localDurable: true, executionHostAccepted: true, executionHostId: this.hostId, acceptedAt: op.createdAt } : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
   }
   async backup(path: string): Promise<void> { await backup(this.db, path); chmodSync(path, 0o600); }

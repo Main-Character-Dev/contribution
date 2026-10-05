@@ -160,7 +160,7 @@ export class Devices {
   async admit(repo: Enrolled, action: DeviceOperation['intent']['operation'], args: ObjectValue): Promise<Operation> {
     const deviceId = string(args['device'], 'device'), requestId = string(args['requestId'], 'requestId'), profile = this.profile(repo);
     const selection = { action, args, profile: profile.revision, appIdentity: this.appIdentity(profile) };
-    const existing = this.store.list(100000).find(op => op.requestId === requestId);
+    const existing = this.store.byRequest(requestId);
     if (existing) { requireValue(existing.kind === 'device' && existing.repositoryId === repo.id && digest({ action: object(existing.input['selection'])['action'], args: object(existing.input['selection'])['args'] }) === digest({ action, args }), 'REQUEST_ID_CONFLICT', 'Device request ID already names a different immutable intent.'); return existing; }
     const observation = action === 'prepare' ? await this.builds.observe(repo, deviceId, string(args['buildProfile'], 'build profile')) : await this.observe(repo, deviceId);
     const actions = action === 'install_and_launch' ? ['install', 'launch'] : [action];

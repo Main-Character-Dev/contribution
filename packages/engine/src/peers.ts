@@ -2,7 +2,7 @@ import { openSync, closeSync, fsyncSync, readFileSync, writeFileSync, statSync, 
 import { join } from 'node:path';
 import { buildIdentity, validateContractFormat, assertContract } from '@contribution/contracts';
 import type { Response } from '@contribution/contracts';
-import { digest, id, now, object, string, requireValue, Fault, rejected } from './core.js';
+import { digest, id, now, object, string, requireValue, Fault, rejected, isGitJob } from './core.js';
 import type { ObjectValue } from './core.js';
 import type { Journal, Operation } from './journal.js';
 import type { Repositories, Enrolled } from './repositories.js';
@@ -21,6 +21,8 @@ export interface TransferManifest {
 interface Transfer { manifest: TransferManifest; path: string; accepted?: ObjectValue }
 interface Authority { transitionId: string; epoch: number; previousTransitionId: string | null; ownerHostId: string; previousOwnerHostId: string; phase: 'frozen' | 'active'; peerHostId: string; tip: string | null; policy: string }
 const CHUNK = 256 * 1024, MAX_BUNDLE = 256 * 1024 * 1024;
+export const remoteDeviceCommands = new Set(['devices.connect', 'devices.prepare', 'devices.install', 'devices.launch', 'devices.logs', 'devices.test', 'devices.ui', 'devices.debug', 'devices.capture', 'devices.disconnect', 'devices.qualify', 'devices.artifacts.transfer']);
+export const remoteDeviceReads = new Set(['devices.status', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get']);
 export function compatiblePeer(hello: ObjectValue): boolean {
   const local = buildIdentity.version.match(/^(\d+)\.(\d+)\.(\d+)$/), remote = String(hello['version']).match(/^(\d+)\.(\d+)\.(\d+)$/);
   if (hello['protocolVersion'] === undefined) return hello['version'] === buildIdentity.version;
@@ -79,6 +81,14 @@ export class Peers {
   private idle(repo: Enrolled): void {
     requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Reconcile all retained work before transferring repository authority.');
     requireValue(!Lease.inspect(repo.commonDir), 'REPOSITORY_BUSY', 'A repository writer currently owns the mutation lease.');
+  }
+  private prepareRequest(repo: Enrolled, from: string, requestId: string, scope: ObjectValue): void {
+    const existing = this.store.byRequest(requestId), association = existing && this.store.record<{ from: string }>('peerOperation', existing.operationId);
+    const prior = this.store.record<{ from: string; repositoryId: string; digest: string }>('peerRequest', requestId), scopeDigest = digest(scope);
+    requireValue(!prior || (prior.from === from && prior.repositoryId === repo.id && prior.digest === scopeDigest), 'REQUEST_ID_CONFLICT', 'A different peer request owns this request identity.');
+    requireValue(!existing || (existing.repositoryId === repo.id && (association?.from === from || existing.input['senderHostId'] === from || prior?.from === from)), 'REQUEST_ID_CONFLICT', 'This request identity belongs to a different local or peer operation.');
+    requireValue(existing || !this.store.record('peerCancellation', `${from}:${requestId}`), 'REMOTE_REQUEST_CANCELLED', 'This request was cancelled before remote acceptance. It cannot later dispatch work.');
+    if (!prior) this.store.put('peerRequest', requestId, { from, repositoryId: repo.id, digest: scopeDigest });
   }
   async bind(repo: Enrolled, hostId: string, requestId: string): Promise<ObjectValue> {
     uuid(requestId, 'requestId'); uuid(hostId, 'hostId');
@@ -142,9 +152,36 @@ export class Peers {
       }
       const authority = this.store.record<Authority>('authority', repositoryId);
       requireValue(repo.availability === 'both-macs' && authority?.phase === 'active' && authority.peerHostId === from, 'REPOSITORY_PEER_UNAUTHORIZED', 'This peer is not associated with the repository authority.');
+      if (action === 'operation.cancel-request') {
+        const requestId = string(body['requestId'], 'requestId'), op = this.store.byRequest(requestId);
+        if (op) {
+          const association = this.store.record<{ from: string }>('peerOperation', op.operationId), request = this.store.record<{ from: string; repositoryId: string }>('peerRequest', requestId);
+          requireValue(op.repositoryId === repo.id && (association?.from === from || op.input['senderHostId'] === from || (request?.from === from && request.repositoryId === repo.id)), 'PEER_OPERATION_UNAUTHORIZED', 'This peer cannot cancel another caller’s request.');
+          requireValue(this.cancelLocal, 'PEER_DISPATCH_UNAVAILABLE', 'The operation owner is unavailable.', 3);
+          this.store.put('peerOperation', op.operationId, { from, repositoryId: repo.id });
+          return { response: this.cancelLocal(op), requestCancelled: false };
+        }
+        this.store.put('peerCancellation', `${from}:${requestId}`, { repositoryId: repo.id, from, requestId, cancelledAt: now() });
+        return { requestCancelled: true, requestId, executionHostAccepted: false };
+      }
       if (['artifact.begin', 'artifact.chunk', 'artifact.finish'].includes(action)) {
         requireValue(this.receiveArtifact, 'PEER_ACTION_UNSUPPORTED', 'This peer has no installed artifact receiver.', 3);
         return this.receiveArtifact(repo, from, action, body);
+      }
+      if (action === 'device.command' || action === 'device.observe') {
+        const command = string(body['command'], 'command'), args = object(body['args']);
+        requireValue((action === 'device.command' ? remoteDeviceCommands : remoteDeviceReads).has(command), 'DEVICE_COMMAND_UNAUTHORIZED', 'The peer endpoint exposes only named device operations with existing local authorization.', 3);
+        requireValue(args['repo'] === repo.id && (command === 'devices.artifacts.transfer' ? args['fromHost'] === this.store.hostId : args['host'] === this.store.hostId), 'DEVICE_IDENTITY_MISMATCH', 'Remote device commands must select this exact repository and execution host.', 3);
+        if (action === 'device.command') {
+          this.prepareRequest(repo, from, string(args['requestId'], 'requestId'), { command, args, expectedPolicyRevision: body['expectedPolicyRevision'] });
+          const existing = this.store.byRequest(string(args['requestId'], 'requestId'));
+          const profile = this.store.record<{ revision: string }>('deviceProfile', repo.id);
+          requireValue(existing || (typeof body['expectedPolicyRevision'] === 'string' && profile?.revision === body['expectedPolicyRevision']), 'POLICY_CHANGED', 'Remote device policy changed after the caller selected this operation. Refresh its profile and use a new request.', 3);
+        }
+        requireValue(this.dispatchLocal, 'PEER_DISPATCH_UNAVAILABLE', 'The device command dispatcher is unavailable.', 3);
+        const response = await this.dispatchLocal(command, args);
+        if (response.operationId) this.store.put('peerOperation', response.operationId, { from, repositoryId: repo.id });
+        return { response };
       }
       if (['notifications.pending', 'notifications.claim', 'notifications.acknowledge', 'notifications.context'].includes(action)) return new Milestones(this.store).dispatch(action, from, repo, body);
       if (action === 'publication.preview' || action === 'publication.start' || action === 'repository.status' || action === 'checks.start') {
@@ -152,6 +189,7 @@ export class Peers {
         const args: ObjectValue = action === 'checks.start' ? { repo: repo.id, requestId: uuid(body['requestId'], 'requestId'), canonical: true, fresh: body['fresh'] === true, ...(body['checkId'] ? { checkId: string(body['checkId'], 'checkId') } : {}) } : action === 'publication.start'
           ? { repo: repo.id, requestId: uuid(body['requestId'], 'requestId'), expectedTip: string(body['expectedTip'], 'expectedTip'), scopeToken: string(body['scopeToken'], 'scopeToken') }
           : action === 'publication.preview' ? { repo: repo.id, preview: true } : { repo: repo.id, refresh: true };
+        if (action === 'publication.start' || action === 'checks.start') this.prepareRequest(repo, from, string(args['requestId'], 'requestId'), { action, args });
         const response = await this.dispatchLocal(action === 'repository.status' ? 'status' : action === 'checks.start' ? 'checks.run' : 'push', args);
         if (response.operationId) this.store.put('peerOperation', response.operationId, { from, repositoryId: repo.id });
         return { response };
@@ -163,7 +201,7 @@ export class Peers {
         const op = this.store.get(uuid(body['operationId'], 'operationId'));
         const association = this.store.record<{ from: string }>('peerOperation', op.operationId);
         requireValue(op.repositoryId === repo.id && (op.input['senderHostId'] === from || association?.from === from), 'PEER_OPERATION_UNAUTHORIZED', 'This operation does not belong to the peer.');
-        const response = action === 'operation.reconcile' && this.dispatchLocal ? await this.dispatchLocal('runs.reconcile', { operationId: op.operationId })
+        const response = action === 'operation.reconcile' && this.dispatchLocal ? await this.dispatchLocal(op.kind === 'device' ? 'devices.reconcile' : 'runs.reconcile', { operationId: op.operationId, ...(op.kind === 'device' ? { requestId: id() } : {}) })
           : action === 'operation.cancel' && this.cancelLocal ? this.cancelLocal(op) : this.store.response(op);
         let log = '';
         try { log = this.store.logs(op, 2000); } catch { /* Expose unavailable evidence without inventing output. */ }
@@ -177,6 +215,7 @@ export class Peers {
     const m = object(body['manifest']) as unknown as TransferManifest;
     requireValue(Object.keys(m).sort().join(',') === ['schemaVersion','transferId','requestId','repositoryId','senderHostId','kind','branch','tip','base','metadata','policy','objectFormat','sourceRef','bundleDigest','bytes'].sort().join(','), 'INVALID_TRANSFER', 'Unexpected or missing manifest fields.', 2);
     uuid(m.requestId, 'requestId'); uuid(m.transferId, 'transferId');
+    requireValue(!this.store.record('peerCancellation', `${from}:${m.requestId}`), 'REMOTE_REQUEST_CANCELLED', 'This transfer request was cancelled before remote admission.');
     requireValue(m.schemaVersion === 1 && m.repositoryId === repo.id && m.senderHostId === from && m.policy === repo.revision && m.branch === repo.config.integration.branch, 'TRANSFER_IDENTITY_MISMATCH', 'Transfer repository, branch, host or policy is incompatible.');
     requireValue(['submit', 'seed', 'mirror'].includes(m.kind) && ['sha1', 'sha256'].includes(m.objectFormat), 'TRANSFER_UNSUPPORTED', 'Unknown transfer purpose or object format.', 2);
     oid(m.tip, m.objectFormat); if (m.base !== null) oid(m.base, m.objectFormat);
@@ -208,6 +247,7 @@ export class Peers {
     requireValue(transfer && transfer.manifest.senderHostId === from && transfer.manifest.repositoryId === repo.id, 'TRANSFER_NOT_FOUND', 'No transfer belongs to this peer.');
     if (transfer.accepted) return transfer.accepted;
     const m = transfer.manifest, bytes = readFileSync(transfer.path);
+    this.prepareRequest(repo, from, m.requestId, { manifest: m });
     requireValue(bytes.length === m.bytes && digest(bytes) === m.bundleDigest, 'BUNDLE_DIGEST_MISMATCH', 'The retained bundle does not match its immutable manifest.');
     requireValue((await identity(repo.path)).objectFormat === m.objectFormat, 'OBJECT_FORMAT_MISMATCH', 'The peer Git object formats differ.');
     const heads = await gitText(repo.path, ['bundle', 'list-heads', transfer.path]);
@@ -277,27 +317,39 @@ export class Peers {
     this.store.put('historyReceipt', op.requestId, receipt); return receipt;
   }
   async tick(): Promise<void> {
-    if (this.busy) return; this.busy = true;
+    if (this.busy || this.store.getMeta('paused') || this.store.getMeta('maintenance')) return; this.busy = true;
     try {
       // Seed admission precedes task handoff. Stable per-repository creation order
       // is retained even when one host is unavailable for hours.
       const pending = this.store.unsettled().filter(op => op.state === 'queued_local');
       for (const op of pending) {
         if (Number(op.result['nextPeerAttempt'] ?? 0) > Date.now()) continue;
-        if (this.store.unsettled().some(other => other.repositoryId === op.repositoryId && other.operationId !== op.operationId && ['needs_attention', 'outcome_unknown'].includes(other.state))) continue;
-        const earlier = pending.find(other => other.repositoryId === op.repositoryId && other.operationId !== op.operationId && other.createdAt < op.createdAt);
+        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) break;
+        if (isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && ['needs_attention', 'outcome_unknown'].includes(other.state))) continue;
+        const earlier = pending.find(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) === isGitJob(op.kind) && other.operationId !== op.operationId && other.createdAt < op.createdAt);
         if (earlier) continue;
         try {
           const repo = await this.repos.get(op.repositoryId);
           const authority = this.store.record<Authority>('authority', repo.id);
           requireValue(authority?.phase === 'active', 'AUTHORITY_TRANSITION_PENDING', 'Retained work waits for authority reconciliation.', 3);
           const hostId = typeof op.input['destinationHostId'] === 'string' ? op.input['destinationHostId'] : repo.canonicalHostId;
+          if (this.store.get(op.operationId).state !== 'queued_local') continue;
           let remoteOperationId = op.result['remoteOperationId'];
           if (!remoteOperationId) {
             const current = this.store.get(op.operationId);
-            this.store.update(current, { result: { ...current.result, transferAttempted: true, canonicalHostId: hostId } });
+            const device = op.kind === 'remote.device';
+            this.store.update(current, { result: { ...current.result, transferAttempted: true, ...(device ? { executionHostId: hostId } : { canonicalHostId: hostId }) } });
             let receipt: ObjectValue;
-            if (op.kind === 'remote.push') {
+            if (current.result['cancelRequested']) {
+              receipt = await this.call(hostId, 'operation.cancel-request', { repositoryId: repo.id, requestId: op.requestId });
+              if (receipt['requestCancelled'] === true) {
+                const latest = this.store.get(op.operationId);
+                this.store.update(latest, { state: 'cancelled', stage: 'remote_admission_cancelled', error: null, result: { ...latest.result, cancellationReceipt: receipt } });
+                continue;
+              }
+            } else if (device) {
+              receipt = await this.call(hostId, 'device.command', { repositoryId: repo.id, command: op.input['command'], args: op.input['args'], expectedPolicyRevision: op.result['remotePolicyRevision'] });
+            } else if (op.kind === 'remote.push') {
               receipt = await this.call(hostId, 'publication.start', { repositoryId: repo.id, requestId: op.requestId, expectedTip: op.input['expectedTip'], scopeToken: op.input['scopeToken'] });
             } else {
             let manifest: TransferManifest, path: string;
@@ -319,7 +371,8 @@ export class Peers {
             }
             remoteOperationId = uuid(response['operationId'], 'operationId');
             const latest = this.store.get(op.operationId);
-            this.store.update(latest, { stage: 'canonical_accepted', result: { ...latest.result, remoteOperationId, receipt, canonicalHostAccepted: true, canonicalHostId: hostId } });
+            this.store.update(latest, { stage: device ? 'execution_host_accepted' : 'canonical_accepted', result: { ...latest.result, remoteOperationId, receipt,
+              ...(device ? { executionHostId: hostId, acceptance: { localDurable: true, executionHostAccepted: true, executionHostId: hostId, acceptedAt: now() } } : { canonicalHostAccepted: true, canonicalHostId: hostId }) } });
           }
           await this.observeOperation(this.store.get(op.operationId));
         } catch (error) {
@@ -334,14 +387,15 @@ export class Peers {
   }
   async observeOperation(op: Operation, reconcile = false): Promise<Operation> {
     const repo = await this.repos.get(op.repositoryId), remoteOperationId = string(op.result['remoteOperationId'], 'remoteOperationId');
-    const hostId = string(op.result['canonicalHostId'], 'canonicalHostId');
+    const device = op.kind === 'remote.device', hostId = string(device ? op.result['executionHostId'] : op.result['canonicalHostId'], device ? 'executionHostId' : 'canonicalHostId');
     const observation = await this.call(hostId, reconcile ? 'operation.reconcile' : op.result['cancelRequested'] ? 'operation.cancel' : 'operation.get', { repositoryId: repo.id, operationId: remoteOperationId });
     const response = observation['response'] as Response; assertContract('response', response);
     requireValue(response.operationId === remoteOperationId && response.operationState, 'PEER_OPERATION_MISMATCH', 'Peer response identifies different work.');
     const stopped = Boolean(response.error) || ['succeeded', 'failed', 'cancelled', 'interrupted', 'outcome_unknown', 'needs_attention', 'waiting'].includes(response.operationState);
     if (typeof observation['log'] === 'string' && Buffer.byteLength(observation['log']) <= 132000) this.store.put('remoteLog', op.operationId, { text: observation['log'], observedAt: now(), originHostId: hostId });
     const latest = this.store.get(op.operationId);
-    return this.store.update(latest, { state: stopped ? response.operationState : 'queued_local', stage: stopped ? response.error ? 'canonical_attention_required' : 'canonical_completed' : 'canonical_accepted',
-      error: stopped ? response.error : null, result: { ...latest.result, canonicalObservation: response, peerObservedAt: now(), nextPeerAttempt: Date.now() + 1500, ...(stopped ? { completedAt: now() } : {}) } });
+    return this.store.update(latest, { state: stopped ? response.operationState : 'queued_local', stage: stopped ? response.error ? device ? 'execution_attention_required' : 'canonical_attention_required' : device ? 'execution_completed' : 'canonical_completed' : device ? 'execution_host_accepted' : 'canonical_accepted',
+      error: stopped ? response.error : null, result: { ...latest.result, ...(device ? { executionObservation: response, ...(response.result?.['deviceOperation'] ? { deviceOperation: response.result['deviceOperation'] } : {}) } : { canonicalObservation: response }),
+        peerObservedAt: now(), nextPeerAttempt: Date.now() + 1500, ...(stopped ? { completedAt: now() } : {}) } });
   }
 }
