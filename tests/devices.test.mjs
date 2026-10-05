@@ -72,6 +72,12 @@ test('lost effect readback blocks the device; reconciliation observes and never 
     const reconciled = await f.call('devices.reconcile', { operationId: accepted.operationId, host: f.journal.hostId, requestId: randomUUID() });
     assert.equal(reconciled.operationState, 'needs_attention', JSON.stringify(reconciled)); assert.equal(reconciled.result.deviceOperation.effects[0].state, 'succeeded');
     assert.equal(reconciled.result.deviceOperation.effects[1].state, 'queued'); assert.deepEqual(f.calls, ['install']);
+    const apps = await f.call('devices.apps', { repo: f.repo.id, host: f.journal.hostId, device: f.device });
+    assert.equal(apps.error, null); assert.equal(apps.result.apps.length, 1);
+    assert.equal(apps.result.apps[0].appRef, reconciled.result.installedAppRef);
+    assert.equal(apps.result.freshness, 'retained'); assert.equal(apps.result.revalidatedBeforeDispatch, true);
+    const changed = { ...f.profile, revision: 'new-policy' }; f.journal.put('deviceProfile', f.repo.id, changed);
+    assert.equal((await f.call('devices.apps', { repo: f.repo.id, device: f.device })).result.apps.length, 0);
   } finally { await f.cleanup(); }
 });
 

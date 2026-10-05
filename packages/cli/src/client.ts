@@ -50,7 +50,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',
         'repos pair --repo ID --host HOST --request-id UUID', 'repos seed|mirror --repo ID --request-id UUID',
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID]',
-        'devices list|status|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
+        'devices list|status|apps|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
         'devices profile --repo ID', 'devices configure --repo ID --file PATH --expected-revision REVISION --request-id UUID', 'devices artifacts list|get --repo ID [--artifact ID]',
         'devices evidence record --repo ID --file PATH --request-id UUID', 'devices evidence get|review --repo ID --evidence ID [--expected-revision REV --request-id UUID]',
         'devices artifacts transfer --repo ID --artifact ID --from-host SOURCE --host DESTINATION --request-id UUID',

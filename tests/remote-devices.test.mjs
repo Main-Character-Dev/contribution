@@ -74,6 +74,22 @@ test('selected device host is independent of canonical Git owner and lost admiss
   } finally { await f.cleanup(); }
 });
 
+test('inventory and installed-app reads use the selected peer and reject unscoped remote inventory', async () => {
+  const f = await setup(); try {
+    f.hosts.laptop.devices.backend.inventory = async () => [{ deviceId: f.args.device, label: 'Selected laptop phone' }];
+    const result = await f.call('mini', 'devices.list', { repo: f.args.repo, host: f.args.host });
+    assert.equal(result.error, null, JSON.stringify(result)); assert.equal(result.result.executionHostId, f.args.host);
+    assert.equal(result.result.devices[0].label, 'Selected laptop phone');
+    assert.equal((await f.call('mini', 'devices.list', { host: f.args.host })).error.code, 'REPOSITORY_SCOPE_REQUIRED');
+    const accepted = await f.call('mini', 'devices.install', f.args); await f.wait('mini', accepted.operationId);
+    const apps = await f.call('mini', 'devices.apps', { repo: f.args.repo, host: f.args.host, device: f.args.device });
+    assert.equal(apps.error, null, JSON.stringify(apps)); assert.equal(apps.result.executionHostId, f.args.host); assert.equal(apps.result.apps.length, 1);
+    f.hosts.laptop.store.db.prepare("DELETE FROM records WHERE namespace='deviceProfile'").run();
+    const profile = await f.call('mini', 'devices.profile', { repo: f.args.repo, host: f.args.host });
+    assert.equal(profile.result.revision, 'none'); assert.equal(profile.result.policyRevision, null);
+  } finally { await f.cleanup(); }
+});
+
 test('cached policy permits offline durable queueing but drift and missing grants never become remote execution', async () => {
   for (const changed of ['policy', 'grant']) {
     const f = await setup(); try {

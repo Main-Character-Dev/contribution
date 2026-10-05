@@ -214,6 +214,23 @@ export class Devices {
       capabilities, availability, ownership, unresolvedOperationIds: ownership.activeOperationIds, nextActions: [] });
     assertContract('device-status', response); return response;
   }
+  installedApps(repo: Enrolled, deviceId: string): ObjectValue {
+    const profile = this.profile(repo);
+    const rows = this.store.db.prepare("SELECT key,body FROM records WHERE namespace='deviceInstalledApp'").all();
+    const apps = rows.flatMap(row => {
+      const value = JSON.parse(String(row['body'])) as { repositoryId: string; hostId: string; deviceId: string; policy: string; app: DeviceProfile['app']; readback: Effect['installReadback'] };
+      return value.repositoryId === repo.id && value.hostId === this.store.hostId && value.deviceId === deviceId && value.policy === profile.revision &&
+        this.appIdentity({ ...profile, app: value.app }) === this.appIdentity(profile) ? [{ appRef: String(row['key']), app: value.app, observedAt: value.readback?.observedAt ?? null }] : [];
+    }).sort((a, b) => String(b.observedAt).localeCompare(String(a.observedAt))).slice(0, 100);
+    return { repositoryId: repo.id, executionHostId: this.store.hostId, deviceId, apps, freshness: 'retained', revalidatedBeforeDispatch: true };
+  }
+  private retainInstalledApp(op: Operation, receipt: DeviceOperation, effect: Effect): void {
+    const latest = this.store.get(op.operationId);
+    if (typeof latest.result['installedAppRef'] === 'string') return;
+    const appRef = id();
+    this.store.update(latest, { result: { ...latest.result, installedAppRef: appRef } }, 'device.installed_app_observed', () =>
+      this.store.put('deviceInstalledApp', appRef, { app: receipt.intent.app, deviceId: receipt.deviceId, repositoryId: op.repositoryId, hostId: this.store.hostId, policy: receipt.intent.policyRevision, readback: effect.installReadback }));
+  }
   async admit(repo: Enrolled, action: DeviceOperation['intent']['operation'], args: ObjectValue): Promise<Operation> {
     const deviceId = string(args['device'], 'device'), requestId = string(args['requestId'], 'requestId'), profile = this.profile(repo);
     const selection = { action, args, profile: profile.revision, appIdentity: this.appIdentity(profile) };
@@ -333,8 +350,7 @@ export class Devices {
         if (!['succeeded', 'failed', 'cancelled', 'outcome_unknown'].includes(effect.state)) { effect.state = 'outcome_unknown'; effect.certainty = 'uncertain'; }
         if (effect.state === 'succeeded') this.validateReadback(effect, receipt);
         if (effect.operation === 'install' && effect.state === 'succeeded') {
-          const appRef = id(); this.store.put('deviceInstalledApp', appRef, { app: receipt.intent.app, deviceId: receipt.deviceId, repositoryId: repo.id, hostId: this.store.hostId, policy: profile.revision, readback: effect.installReadback });
-          const current = this.store.get(op.operationId); this.store.update(current, { result: { ...current.result, installedAppRef: appRef } });
+          this.retainInstalledApp(op, receipt, effect);
         }
         if (effect.state === 'outcome_unknown' || effect.certainty === 'uncertain') {
           effect.state = 'outcome_unknown'; effect.certainty = 'uncertain'; receipt.operationState = 'outcome_unknown'; receipt.resultCertainty = 'uncertain';
@@ -391,6 +407,7 @@ export class Devices {
     for (const effect of receipt.effects.filter(effect => effect.state === 'outcome_unknown' || effect.state === 'running')) {
       const observation = await this.backend.reconcile(effect, receipt);
       Object.assign(effect, observation); if (effect.state === 'succeeded') this.validateReadback(effect, receipt);
+      if (effect.operation === 'install' && effect.state === 'succeeded') this.retainInstalledApp(op, receipt, effect);
     }
     receipt.reconciliation.lastObservedAt = now();
     const uncertain = receipt.effects.some(effect => effect.state === 'outcome_unknown' || effect.state === 'running');

@@ -54,6 +54,7 @@ allowed['devices.artifacts.list'] = ['repo', 'host'];
 allowed['devices.artifacts.get'] = ['repo', 'host', 'artifact'];
 allowed['devices.artifacts.transfer'] = ['repo', 'host', 'fromHost', 'artifact', 'toHost', 'requestId'];
 allowed['devices.list'] = ['repo', 'host']; allowed['devices.status'] = ['repo', 'host', 'device', 'refresh'];
+allowed['devices.apps'] = ['repo', 'host', 'device'];
 allowed['devices.authorize'] = ['repo', 'host', 'device', 'operations', 'requestId']; allowed['devices.revoke'] = allowed['devices.authorize']!;
 allowed['devices.reconcile'] = ['host', 'operationId', 'requestId'];
 allowed['devices.transfer-host'] = ['repo', 'device', 'fromHost', 'host', 'expectedRevision', 'requestId', 'releaseRef'];
@@ -292,7 +293,10 @@ export class Engine {
       if (command === 'hosts.pair') return completed(await this.peers.pair(string(args['sshAlias'], 'sshAlias')));
       if (command === 'peer.exchange') { const result = await this.peers.receive(object(args['envelope'])); this.kick(); return completed(result); }
       if (command.startsWith('devices.') && !['devices.artifacts.transfer', 'devices.reconcile', 'devices.transfer-host'].includes(command) && !remoteDeviceCommands.has(command) && !remoteDeviceReads.has(command)) requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke this configuration or authorization command on the selected host service.', 3);
-      if (command === 'devices.list') return completed({ executionHostId: this.store.hostId, devices: await this.devices.backend.inventory(), discoveryGrantsAuthority: false });
+      if (command === 'devices.list' && !args['repo']) {
+        requireValue(!args['host'] || args['host'] === this.store.hostId, 'REPOSITORY_SCOPE_REQUIRED', 'Remote inventory requires an associated repository scope.', 3);
+        return completed({ executionHostId: this.store.hostId, devices: await this.devices.backend.inventory(), discoveryGrantsAuthority: false });
+      }
       if (command === 'devices.reconcile') {
         const op = this.store.get(string(args['operationId'], 'operationId'));
         if (op.kind === 'device_transfer') {
@@ -394,7 +398,7 @@ export class Engine {
       if (command === 'devices.transfer-host') {
         const op = this.deviceOwnership.admit(repo, args, this.payload.identity); this.kick(); return this.store.response(op);
       }
-      if (command === 'devices.profile') return completed({ ...this.devices.builds.inspect(repo), policyRevision: this.devices.profile(repo).revision });
+      if (command === 'devices.profile') return completed({ ...this.devices.builds.inspect(repo), policyRevision: this.store.record<{ revision: string }>('deviceProfile', repo.id)?.revision ?? null });
       if (command === 'devices.artifacts.list' || command === 'devices.artifacts.get') return completed(this.devices.builds.artifacts(repo, command === 'devices.artifacts.get' ? string(args['artifact'], 'artifact') : undefined));
       if (command === 'devices.artifacts.transfer') {
         requireValue(args['fromHost'] === undefined || args['fromHost'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke artifact transfer on the selected build/source host service.', 3);
@@ -403,6 +407,8 @@ export class Engine {
         this.kick(); return this.store.response(op);
       }
       if (command === 'devices.status') return this.devices.status(repo, string(args['device'], 'device'), args['refresh'] === true);
+      if (command === 'devices.list') return completed({ executionHostId: this.store.hostId, devices: await this.devices.backend.inventory(), discoveryGrantsAuthority: false });
+      if (command === 'devices.apps') return completed(this.devices.installedApps(repo, string(args['device'], 'device')));
       if (command === 'devices.authorize' || command === 'devices.revoke') {
         requireValue(Array.isArray(args['operations']) && args['operations'].every(value => typeof value === 'string'), 'INVALID_DEVICE_SCOPE', 'Supply named operations.', 2);
         return completed(this.devices.authorize(repo, string(args['device'], 'device'), args['operations'] as string[], command === 'devices.revoke', string(args['requestId'], 'requestId')));

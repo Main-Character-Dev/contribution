@@ -22,7 +22,7 @@ interface Transfer { manifest: TransferManifest; path: string; accepted?: Object
 interface Authority { transitionId: string; epoch: number; previousTransitionId: string | null; ownerHostId: string; previousOwnerHostId: string; phase: 'frozen' | 'active'; peerHostId: string; tip: string | null; policy: string }
 const CHUNK = 256 * 1024, MAX_BUNDLE = 256 * 1024 * 1024;
 export const remoteDeviceCommands = new Set(['devices.connect', 'devices.prepare', 'devices.install', 'devices.launch', 'devices.logs', 'devices.test', 'devices.ui', 'devices.debug', 'devices.capture', 'devices.disconnect', 'devices.qualify', 'devices.artifacts.transfer']);
-export const remoteDeviceReads = new Set(['devices.status', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get']);
+export const remoteDeviceReads = new Set(['devices.list', 'devices.apps', 'devices.status', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get']);
 export function compatiblePeer(hello: ObjectValue): boolean {
   const local = buildIdentity.version.match(/^(\d+)\.(\d+)\.(\d+)$/), remote = String(hello['version']).match(/^(\d+)\.(\d+)\.(\d+)$/);
   if (hello['protocolVersion'] === undefined) return hello['version'] === buildIdentity.version;

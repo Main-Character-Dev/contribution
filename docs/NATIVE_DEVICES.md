@@ -1,0 +1,13 @@
+# Native device controls
+
+Select a repository, open **Devices**, then explicitly select the execution Mac and iPhone. Inventory, profiles, installed-app references, artifacts and status use that selected host through the same service and paired-host protocol as the CLI. An unreachable host never falls back to the initiating Mac.
+
+The sheet separates Mac readiness, trust, developer service, ownership and operation-specific capability. Routine physical actions stay disabled when the current status does not report them callable. The service independently rechecks authorization, immutable selections, context and ownership before dispatch. A registered qualification plan can request its bounded proof while support is unverified; it cannot bypass missing prerequisites or an unimplemented backend.
+
+Offline preparation uses an explicit registered build profile and full committed source SHA. Installation selects a retained artifact and never implicitly launches. Launch selects an observed installed-app reference; the service revalidates it before dispatch. References recovered after uncertain installation readback remain scoped to their project, host, phone and policy revision. They are retained observations, not fresh proof that an app is still installed.
+
+Private project profiles can be selected, reviewed and explicitly applied on the execution Mac. Named action grants and revocations are separate controls. Settings can explicitly enable the optional module; neither enabling nor discovery grants an action or establishes support. Profile changes and grants use the existing service contracts and never import signing or pairing material.
+
+Before sending a device action, profile change or grant, the native client retains the exact request and UUID in its private service directory. A lost reply leaves that immutable request available across closing the sheet or restarting the app. **Reconcile retained request** resubmits that same identity. New device requests remain blocked until a response is confirmed. Corrupt or unexpectedly public request files are preserved and require repair; the client does not guess whether a prior action happened.
+
+The selected-host and install reconciliation fixtures pass (17 focused Node tests). Six Swift test methods pass, including retained-request reopening, identity conflicts and malformed-file preservation. The unsigned native build checks compilation only. GUI interaction, accessibility, signed installation and actual phone results remain unqualified. Advanced backend actions, native session attribution and physical acquisition/recovery still require their implementation/proof recorded in [DEVICE_EXECUTION.md](DEVICE_EXECUTION.md); rendering a control does not claim those capabilities exist.

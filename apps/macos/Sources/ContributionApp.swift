@@ -97,6 +97,7 @@ private struct NotificationContext: Identifiable { let id = UUID(); let value: J
 private struct WorkspaceView: View {
     @Bindable var workspace: Workspace
     @State private var hostedRepository: HostedRepository?
+    @State private var deviceRepository: HostedRepository?
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         NavigationSplitView {
@@ -128,6 +129,7 @@ private struct WorkspaceView: View {
                 Button("Refresh", systemImage: "arrow.clockwise") { Task { await workspace.refresh() } }.disabled(workspace.busy)
                 Button("Preview Push", systemImage: "arrow.up.circle") { Task { await workspace.previewPush() } }.disabled(workspace.selectedRepository == nil)
                 Button("GitHub activity", systemImage: "network") { if let id = workspace.selectedRepository { hostedRepository = HostedRepository(id: id) } }.disabled(workspace.selectedRepository == nil)
+                Button("Devices", systemImage: "iphone") { if let id = workspace.selectedRepository { deviceRepository = HostedRepository(id: id) } }.disabled(workspace.selectedRepository == nil)
             }
         } detail: {
             OperationDetail(workspace: workspace)
@@ -150,6 +152,7 @@ private struct WorkspaceView: View {
         .task(id: workspace.selectedOperation) { await workspace.loadSelection() }
         .sheet(item: $workspace.preview) { preview in PublicationSheet(workspace: workspace, preview: preview) }
         .sheet(item: $hostedRepository) { repository in HostedActivity(workspace: workspace, repository: repository.id) }
+        .sheet(item: $deviceRepository) { repository in DeviceWorkspace(repository: repository.id, client: workspace.client) { workspace.selectedOperation = $0 } }
         .sheet(item: $workspace.notificationContext) { context in NotificationContextSheet(value: context.value) }
     }
 }
@@ -347,6 +350,7 @@ private struct ContributionSettings: View {
     @State private var notifySuccess = true
     @State private var notifyFailure = true
     @State private var notificationSave = ""
+    @State private var devicesEnabled = false
     var body: some View {
         Form {
             Section("Background service") {
@@ -356,6 +360,11 @@ private struct ContributionSettings: View {
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Version") { LabeledContent("Contribution", value: BuildIdentity.version); Text("Development build · Remote device capabilities remain unverified").foregroundStyle(.secondary) }
+            Section("Remote Devices") {
+                Toggle("Enable Remote Devices on this Mac", isOn: $devicesEnabled)
+                Button("Save device setting") { Task { await saveDeviceSetting() } }.disabled(notificationRevision.isEmpty)
+                Text("Enabling the module permits explicit setup and requests. Each project, phone and action still needs its own authorization and qualification.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Updates") {
                 Text(workspace.updater.message).textSelection(.enabled)
                 Button(workspace.updater.recoveryRequired ? "Continue signed update" : "Check for signed updates") { Task { await workspace.updater.check() } }
@@ -388,6 +397,7 @@ private struct ContributionSettings: View {
             if let result = await workspace.call("settings.get") {
                 notificationMachine = result.fields["result"]?.object["settings"]?.object ?? [:]
                 notificationRevision = result.fields["result"]?.object["revision"]?.text ?? ""
+                devicesEnabled = notificationMachine["remoteDevices"]?.object["enabled"]?.boolean ?? false
                 let preferences = notificationMachine["notifications"]?.object ?? [:]
                 preferredHost = preferences["preferredHostId"]?.text ?? ""; notifySuccess = preferences["success"]?.boolean ?? true; notifyFailure = preferences["failure"]?.boolean ?? true
             }
@@ -400,6 +410,15 @@ private struct ContributionSettings: View {
         if let response = await workspace.call("settings.apply", ["config": .object(updated), "expectedRevision": .string(notificationRevision), "requestId": .string(UUID().uuidString)]) {
             notificationSave = "Preference change accepted. Follow its result in Activity."
             notificationRevision = ""; workspace.selectedOperation = response.operationID
+        }
+    }
+    private func saveDeviceSetting() async {
+        var updated = notificationMachine
+        var settings = updated["remoteDevices"]?.object ?? ["maintainSession": .bool(false)]
+        settings["enabled"] = .bool(devicesEnabled); updated["remoteDevices"] = .object(settings)
+        if let response = await workspace.call("settings.apply", ["config": .object(updated), "expectedRevision": .string(notificationRevision), "requestId": .string(UUID().uuidString)]) {
+            notificationRevision = ""; workspace.selectedOperation = response.operationID
+            notificationSave = "Device setting accepted. Follow its result in Activity."
         }
     }
 }
