@@ -20,6 +20,7 @@ import { DeviceArtifactTransfers } from './device-transfer.js';
 import { DeviceOwnershipTransfers } from './device-ownership.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
+import { LegacyReporting } from './legacy-reporting.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
 import { Milestones } from './notifications.js';
 import type { Notice } from './notifications.js';
@@ -32,7 +33,7 @@ const allowed: Record<string, string[]> = {
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
-  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter'],
+  'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId'],
   'repos.initialize': ['repo', 'requestId'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata'],
@@ -388,6 +389,10 @@ export class Engine {
         const adapter = typeof args['adapter'] === 'string' ? args['adapter'] : identifyAdoption(repo.path)?.id;
         requireValue(adapter, 'ADAPTER_UNKNOWN', 'Select an installed repository adapter for parity inspection.', 3);
         const inventory = policyInventory(repo.path, adapter);
+        if (args['prepareReporting']) {
+          requireValue(adapter === repo.config.validation.adapter, 'ADAPTER_SELECTION_MISMATCH', 'The reporting proposal must match the enrolled validation owner.', 2);
+          return completed({ inventory, proposal: await new LegacyReporting(this.store).proposal(repo, string(args['requestId'], 'requestId')) });
+        }
         return completed({ inventory, sourceTip: (await identity(repo.path)).tip, branch: repo.config.integration.branch, hookOwner: repo.hookPath,
           mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });
       }
