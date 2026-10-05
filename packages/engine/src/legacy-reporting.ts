@@ -60,8 +60,8 @@ export class LegacyReporting {
     const evidence = { operationId: op.operationId, attemptId: op.attemptId, repositoryId: attempt.repositoryId, adapter: attempt.adapter, snapshot, files, observedAt: now(), interpretation: 'retained_output_only' };
     this.store.put('legacyEvidence', op.attemptId, evidence); return evidence;
   }
-  async proposal(repo: Enrolled, requestId: string): Promise<ObjectValue> {
-    const adapter = repo.config.validation.adapter, sourcePath = seams[adapter];
+  async proposal(repo: Enrolled, requestId: string, adapter = repo.config.validation.adapter): Promise<ObjectValue> {
+    const sourcePath = seams[adapter];
     requireValue(sourcePath !== undefined, 'ADAPTER_UNKNOWN', 'This project has no adopted reporting migration.');
     const prior = this.store.record<{ repo: string; adapter: string; result: ObjectValue }>('legacyReportingProposal', requestId);
     if (prior) { requireValue(prior.repo === repo.id && prior.adapter === adapter, 'REQUEST_ID_CONFLICT', 'This proposal request belongs to a different project or adapter.'); return prior.result; }

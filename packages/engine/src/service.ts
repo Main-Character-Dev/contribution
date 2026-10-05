@@ -397,8 +397,8 @@ export class Engine {
         requireValue(adapter, 'ADAPTER_UNKNOWN', 'Select an installed repository adapter for parity inspection.', 3);
         const inventory = policyInventory(repo.path, adapter);
         if (args['prepareReporting']) {
-          requireValue(adapter === repo.config.validation.adapter, 'ADAPTER_SELECTION_MISMATCH', 'The reporting proposal must match the enrolled validation owner.', 2);
-          return completed({ inventory, proposal: await new LegacyReporting(this.store).proposal(repo, string(args['requestId'], 'requestId')) });
+          requireValue(adapter === repo.config.validation.adapter || repo.config.validation.adapter === 'migration-required', 'ADAPTER_SELECTION_MISMATCH', 'The reporting proposal must match the enrolled validation owner or its pending adoption.', 2);
+          return completed({ inventory, proposal: await new LegacyReporting(this.store).proposal(repo, string(args['requestId'], 'requestId'), adapter) });
         }
         return completed({ inventory, sourceTip: (await identity(repo.path)).tip, branch: repo.config.integration.branch, hookOwner: repo.hookPath,
           mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });

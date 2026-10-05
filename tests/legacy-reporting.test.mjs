@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync, 
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { reportingPatch, reportingEnvironment } from '../packages/adapters/dist/index.js';
+import { reportingPatch, reportingEnvironment, adoptionPolicies } from '../packages/adapters/dist/index.js';
+import { Engine } from '../packages/engine/dist/service.js';
 import { LegacyReporting } from '../packages/engine/dist/legacy-reporting.js';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { repository, commit, git } from './integration/service.mjs';
@@ -88,4 +89,18 @@ test('inactive adoption proposes no validator or hook activation', async () => {
     assert.equal(plan.gate, 'inactive'); assert.equal(plan.replacements, 0); assert.equal(plan.sourcePath, null);
     assert.equal(plan.beforeDigest, plan.afterDigest); assert.match(plan.activation, /^blocked/);
   } finally { store.close(); rmSync(root, { recursive: true }); }
+});
+
+test('public preparation works while adoption is still pending without changing enrolled policy', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'ct-pending-adoption-')), store = new Journal(join(root, 'state'));
+  const engine = new Engine(store, { identity: 'fixture' });
+  try {
+    const path = repository(root), policy = adoptionPolicies.find(value => value.id === 'roboty-v1');
+    for (const file of policy.policyFiles) { mkdirSync(join(path, file, '..'), { recursive: true }); writeFileSync(join(path, file), 'fixture policy only'); }
+    writeFileSync(join(path, 'package.json'), '{"name":"roboty"}'); writeFileSync(join(path, 'scripts/local-pre-push.mjs'), roboty); commit(path);
+    const repo = await engine.repos.add(path); assert.equal(repo.config.validation.adapter, 'migration-required');
+    const response = await engine.dispatch({ schemaVersion: 1, command: 'repos.migration', args: { repo: repo.id, prepareReporting: true, requestId: randomUUID() }, cwd: path });
+    assert.equal(response.error, null, JSON.stringify(response)); assert.equal(response.result.proposal.adapter, 'roboty-v1'); assert.equal(response.result.proposal.mutation, 'none');
+    assert.equal((await engine.repos.get(repo.id)).config.validation.adapter, 'migration-required');
+  } finally { engine.stopping = true; store.close(); rmSync(root, { recursive: true }); }
 });
