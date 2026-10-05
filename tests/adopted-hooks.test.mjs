@@ -8,6 +8,7 @@ import { Journal } from '../packages/engine/dist/journal.js';
 import { Engine } from '../packages/engine/dist/service.js';
 import { listen } from '../packages/engine/dist/ipc.js';
 import { digest } from '../packages/engine/dist/core.js';
+import { run, processIdentity, isGitPushCommand } from '../packages/engine/dist/process.js';
 import { LegacyPrimaryLease } from '../packages/engine/dist/legacy-lease.js';
 import { adoptionPolicies, policyInventory, leaseBridgePatch, projectPins } from '../packages/adapters/dist/index.js';
 import { repository, git, commit } from './integration/service.mjs';
@@ -36,7 +37,7 @@ async function fixture({ inactive = false, exit = 0, rejected = false, changePol
   const count = join(repo.commonDir, 'gate-count'), input = join(repo.commonDir, 'original-stdin'), changed = join(path, 'AGENTS.md');
   const program = `import {appendFileSync,writeFileSync} from 'node:fs';import * as lease from ${JSON.stringify(join(path, 'scripts/lib/primary-checkout-lease.mjs'))};
 const acquired=lease.acquirePrimaryCheckoutLease({repoRoot:process.cwd(),purpose:'fixture'});if(acquired.status!=='acquired')throw Error('borrow failed');
-appendFileSync(${JSON.stringify(count)},'gate\\n');appendFileSync(process.env.CODEX_PRE_PUSH_STATUS_LOG,'private gate evidence\\n');
+console.log('gate fixture stdout');console.error('gate fixture stderr');appendFileSync(${JSON.stringify(count)},'gate\\n');appendFileSync(process.env.CODEX_PRE_PUSH_STATUS_LOG,'private gate evidence\\n');
 ${changePolicy ? `writeFileSync(${JSON.stringify(changed)},'changed while gate ran');` : ''}
 if(!lease.releasePrimaryCheckoutLease({leasePath:acquired.leasePath,token:acquired.token}))throw Error('release failed');`;
   const script = `#!/bin/sh\nset -eu\ncat > ${quote(input)}\n${quote(process.execPath)} --input-type=module -e ${quote(program)}\nexit ${exit}\n`;
@@ -54,7 +55,8 @@ if(!lease.releasePrimaryCheckoutLease({leasePath:acquired.leasePath,token:acquir
   const push = async () => { const preview = await call('push', { repo: repo.id, preview: true }); assert.equal(preview.error, null, JSON.stringify(preview));
     const args = { repo: repo.id, expectedTip: preview.result.expectedTip, scopeToken: preview.result.scopeToken, requestId: randomUUID() };
     const admitted = await call('push', args); assert.equal(admitted.error, null, JSON.stringify(admitted)); return { args, result: await wait(admitted.operationId) }; };
-  return { root, store, engine, repo, remote, path, count, input, call, push, cleanup: async () => {
+  const external = () => run('/usr/bin/git', ['push', 'origin', 'dev'], { cwd: path, timeoutMs: 20000, env: { CONTRIBUTION_BRIDGE_NODE: process.execPath, CONTRIBUTION_BRIDGE_CLI: cli, CONTRIBUTION_BRIDGE_REPO: repo.id, CONTRIBUTION_BRIDGE_STATE: store.directory, CONTRIBUTION_OPERATION_ID: '', CONTRIBUTION_HOOK_TOKEN: '' } });
+  return { root, store, engine, repo, remote, path, count, input, call, push, external, cleanup: async () => {
     engine.stopping = true; while (engine.active.size || engine.peers.busy || engine.github.busy) await new Promise(resolve => setTimeout(resolve, 20));
     await new Promise(resolve => server.close(resolve)); store.close(); rmSync(root, { recursive: true });
   } };
@@ -114,5 +116,65 @@ test('a changed adoption invalidates a publication preview even when the branch 
     const registration = f.store.record('adoptedHooks', f.repo.id); f.store.put('adoptedHooks', f.repo.id, { ...registration, adoptionId: randomUUID() });
     const result = await f.call('push', { repo: f.repo.id, expectedTip: preview.result.expectedTip, scopeToken: preview.result.scopeToken, requestId: randomUUID() });
     assert.equal(result.error.code, 'STALE_PUSH_SELECTION'); assert.equal(existsSync(f.count), false);
+  } finally { await f.cleanup(); }
+});
+
+
+test('canonical external adopted pushes preserve gate-only outcomes, no-op and original refusal', async () => {
+  for (const options of [{}, { exit: 17 }, { rejected: true }, { inactive: true }]) {
+    const f = await fixture(options); try {
+      const result = await f.external(); assert.equal(result.code === 0, !(options.exit || options.rejected), JSON.stringify(result));
+      const op = f.store.list().find(op => op.kind === 'external_gate'); assert.ok(op);
+      assert.equal(op.state, options.exit ? 'failed' : 'succeeded'); assert.equal(op.result.delivery, 'unobserved');
+      assert.equal(op.result.gate.state, options.exit ? 'failed' : options.inactive ? 'inactive' : 'passed');
+      assert.equal(LegacyPrimaryLease.inspect(f.repo.commonDir), null);
+      if (!options.inactive) { assert.equal(readFileSync(f.count, 'utf8'), 'gate\n'); assert.match(f.store.logs(op), /gate fixture stdout/); assert.match(f.store.logs(op), /gate fixture stderr/); }
+      if (!options.exit && !options.rejected) {
+        assert.equal((await f.external()).code, 0);
+        assert.equal(f.store.list().filter(op => op.kind === 'external_gate')[0].result.gate.state, 'not_run');
+        if (!options.inactive) assert.equal(readFileSync(f.count, 'utf8'), 'gate\n');
+      }
+    } finally { await f.cleanup(); }
+  }
+});
+
+test('external adopted admission rejects non-Git ancestry, paused service, contention and companion authority', async () => {
+  const f = await fixture(); try {
+    const response = await f.call('hook.adopted.begin', { repo: f.repo.id, caller: { pid: process.pid, start: processIdentity(process.pid) }, stdin: '', remote: 'origin', url: f.remote });
+    assert.equal(response.error.code, 'HOOK_PROCESS_MISMATCH');
+    f.store.setMeta('paused', true); const paused = await f.external(); assert.notEqual(paused.code, 0); assert.match(paused.stdout + paused.stderr, /REPOSITORY_BUSY/);
+    f.store.setMeta('paused', false);
+    const lease = new LegacyPrimaryLease(f.repo.commonDir, randomUUID());
+    try { assert.notEqual((await f.external()).code, 0); assert.equal(LegacyPrimaryLease.inspect(f.repo.commonDir).token, lease.owner.token); }
+    finally { lease.release(); }
+    f.engine.repos.save({ ...f.repo, canonicalHostId: randomUUID() });
+    assert.notEqual((await f.external()).code, 0); assert.equal(existsSync(f.count), false);
+  } finally { await f.cleanup(); }
+});
+
+test('external Git command parser refuses ambiguous prefixes and non-push commands', () => {
+  for (const input of ['/usr/bin/git push origin dev', 'git -C /tmp/repo -c a=b push origin dev', '/usr/bin/git --no-optional-locks push']) assert.equal(isGitPushCommand(input), true, input);
+  for (const input of ['sh -c git push origin dev', 'git fetch origin push', 'git -C /tmp/with spaces push', 'git -c "a=b c=d" push', 'git -c push', 'git --exec-path=/tmp push', 'git status push']) assert.equal(isGitPushCommand(input), false, input);
+});
+
+
+test('lost external gate client retains uncertainty and its writer lease without replay', async () => {
+  const f = await fixture(); try {
+    const client = join(f.root, 'abandoned-client.mjs');
+    writeFileSync(client, `import {request} from ${JSON.stringify(resolve('packages/engine/dist/ipc.js'))};import {processIdentity} from ${JSON.stringify(resolve('packages/engine/dist/process.js'))};
+let input='';for await(const chunk of process.stdin)input+=chunk;
+const reply=await request(${JSON.stringify(f.store.directory)},{schemaVersion:1,command:'hook.adopted.begin',cwd:process.cwd(),args:{repo:${JSON.stringify(f.repo.id)},remote:process.argv[2],url:process.argv[3],stdin:input,caller:{pid:process.pid,start:processIdentity(process.pid)}}});if(reply.error)throw Error(JSON.stringify(reply));process.exit(45);`);
+    const adoption = f.store.record('adoptedHooks', f.repo.id);
+    writeFileSync(adoption.dispatcherPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(client)} "$1" "$2"\n`, { mode: 0o700 });
+    f.store.put('adoptedHooks', f.repo.id, { ...adoption, dispatcherDigest: digest(readFileSync(adoption.dispatcherPath)) });
+    assert.notEqual((await f.external()).code, 0);
+    const deadline = Date.now() + 4000; while (f.engine.active.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(f.engine.active.size, 0); const op = f.store.list().find(op => op.kind === 'external_gate');
+    assert.equal(op.state, 'outcome_unknown'); assert.equal(op.error.code, 'EXTERNAL_GATE_INTERRUPTED'); assert.equal(op.result.delivery, 'unobserved');
+    assert.ok(LegacyPrimaryLease.inspect(f.repo.commonDir)); assert.equal(existsSync(f.count), false);
+    assert.notEqual((await f.external()).code, 0); assert.equal(f.store.list().filter(op => op.kind === 'external_gate').length, 1);
+    const maintenance = await f.call('maintenance.begin', { requestId: randomUUID() });
+    const status = await f.call('maintenance.status', {}); assert.ok(status.result.blockers.uncertainOperations.includes(op.operationId));
+    assert.equal((await f.call('maintenance.stop', { windowId: maintenance.result.window.id })).error.code, 'MAINTENANCE_NOT_READY');
   } finally { await f.cleanup(); }
 });

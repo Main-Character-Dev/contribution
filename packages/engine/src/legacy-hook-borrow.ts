@@ -21,7 +21,7 @@ export class LegacyHookBorrow {
     const invocation = this.store.record<LegacyHookInvocation>('legacyHookInvocation', operationId);
     requireValue(invocation && invocation.repositoryId === repo.id && invocation.operationId === op.operationId && invocation.attemptId === op.attemptId &&
       invocation.policyRevision === repo.revision && invocation.hookToken === args['hookToken'] && invocation.phase === 'gate_running' &&
-      op.repositoryId === repo.id && op.kind === 'push' && op.state === 'running' && invocation.lease.purpose === `contribution:${op.attemptId}` && invocation.lease.pid === process.pid,
+      op.repositoryId === repo.id && ['push', 'external_gate'].includes(op.kind) && op.state === 'running' && invocation.lease.purpose === `contribution:${op.attemptId}` && invocation.lease.pid === process.pid,
       'HOOK_LEASE_INVALID', 'No active adopted gate owns this exact repository, policy, operation and writer lease.');
     const caller = object(args['caller']);
     requireValue(typeof caller['pid'] === 'number' && typeof caller['start'] === 'string', 'HOOK_PROCESS_MISMATCH', 'A verified live hook process is required.');

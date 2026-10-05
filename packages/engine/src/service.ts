@@ -5,10 +5,11 @@ import { completed, rejected, requireValue, string, object, digest, Fault, termi
 import type { ObjectValue } from './core.js';
 import { Journal } from './journal.js';
 import type { Operation } from './journal.js';
+import type { Enrolled } from './repositories.js';
 import { Repositories } from './repositories.js';
 import { Workflows } from './workflows.js';
 import { discover, identity, git, gitText, inputFingerprint } from './git.js';
-import { Lease, alive, processIdentity } from './process.js';
+import { Lease, alive, processIdentity, gitPushAncestor } from './process.js';
 import type { Payload } from './payload.js';
 import { GitHubMonitor } from './github.js';
 import { Peers, remoteDeviceCommands, remoteDeviceReads } from './peers.js';
@@ -45,7 +46,7 @@ const allowed: Record<string, string[]> = {
   'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
   'hook.borrow': ['repo', 'operationId', 'hookToken', 'caller'], 'hook.release-borrow': ['repo', 'operationId', 'hookToken', 'caller', 'borrowToken'],
-  'hook.adopted.begin': ['repo', 'operationId', 'hookToken', 'caller', 'remote', 'url', 'stdin'], 'hook.adopted.finish': ['repo', 'operationId', 'hookToken', 'caller', 'gateExit'],
+  'hook.adopted.begin': ['repo', 'operationId', 'hookToken', 'caller', 'remote', 'url', 'stdin'], 'hook.adopted.finish': ['repo', 'operationId', 'hookToken', 'caller', 'gateExit', 'gateOutput', 'outputTruncated'],
   'github.jobs': ['repo', 'runId', 'attempt'], 'github.logs': ['repo', 'runId', 'attempt', 'jobId'],
   'notifications.pending': [], 'notifications.context': ['repo', 'originHostId', 'noticeId'],
   'notifications.claim': ['repo', 'originHostId', 'noticeId', 'revision', 'requestId'],
@@ -77,6 +78,7 @@ export class Engine {
   readonly maintenance: Maintenance;
   readonly active = new Map<string, AbortController>();
   readonly activeRepositories = new Set<string>();
+  private readonly externalHooks = new Map<string, { lease: LegacyPrimaryLease; timer: NodeJS.Timeout }>();
   stopping = false;
   restartRequested = false;
   private scheduled = false;
@@ -220,6 +222,7 @@ export class Engine {
     const op = this.store.admit(identity, kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
   }
   private cancel(op: Operation): Response {
+    if (op.kind === 'external_gate' && this.externalHooks.has(op.operationId)) throw new Fault('EXTERNAL_CLIENT_OWNS_GATE', 'Cancel this push in its original Git client. Contribution retains its lease until the gate confirms completion or needs reconciliation.', 3);
     if (terminal.has(op.state) && !(op.state === 'needs_attention' && op.result['transferAttempted'] && !op.effectDispatched)) return this.store.response(op);
     const controller = this.active.get(op.operationId);
     if (controller) { controller.abort(); return this.store.response(this.store.get(op.operationId)); }
@@ -358,9 +361,20 @@ export class Engine {
       }
       const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
       if (command === 'hook.adopted.begin' || command === 'hook.adopted.finish') {
+        if (command === 'hook.adopted.finish') {
+          const retained = this.workflows.adopted.retainedCompletion(repo, args); if (retained) return completed(retained);
+        }
         this.peers.assertWriter(repo);
-        requireValue(typeof args['operationId'] === 'string' && this.active.has(args['operationId']), 'HOOK_LEASE_INVALID', 'Adopted publication requires a currently managed push.', 3);
-        return completed(command === 'hook.adopted.begin' ? await this.workflows.adopted.begin(repo, args) : await this.workflows.adopted.finish(repo, args));
+        if (command === 'hook.adopted.begin' && !args['operationId']) return completed(await this.beginExternalAdoptedHook(repo, args));
+        requireValue(typeof args['operationId'] === 'string' && this.active.has(args['operationId']), 'HOOK_LEASE_INVALID', 'No live publication owns this adopted hook.', 3);
+        const result = command === 'hook.adopted.begin' ? await this.workflows.adopted.begin(repo, args) : await this.workflows.adopted.finish(repo, args);
+        if (command === 'hook.adopted.finish' && this.externalHooks.has(args['operationId'])) {
+          const op = this.store.get(args['operationId']), passed = ['passed', 'inactive', 'not_run'].includes(String(result['state']));
+          this.store.update(op, { state: passed ? 'succeeded' : 'failed', stage: 'gate_observed', result: { ...op.result, gate: result, delivery: 'unobserved', observation: 'pre_push_hook_only', exitCode: result['exitCode'] },
+            error: passed ? null : { code: String(result['code'] ?? 'GATE_FAILED'), message: 'The original gate refused publication. Git delivery is not observed by this hook.', retryable: false, nextActions: [] } });
+          this.finishExternalHook(op, true);
+        }
+        return completed(result);
       }
       if (command === 'hook.borrow' || command === 'hook.release-borrow') {
         this.peers.assertWriter(repo);
@@ -566,6 +580,50 @@ export class Engine {
       }
       throw new Fault('OPERATION_UNSUPPORTED', 'This command is not implemented.', 3);
     } catch (error) { return rejected(error); }
+  }
+  private finishExternalHook(op: Operation, release: boolean): void {
+    const held = this.externalHooks.get(op.operationId); if (!held) return;
+    clearInterval(held.timer); if (release) held.lease.release();
+    this.externalHooks.delete(op.operationId); this.active.delete(op.operationId); this.activeRepositories.delete(op.repositoryId); this.kick();
+  }
+  private async beginExternalAdoptedHook(repo: Enrolled, args: ObjectValue): Promise<ObjectValue> {
+    requireValue(!this.store.getMeta('paused') && !this.activeRepositories.has(repo.id) && this.active.size < 2 &&
+      !this.store.unsettled().some(op => op.repositoryId === repo.id && isGitJob(op.kind) && !op.result['remoteOperationId']),
+      'REPOSITORY_BUSY', 'Existing, paused or unsettled work must finish before an external gate starts.', 4);
+    const caller = object(args['caller']);
+    requireValue(typeof caller['pid'] === 'number' && typeof caller['start'] === 'string', 'HOOK_PROCESS_MISMATCH', 'A live Git hook client is required.');
+    const identity = { pid: caller['pid'], start: caller['start'] }, ancestor = gitPushAncestor(identity);
+    requireValue(ancestor, 'HOOK_PROCESS_MISMATCH', 'This hook client has no verifiable live Git push ancestor. Use Contribution Push for an unsupported client command shape.');
+    const op = this.store.admit(crypto.randomUUID(), 'external_gate', repo.id, args, this.payload.identity, 'running');
+    // Reserve the repository synchronously, before checking policy or contacting
+    // the destination, so a concurrent queue tick cannot enter the same writer.
+    this.active.set(op.operationId, new AbortController()); this.activeRepositories.add(repo.id);
+    let lease: LegacyPrimaryLease | undefined, dispatched = false;
+    try {
+      lease = new LegacyPrimaryLease(repo.commonDir, op.attemptId);
+      const scope = await this.workflows.scope(repo);
+      const remote = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
+      requireValue(remote.code === 0 || remote.code === 2, 'REMOTE_UNAVAILABLE', 'Cannot observe this external publication destination.', 3);
+      const before = remote.code === 2 ? null : remote.stdout.split('\t')[0]!;
+      const environment = await this.workflows.adopted.prepare(op, repo, scope, before, lease, true);
+      this.workflows.adopted.started(op, ancestor.pid, ancestor.start);
+      const plan = await this.workflows.adopted.begin(repo, { ...args, operationId: op.operationId, hookToken: environment['CONTRIBUTION_HOOK_TOKEN'] });
+      dispatched = true;
+      this.store.update(this.store.get(op.operationId), { effectDispatched: true, stage: 'external_gate_running', result: { delivery: 'unobserved', observation: 'pre_push_hook_only', processes: [ancestor, identity] } });
+      const deadline = Date.now() + 3630000;
+      const timer = setInterval(() => {
+        if (processIdentity(identity.pid) === identity.start && Date.now() < deadline) return;
+        const current = this.store.get(op.operationId);
+        this.store.update(current, { state: 'outcome_unknown', stage: 'external_gate_reconciliation_required', result: { ...current.result, gate: this.store.record('gate', op.operationId) ?? { state: 'unobserved' }, delivery: 'unobserved' },
+          error: { code: 'EXTERNAL_GATE_INTERRUPTED', message: 'The external gate client disappeared or exceeded its budget. Its lease and evidence remain retained; no gate or publication will replay.', retryable: false, nextActions: [] } });
+        this.finishExternalHook(current, false);
+      }, 1000); timer.unref();
+      this.externalHooks.set(op.operationId, { lease, timer }); return plan;
+    } catch (error) {
+      const failure = rejected(error);
+      this.store.update(this.store.get(op.operationId), { state: dispatched ? 'outcome_unknown' : 'failed', stage: 'external_gate_stopped', error: failure.error, result: { ...failure.result, delivery: 'unobserved' } });
+      if (!dispatched) lease?.release(); this.active.delete(op.operationId); this.activeRepositories.delete(repo.id); this.kick(); throw error;
+    }
   }
   async recoverObservedEffects(operationId?: string): Promise<void> {
     for (const op of this.store.unsettled().filter(item => item.state === 'outcome_unknown' && (!operationId || item.operationId === operationId))) {

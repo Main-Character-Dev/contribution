@@ -106,8 +106,8 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     if (command === 'hook.adopted') {
       const begun = await call('hook.adopted.begin');
       if (begun.error || !begun.result) { write(render(begun, json)); return exitCode(begun); }
-      const gateExit = await executeAdoptedGate(begun.result);
-      const response = await call('hook.adopted.finish', { repo: args['repo'], operationId: args['operationId'], hookToken: args['hookToken'], caller: args['caller'], gateExit });
+      const gate = await executeAdoptedGate(begun.result);
+      const response = await call('hook.adopted.finish', { repo: args['repo'], operationId: begun.result['operationId'], hookToken: begun.result['hookToken'], caller: args['caller'], gateExit: gate.exitCode, ...(begun.result['external'] ? { gateOutput: gate.output, outputTruncated: gate.truncated } : {}) });
       write(render(response, json)); return exitCode(response);
     }
     if (command === 'version') {
