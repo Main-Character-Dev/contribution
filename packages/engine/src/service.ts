@@ -287,7 +287,7 @@ export class Engine {
       if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
         maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
-        active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, payload: this.payload.identity, processId: process.pid });
+        active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
       if (command === 'service.storage') {
         const storage = new StorageRetention(this.store);
         if (args['preview'] === true) {

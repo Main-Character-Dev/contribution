@@ -3,18 +3,27 @@ import SwiftUI
 import Observation
 import ContributionPlatform
 
-@MainActor @Observable private final class Workspace {
+@MainActor @Observable final class Workspace {
     let client = ServiceClient()
     let notifications = LocalNotifications()
     let updater = ReleaseUpdater()
     @ObservationIgnored private var monitoring: Task<Void, Never>?
     @ObservationIgnored private var selectionGeneration = UUID()
     @ObservationIgnored private var loadedOperation: String?
+    @ObservationIgnored private var repositoryGeneration = UUID()
+    @ObservationIgnored private var loadedRepository: String?
     var notificationContext: NotificationContext?
     var repositories: [JSONValue] = []
     var sharedProjects: [SharedProject] = []
     var mappingProject: String?
     var operations: [JSONValue] = []
+    var hosts: [JSONValue] = []
+    var localHostID = ""
+    var devicesEnabled = false
+    var repositoryStatus: JSONValue = .null
+    var repositoryLoading = false
+    var pendingRequest: RetainedRequest?
+    var sending = false
     var selectedRepository: String?
     var selectedOperation: String?
     var service = "Connecting…"
@@ -36,17 +45,19 @@ import ContributionPlatform
             }
         }
     }
-    func call(_ command: String, _ args: [String: JSONValue] = [:]) async -> ResponseEnvelope? {
+    func call(_ command: String, _ args: [String: JSONValue] = [:], accepting: () -> Bool = { true }) async -> ResponseEnvelope? {
         do {
             let response = try await client.request(command, args: args)
+            guard !Task.isCancelled, accepting() else { return nil }
             if case .object(let failure) = response.fields["error"] { error = failure["message"]?.text; return nil }
             return response
-        } catch { self.error = error.localizedDescription; return nil }
+        } catch { if !Task.isCancelled, accepting() { self.error = error.localizedDescription }; return nil }
     }
     func refresh() async {
         guard !busy else { return }; busy = true; defer { busy = false }
         if let response = await call("service.status") {
             let result = response.fields["result"]?.object ?? [:]; service = result["state"]?.text ?? "Unknown"; paused = result["paused"]?.boolean ?? false
+            localHostID = result["hostId"]?.text ?? ""; devicesEnabled = result["remoteDevicesEnabled"]?.boolean ?? false
         } else { service = "Service unavailable"; return }
         if let response = await call("repos.list") {
             repositories = response.fields["result"]?.object["repositories"]?.array ?? []
@@ -54,18 +65,54 @@ import ContributionPlatform
                 .filter { $0.fields.object["state"]?.text != "mapped" }
         }
         if let response = await call("runs.list") { operations = response.fields["result"]?.object["operations"]?.array ?? [] }
-        await loadSelection()
+        if let response = await call("hosts.list") { hosts = response.fields["result"]?.object["hosts"]?.array ?? [] }
+        do { pendingRequest = try NativeRequestJournal(directory: client.directory).pending() } catch { self.error = error.localizedDescription }
+        await loadSelection(); await loadRepository()
     }
     func loadSelection() async {
         let generation = UUID(); selectionGeneration = generation
         guard let selectedOperation else { detail = .null; log = ""; loadedOperation = nil; return }
         if loadedOperation != selectedOperation { detail = .null; log = ""; loadedOperation = selectedOperation }
-        let response = await call("runs.get", ["operationId": .string(selectedOperation)])
+        let response = await call("runs.get", ["operationId": .string(selectedOperation)], accepting: { self.selectionGeneration == generation && self.selectedOperation == selectedOperation })
         guard !Task.isCancelled, selectionGeneration == generation, self.selectedOperation == selectedOperation else { return }
         if let response { detail = .object(response.fields) }
-        let logs = await call("logs", ["operationId": .string(selectedOperation), "tail": .number(2000)])
+        let logs = await call("logs", ["operationId": .string(selectedOperation), "tail": .number(2000)], accepting: { self.selectionGeneration == generation && self.selectedOperation == selectedOperation })
         guard !Task.isCancelled, selectionGeneration == generation, self.selectedOperation == selectedOperation else { return }
         if let logs { log = logs.fields["result"]?.object["text"]?.text ?? "" }
+    }
+    func hostLabel(_ id: String) -> String {
+        if id == localHostID { return "This Mac" }
+        let host = hosts.first { $0.object["hostId"]?.text == id }
+        return host?.object["label"]?.text ?? host?.object["alias"]?.text ?? "Paired Mac"
+    }
+    func loadRepository(refresh: Bool = false) async {
+        if repositoryLoading && !refresh && loadedRepository == selectedRepository { return }
+        let generation = UUID(); repositoryGeneration = generation
+        guard let selectedRepository else { repositoryStatus = .null; repositoryLoading = false; loadedRepository = nil; return }
+        if loadedRepository != selectedRepository { repositoryStatus = .null; loadedRepository = selectedRepository }
+        repositoryLoading = true; defer { if repositoryGeneration == generation { repositoryLoading = false } }
+        let response = await call("status", ["repo": .string(selectedRepository), "refresh": .bool(refresh)], accepting: { self.repositoryGeneration == generation && self.selectedRepository == selectedRepository })
+        guard !Task.isCancelled, repositoryGeneration == generation, self.selectedRepository == selectedRepository else { return }
+        if let response { repositoryStatus = response.fields["result"] ?? .null }
+    }
+    func submit(_ command: String, args: [String: JSONValue]) async {
+        guard !sending else { return }
+        let journal = NativeRequestJournal(directory: client.directory)
+        do {
+            let retained = RetainedRequest(command: command, args: args); try journal.retain(retained); pendingRequest = retained
+            await reconcilePending()
+        } catch { self.error = error.localizedDescription; pendingRequest = try? journal.pending() }
+    }
+    func reconcilePending() async {
+        guard let retained = pendingRequest, !sending else { return }
+        sending = true; defer { sending = false }
+        do {
+            let response = try await client.request(retained.command, args: retained.args)
+            try NativeRequestJournal(directory: client.directory).resolve(retained); pendingRequest = nil
+            if case .object(let failure) = response.fields["error"] { error = failure["message"]?.text }
+            if let operation = response.operationID { selectedOperation = operation }
+        } catch { self.error = error.localizedDescription }
+        await refresh()
     }
     func addRepository() async {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
@@ -86,12 +133,12 @@ import ContributionPlatform
     }
     func previewPush() async {
         guard let selectedRepository, let response = await call("push", ["repo": .string(selectedRepository), "preview": .bool(true)]), let result = response.fields["result"] else { return }
+        guard self.selectedRepository == selectedRepository else { return }
         preview = PublicationPreview(repository: selectedRepository, fields: result)
     }
     func publish(_ preview: PublicationPreview) async {
         let fields = preview.fields.object
-        if let response = await call("push", ["repo": .string(preview.repository), "expectedTip": fields["expectedTip"] ?? .null,
-            "scopeToken": fields["scopeToken"] ?? .null, "requestId": .string(UUID().uuidString)]) { selectedOperation = response.operationID }
+        await submit("push", args: ["repo": .string(preview.repository), "expectedTip": fields["expectedTip"] ?? .null, "scopeToken": fields["scopeToken"] ?? .null])
         self.preview = nil; await refresh()
     }
     func operationAction(_ action: String) async {
@@ -99,10 +146,12 @@ import ContributionPlatform
         _ = await call(action, ["operationId": .string(selectedOperation)]); await refresh()
     }
 }
-private struct PublicationPreview: Identifiable {
-    let id = UUID(), repository: String, fields: JSONValue
+struct PublicationPreview: Identifiable {
+    let id = UUID()
+    let repository: String
+    let fields: JSONValue
 }
-private struct SharedProject: Identifiable {
+struct SharedProject: Identifiable {
     let fields: JSONValue
     var id: String { (fields.object["hostId"]?.text ?? "") + ":" + (fields.object["repositoryId"]?.text ?? "") }
     var status: String {
@@ -114,7 +163,7 @@ private struct SharedProject: Identifiable {
         }
     }
 }
-private struct NotificationContext: Identifiable { let id = UUID(); let value: JSONValue }
+struct NotificationContext: Identifiable { let id = UUID(); let value: JSONValue }
 
 @main struct ContributionApp: App {
     @State private var workspace = Workspace()
@@ -162,23 +211,24 @@ private struct WorkspaceView: View {
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 230)
         } content: {
-            List(selection: $workspace.selectedOperation) {
-                ForEach(workspace.operations.filter { workspace.selectedRepository == nil || $0.object["repositoryId"]?.text == workspace.selectedRepository }, id: \.identity) { operation in
-                    OperationRow(operation: operation).tag(operation.object["operationId"]?.text as String?)
-                }
-            }
-            .overlay { if workspace.operations.isEmpty { ContentUnavailableView("No recorded operations", systemImage: "clock", description: Text("Completed work and explicit pushes will appear here.")) } }
+            ActivityList(workspace: workspace)
             .navigationTitle("Activity")
             .toolbar {
                 Button("Refresh", systemImage: "arrow.clockwise") { Task { await workspace.refresh() } }.disabled(workspace.busy)
                 Button("Preview Push", systemImage: "arrow.up.circle") { Task { await workspace.previewPush() } }.disabled(workspace.selectedRepository == nil)
                 Button("GitHub activity", systemImage: "network") { if let id = workspace.selectedRepository { hostedRepository = HostedRepository(id: id) } }.disabled(workspace.selectedRepository == nil)
-                Button("Devices", systemImage: "iphone") { if let id = workspace.selectedRepository { deviceRepository = HostedRepository(id: id) } }.disabled(workspace.selectedRepository == nil)
+                if workspace.devicesEnabled { Button("Devices", systemImage: "iphone") { if let id = workspace.selectedRepository { deviceRepository = HostedRepository(id: id) } }.disabled(workspace.selectedRepository == nil) }
             }
         } detail: {
             OperationDetail(workspace: workspace)
         }
         .safeAreaInset(edge: .top) {
+            if let retained = workspace.pendingRequest {
+                HStack {
+                    Text("The reply to \(retained.command) is unresolved. Its original selection is retained.")
+                    Spacer(); Button("Reconcile request") { Task { await workspace.reconcilePending() } }.disabled(workspace.sending)
+                }.padding(10).background(.orange.opacity(0.12))
+            }
             if let error = workspace.error {
                 HStack { Image(systemName: "exclamationmark.circle"); Text(error); Spacer(); Button("Dismiss") { workspace.error = nil } }
                     .padding(10).background(.orange.opacity(0.12)).accessibilityIdentifier("contribution.error")
@@ -194,6 +244,8 @@ private struct WorkspaceView: View {
             }
         }
         .task(id: workspace.selectedOperation) { await workspace.loadSelection() }
+        .task(id: workspace.selectedRepository) { await workspace.loadRepository() }
+        .onChange(of: workspace.devicesEnabled) { _, enabled in if !enabled { deviceRepository = nil } }
         .sheet(item: $workspace.preview) { preview in PublicationSheet(workspace: workspace, preview: preview) }
         .sheet(item: $hostedRepository) { repository in HostedActivity(workspace: workspace, repository: repository.id) }
         .sheet(item: $deviceRepository) { repository in DeviceWorkspace(repository: repository.id, client: workspace.client) { workspace.selectedOperation = $0 } }
@@ -302,19 +354,10 @@ private struct HostedActivity: View {
         if let response { log = response.fields["result"] ?? .null }
     }
 }
-private struct OperationRow: View {
-    let operation: JSONValue
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(operation.object["kind"]?.text.replacingOccurrences(of: "_", with: " ").capitalized ?? "Operation").font(.headline)
-            Text(operation.object["state"]?.text.replacingOccurrences(of: "_", with: " ") ?? "Unknown").foregroundStyle(.secondary)
-            Text(operation.object["createdAt"]?.text ?? "").font(.caption).foregroundStyle(.secondary)
-        }.padding(.vertical, 4)
-    }
-}
 private struct OperationDetail: View {
     @Bindable var workspace: Workspace
     @State private var showDiagnostics = false
+    @State private var followingLog = true
     var body: some View {
         if let selected = workspace.selectedOperation {
             VStack(alignment: .leading, spacing: 12) {
@@ -325,20 +368,23 @@ private struct OperationDetail: View {
                         Button("Cancel operation") { Task { await workspace.operationAction("runs.cancel") } }
                         Button("Pin evidence") { Task { await workspace.operationAction("runs.pin") } }
                         Button("Unpin evidence") { Task { await workspace.operationAction("runs.unpin") } }
-                        Button("Copy log") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(workspace.log, forType: .string) }
-                        Button("Export log…") { exportLog() }
+                        Button("Copy latest log") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(workspace.log, forType: .string) }
+                        Button("Export latest log…") { exportLog() }
                         Button("Show diagnostics") { showDiagnostics = true }
                     }
                 }
                 Text(selected).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                if let result = workspace.detail.object["result"] {
-                    HStack { Text("Stage: \(result.object["stage"]?.text ?? "Unknown")"); Spacer(); Text("Delivery: \(result.object["delivery"]?.text ?? "Not requested")") }.font(.caption)
+                RunSummary(detail: workspace.detail, operation: workspace.operations.first { $0.object["operationId"]?.text == selected })
+                HStack {
+                    Text(followingLog ? "Following output" : "Log view paused; follow latest to see new output").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(followingLog ? "Pause following" : "Follow latest") { followingLog.toggle() }.controlSize(.small)
                 }
                 TextField("Search retained log", text: $workspace.search).textFieldStyle(.roundedBorder)
-                ScrollView([.vertical, .horizontal]) {
-                    Text(workspace.log.split(separator: "\n", omittingEmptySubsequences: false).filter { workspace.search.isEmpty || $0.localizedCaseInsensitiveContains(workspace.search) }.joined(separator: "\n"))
-                        .font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                }.background(.quaternary.opacity(0.3)).accessibilityIdentifier("contribution.log")
+                RetainedLogView(text: workspace.log.split(separator: "\n", omittingEmptySubsequences: false).filter { workspace.search.isEmpty || $0.localizedCaseInsensitiveContains(workspace.search) }.joined(separator: "\n"), following: $followingLog)
+                    .id(selected + ":" + workspace.search)
+                    .onChange(of: workspace.search) { _, value in if !value.isEmpty { followingLog = false } }
+                    .onChange(of: workspace.selectedOperation) { _, _ in followingLog = true }
                 Text("Showing up to 2,000 retained lines. Closing this window leaves accepted work running.").font(.caption).foregroundStyle(.secondary)
             }.padding()
             .sheet(isPresented: $showDiagnostics) { DiagnosticsSheet(value: workspace.detail) }
@@ -357,11 +403,12 @@ private struct PublicationSheet: View {
         let scope = preview.fields.object["scope"]?.object ?? [:]
         VStack(alignment: .leading, spacing: 16) {
             Text("Publish selected work").font(.title2)
+            LabeledContent("Project", value: workspace.repositories.first(where: { $0.object["id"]?.text == preview.repository })?.object["config"]?.object["name"]?.text ?? preview.repository)
             LabeledContent("Branch", value: scope["branch"]?.text ?? "Unknown")
             LabeledContent("Destination", value: scope["ref"]?.text ?? "Unknown")
             LabeledContent("Commit", value: scope["tip"]?.text ?? "Unknown")
             Text("This request publishes this exact selection. Later commits require a new preview.").foregroundStyle(.secondary)
-            HStack { Button("Cancel") { dismiss() }; Spacer(); Button("Push") { Task { await workspace.publish(preview) } }.buttonStyle(.borderedProminent) }
+            HStack { Button("Cancel") { dismiss() }; Spacer(); Button("Push") { Task { await workspace.publish(preview) } }.buttonStyle(.borderedProminent).disabled(workspace.sending || workspace.pendingRequest != nil) }
         }.padding(24).frame(width: 560)
     }
 }

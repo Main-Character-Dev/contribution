@@ -67,14 +67,16 @@ export class AdoptedChecks {
       publication: 'not_requested', gate: { state: repo.config.validation.gate === 'inactive' ? 'inactive' : 'not_run' }, reuse: 'not_publication_proof' } });
     // Preserve original per-check deadlines; this outer bound only contains an
     // abandoned runner. Child-native/simulator coordination stays project-owned.
+    const started = performance.now();
     const result = await run(command.executable, command.argv, { ...options, env, cwd: command.cwd, timeoutMs: 24 * 60 * 60 * 1000 });
     const unchanged = (await identity(sourcePath)).tip === source.tip && await inputFingerprint(sourcePath) === before;
     const outcome = { exitCode: result.code, cancelled: result.cancelled, timedOut: result.timedOut, sourceUnchanged: unchanged,
-      childOutcomes: 'original_project_output', publicationProof: false };
+      durationMilliseconds: Math.round(performance.now() - started), childOutcomes: 'original_project_output', publicationProof: false };
     this.store.put('adoptedCheckResult', op.operationId, outcome);
     if (result.cancelled) throw new Fault('CANCELLED', 'The original local check was cancelled.', 130, { originalCheckOutcome: outcome });
     if (!unchanged) throw new Fault('CHECK_INPUT_CHANGED', 'Local inputs changed during the original check. Its output is retained, but it is not reusable input proof.', 5, { originalCheckOutcome: outcome });
     if (result.code !== 0 || result.timedOut) throw new Fault('CHECK_FAILED', 'The original project check failed. Its own focused repair details remain in this attempt’s output.', 5, { originalCheckOutcome: outcome });
-    return { state: 'completed', originalCheckOutcome: outcome, checks: [{ id: selected.id, state: 'completed', scope: 'original_runner', childOutcomes: 'original_project_output' }] };
+    return { state: 'completed', originalCheckOutcome: outcome, checks: [{ id: selected.id, state: 'completed', scope: 'original_runner',
+      durationMilliseconds: outcome.durationMilliseconds, profile: repo.config.validation.profile, argv: [command.executable, ...command.argv], reuse: 'original_project_policy', childOutcomes: 'original_project_output' }] };
   }
 }

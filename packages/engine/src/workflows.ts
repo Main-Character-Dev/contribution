@@ -4,7 +4,7 @@ import { Journal } from './journal.js';
 import type { Operation } from './journal.js';
 import { Repositories } from './repositories.js';
 import type { Enrolled } from './repositories.js';
-import { digest, Fault, id, now, requireValue, string, object } from './core.js';
+import { digest, Fault, id, now, requireValue, string, object, redact } from './core.js';
 import type { ObjectValue } from './core.js';
 import { clean, git, gitText, identity, oid, ordinaryHistory, contained, inputFingerprint } from './git.js';
 import { Lease, executable, processIdentity, descendantOf, run } from './process.js';
@@ -169,9 +169,11 @@ export class Workflows {
       const command = ['node', 'pnpm'].includes(basename(name)) ? (basename(name) === 'node' ? runtime!.node : runtime!.pnpm) : executable(name);
       requireValue(!['npm', 'npx'].includes(basename(name)), 'PACKAGE_MANAGER_UNPINNED', 'Use the selected pinned pnpm command or its exec route.', 3);
       this.store.log(op, `\n[${check.id}] started\n`);
-      const result = await run(command, check.argv.slice(1), { ...this.options(op, signal), ...(runtime ? { env: runtimes.environment(runtime) } : {}), cwd: contained(sourcePath, check.cwd), timeoutMs: Math.min(check.timeoutSeconds, 86400) * 1000 });
+      const startedAt = now(), started = performance.now(), cwd = contained(sourcePath, check.cwd);
+      const result = await run(command, check.argv.slice(1), { ...this.options(op, signal), ...(runtime ? { env: runtimes.environment(runtime) } : {}), cwd, timeoutMs: Math.min(check.timeoutSeconds, 86400) * 1000 });
       const state = result.cancelled ? 'cancelled' : result.timedOut ? 'timed_out' : result.code === 0 ? 'passed' : 'failed';
-      results.push({ id: check.id, state, exitCode: result.code });
+      results.push({ id: check.id, state, exitCode: result.code, argv: [command, ...check.argv.slice(1)].map(redact), cwd,
+        profile: repo.config.validation.profile, startedAt, completedAt: now(), durationMilliseconds: Math.round(performance.now() - started), inputDigest: before, reuse: 'never', logMarker: `[${check.id}] started` });
       const latest = this.store.get(op.operationId); this.store.update(latest, { result: { ...latest.result, checks: results } }, 'check.completed');
       if (state !== 'passed') throw new Fault(state === 'cancelled' ? 'CANCELLED' : 'CHECK_FAILED', `Check ${check.id} ${state}.`, state === 'cancelled' ? 130 : 5, { checks: results });
     }

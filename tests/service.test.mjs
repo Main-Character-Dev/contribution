@@ -59,6 +59,10 @@ test('managed push executes a real gate once, confirms delivery and preserves in
     const accepted = await f.call('push', { repo: added.id, expectedTip: preview.result.expectedTip, scopeToken: preview.result.scopeToken, requestId: randomUUID() });
     const done = await f.wait(accepted.operationId); assert.equal(done.operationState, 'succeeded', JSON.stringify(done));
     assert.equal(done.result.delivery, 'delivered'); assert.equal(done.result.gate.state, 'passed'); assert.equal(readFileSync(count, 'utf8').trim(), 'gate');
+    const check = done.result.gate.checks[0];
+    assert.deepEqual(check.argv, config.validation.checks[0].argv); assert.equal(check.profile, 'local-development');
+    assert.ok(Number.isSafeInteger(check.durationMilliseconds) && check.durationMilliseconds >= 0);
+    assert.ok(Date.parse(check.completedAt) >= Date.parse(check.startedAt)); assert.equal(check.reuse, 'never'); assert.equal(check.logMarker, '[fixture] started');
     const next = await f.call('push', { repo: added.id, preview: true });
     const noop = await f.call('push', { repo: added.id, expectedTip: next.result.expectedTip, scopeToken: next.result.scopeToken, requestId: randomUUID() });
     const noopResult = await f.wait(noop.operationId); assert.equal(noopResult.result.delivery, 'up_to_date'); assert.equal(noopResult.result.gate.state, 'not_run');

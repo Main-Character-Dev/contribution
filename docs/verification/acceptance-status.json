@@ -16,6 +16,11 @@
           "level": "fixture",
           "source": "tests/integration/native-client.mjs",
           "scope": "Compiled Swift and Node clients share real private IPC, payload identity and durable operations. Native UI interaction remains unverified."
+        },
+        {
+          "level": "fixture",
+          "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/ActivityPresentationTests.swift",
+          "scope": "Activity projection distinguishes uncertain and inactive outcomes; combined filters preserve scope; native log controller freezes selected output on scrolling and explicitly resumes. Live GUI and VoiceOver remain unrun."
         }
       ],
       "nextStep": "Native UI interaction remains unverified."
@@ -46,6 +51,11 @@
           "level": "fixture",
           "source": "tests/service.test.mjs",
           "scope": "Disposable installed payload, CLI/service request identity and generic Git workflows. Complete adversarial variants and actual application routes remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/ActivityPresentationTests.swift",
+          "scope": "Activity projection distinguishes uncertain and inactive outcomes; combined filters preserve scope; native log controller freezes selected output on scrolling and explicitly resumes. Live GUI and VoiceOver remain unrun."
         }
       ],
       "nextStep": "Complete adversarial variants and actual application routes remain open."
@@ -625,6 +635,11 @@
           "level": "fixture",
           "source": "tests/push-recovery.test.mjs",
           "scope": "Frozen publication selection, uncertain remote delivery, cancellation and separate attempts are exercised against disposable Git fixtures. Actual host/network variants remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/ActivityPresentationTests.swift",
+          "scope": "Activity projection distinguishes uncertain and inactive outcomes; combined filters preserve scope; native log controller freezes selected output on scrolling and explicitly resumes. Live GUI and VoiceOver remain unrun."
         }
       ],
       "nextStep": "Actual host/network variants remain open."
@@ -635,7 +650,13 @@
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
       "implementation": "not_started",
       "outcome": "not_run",
-      "evidence": [],
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/ActivityPresentationTests.swift",
+          "scope": "Activity projection distinguishes uncertain and inactive outcomes; combined filters preserve scope; native log controller freezes selected output on scrolling and explicitly resumes. Live GUI and VoiceOver remain unrun."
+        }
+      ],
       "nextStep": "Implement the owning milestone, then run the original case in its required environment."
     },
     {
