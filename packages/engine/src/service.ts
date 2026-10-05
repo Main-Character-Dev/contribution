@@ -38,6 +38,7 @@ const allowed: Record<string, string[]> = {
   'maintenance.begin': ['requestId'], 'maintenance.status': [], 'maintenance.stop': ['windowId'],
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
+  'repos.resolve': ['repo', 'host', 'path', 'expectedRevision'],
   'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
   'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'prepareExistingAdoption', 'originalTip', 'migrationTip', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
   'repos.initialize': ['repo', 'requestId'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
@@ -46,7 +47,7 @@ const allowed: Record<string, string[]> = {
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
   'runs.list': ['repo'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
   'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
-  'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'peer.exchange': ['envelope'],
+  'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'hosts.sync': ['host'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
   'hook.borrow': ['repo', 'operationId', 'hookToken', 'caller'], 'hook.release-borrow': ['repo', 'operationId', 'hookToken', 'caller', 'borrowToken'],
   'hook.adopted.begin': ['repo', 'operationId', 'hookToken', 'caller', 'remote', 'url', 'stdin'], 'hook.adopted.finish': ['repo', 'operationId', 'hookToken', 'caller', 'gateExit', 'gateOutput', 'outputTruncated'],
@@ -311,8 +312,12 @@ export class Engine {
         this.store.setMeta('maintenance', true); this.restartRequested = true; this.stopping = true; return completed({ state: 'restart_ready', queuedPreserved: this.store.queue().length });
       }
       if (command === 'update.check') return completed({ status: 'not_configured', reason: 'SIGNED_FEED_REQUIRED', automaticInstallation: false });
-      if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list()] });
+      if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list().map(peer => ({ ...peer, registry: this.store.record('peerRegistrySync', peer.hostId) ?? null }))] });
       if (command === 'hosts.pair') return completed(await this.peers.pair(string(args['sshAlias'], 'sshAlias')));
+      if (command === 'hosts.sync') {
+        const hostId = string(args['host'], 'host'); requireValue(this.peers.list().some(peer => peer.hostId === hostId && peer.alias), 'PEER_ROUTE_REQUIRED', 'Select a paired host with a verified SSH route.', 3);
+        await this.peers.syncRegistry(hostId, true); return completed({ hostId, registry: this.store.record('peerRegistrySync', hostId), peerProjects: this.peers.registry.view() });
+      }
       if (command === 'peer.exchange') { const result = await this.peers.receive(object(args['envelope'])); this.kick(); return completed(result); }
       if (command.startsWith('devices.') && !['devices.artifacts.transfer', 'devices.reconcile', 'devices.transfer-host'].includes(command) && !remoteDeviceCommands.has(command) && !remoteDeviceReads.has(command)) requireValue(args['host'] === undefined || args['host'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke this configuration or authorization command on the selected host service.', 3);
       if (command === 'devices.list' && !args['repo']) {
@@ -341,7 +346,13 @@ export class Engine {
         return completed({ notices: [...milestones.pending(this.store.hostId), ...remote].slice(0, 100) });
       }
       if (command === 'settings.apply') { assertContract('machine', args['config']); return this.admit(args['requestId'], command, this.store.hostId, { config: args['config'], expectedRevision: string(args['expectedRevision'], 'expectedRevision') }); }
-      if (command === 'repos.list') return completed({ repositories: this.repos.all() });
+      if (command === 'repos.list') return completed({ repositories: this.repos.all(), peerProjects: this.peers.registry.view() });
+      if (command === 'repos.resolve') {
+        const repositoryId = string(args['repo'], 'repo'), expectedRevision = string(args['expectedRevision'], 'expectedRevision');
+        this.peers.registry.offer(string(args['host'], 'host'), repositoryId, expectedRevision);
+        const repository = await this.repos.add(string(args['path'], 'path'), undefined, undefined, undefined, { repositoryId, revision: expectedRevision });
+        return completed({ repository, authorityChanged: false, setupPerformed: false, peerProjects: this.peers.registry.view() });
+      }
       if (command === 'repos.discover') return completed({ repositories: await discover(string(args['root'], 'root')), limits: { maxDepth: 3, maxDirectories: 250 } });
       if (command === 'repos.add') {
         requireValue(args['profile'] === undefined || ['local-development', 'standard'].includes(String(args['profile'])), 'INVALID_PROFILE', 'Unknown profile.', 2);

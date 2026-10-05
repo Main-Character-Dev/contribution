@@ -10,6 +10,8 @@ import { identity, git, gitText, ordinaryHistory, oid, clean } from './git.js';
 import { run } from './process.js';
 import { privateDirectory } from './private-files.js';
 import { Milestones } from './notifications.js';
+import { ProjectRegistry } from './project-registry.js';
+import type { ProjectCatalog } from './project-registry.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
 export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
@@ -46,6 +48,7 @@ export async function sshTransport(alias: string, envelope: ObjectValue): Promis
 }
 
 export class Peers {
+  readonly registry: ProjectRegistry;
   private chains = new Map<string, Promise<unknown>>();
   busy = false;
   cancelLocal?: (operation: Operation) => Response;
@@ -53,7 +56,7 @@ export class Peers {
   dispatchLocal?: (command: string, args: ObjectValue) => Promise<Response>;
   receiveArtifact?: (repo: Enrolled, from: string, action: string, body: ObjectValue) => Promise<ObjectValue>;
   receiveDeviceOwnership?: (repo: Enrolled, from: string, release: unknown) => Promise<ObjectValue>;
-  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: string, readonly transport: PeerTransport = sshTransport) {}
+  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: string, readonly transport: PeerTransport = sshTransport) { this.registry = new ProjectRegistry(store, repos); }
   list(): Peer[] { return this.store.records<Peer>('peer'); }
   private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.chains.get(key) ?? Promise.resolve();
@@ -72,7 +75,29 @@ export class Peers {
     const hostId = uuid(result['hostId'], 'hostId'); requireValue(hostId !== this.store.hostId, 'SELF_PAIRING', 'Choose a different host.');
     requireValue(compatiblePeer(result), 'PEER_VERSION_MISMATCH', 'Update both peers to compatible adjacent patch releases with protocol and request schema version 1.', 3);
     const peer: Peer = { hostId, alias, version: string(result['version'], 'version'), observedAt: now() }; this.store.put('peer', hostId, peer);
-    return { peer, authorityChanged: false };
+    await this.syncRegistry(hostId, true);
+    return { peer, authorityChanged: false, registry: this.store.record('peerRegistrySync', hostId) };
+  }
+  async syncRegistry(hostId: string, force = false): Promise<void> {
+    return this.serial(`registry:${hostId}`, () => this.exchangeRegistry(hostId, force));
+  }
+  private async exchangeRegistry(hostId: string, force: boolean): Promise<void> {
+    const previous = this.store.record<{ nextAttempt: number; failures: number }>('peerRegistrySync', hostId);
+    if (!force && Number(previous?.nextAttempt ?? 0) > Date.now()) return;
+    let catalog: ProjectCatalog | undefined;
+    try {
+      catalog = this.registry.local();
+      const result = await this.call(hostId, 'registry.exchange', { catalog });
+      requireValue(result['receivedGeneration'] === catalog.generation && result['receivedDigest'] === catalog.digest, 'REGISTRY_RECEIPT_INVALID', 'The peer did not acknowledge the exact catalog generation.', 3);
+      const received = this.registry.receive(hostId, result['catalog']);
+      this.store.put('peerRegistrySync', hostId, { state: 'acknowledged', generation: catalog.generation, digest: catalog.digest, receivedGeneration: received.generation,
+        observedAt: now(), failures: 0, nextAttempt: Date.now() + 30000 });
+    } catch (error) {
+      const failures = (previous?.failures ?? 0) + 1;
+      this.store.put('peerRegistrySync', hostId, { state: 'pending', generation: catalog?.generation ?? null, digest: catalog?.digest ?? null, failures,
+        lastAttemptAt: now(), nextAttempt: Date.now() + Math.min(300000, 1000 * 2 ** Math.min(failures, 8)),
+        reasonCode: error instanceof Fault ? error.code : 'PEER_UNAVAILABLE' });
+    }
   }
   assertWriter(repo: Enrolled): void {
     const authority = this.store.record<Authority>('authority', repo.id);
@@ -132,6 +157,11 @@ export class Peers {
     }
     requireValue(envelope['expectedHostId'] === this.store.hostId && this.store.record('peer', from), 'UNPAIRED_HOST', 'Pair the exact intended Contribution hosts before exchanging work.', 3);
     requireValue(compatiblePeer(envelope['compatibility'] ? object(envelope['compatibility']) : { version: this.store.record<Peer>('peer', from)?.version }), 'PEER_VERSION_MISMATCH', 'The sender is no longer compatible with this service.', 3);
+    if (action === 'registry.exchange') {
+      requireValue(Object.keys(body).join() === 'catalog', 'REGISTRY_INVALID', 'Catalog exchange accepts only bounded discovery metadata.', 2);
+      const received = this.registry.receive(from, body['catalog']);
+      return { hostId: this.store.hostId, ...peerHello(), catalog: this.registry.local(), receivedGeneration: received.generation, receivedDigest: received.digest };
+    }
     const repositoryId = uuid(body['repositoryId'], 'repositoryId'), repo = await this.repos.get(repositoryId);
     const result = await this.serial(repositoryId, async (): Promise<ObjectValue> => {
       if (action === 'repository.inspect') return { repositoryId, branch: repo.config.integration.branch, policy: repo.revision, tip: (await identity(repo.path)).tip, canonicalHostId: repo.canonicalHostId };
@@ -392,6 +422,10 @@ export class Peers {
           this.store.update(latest, { state: retry ? 'queued_local' : 'needs_attention', stage: 'waiting_for_peer', error: retry ? null : rejected(error).error, result: { ...latest.result, peerFailures: attempts, nextPeerAttempt: Date.now() + delay,
             peerError: { code: error instanceof Fault ? error.code : 'PEER_UNAVAILABLE', message: error instanceof Fault ? error.message : 'Peer transport is unavailable.' } } });
         }
+      }
+      for (const peer of this.list().filter(peer => peer.alias)) {
+        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) break;
+        await this.syncRegistry(peer.hostId);
       }
     } finally { this.busy = false; }
   }

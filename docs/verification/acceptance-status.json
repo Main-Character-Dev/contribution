@@ -130,6 +130,11 @@
           "level": "fixture",
           "source": "tests/peers.test.mjs",
           "scope": "Two separate fixture journals and real Git repositories cover retained transfers, fencing, safe mirrors and lost receipts. Real SSH, both physical Macs and adopted-project parity remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/project-registry.test.mjs",
+          "scope": "Paired project metadata excludes host paths, survives offline/lost replies and journal restart, exposes missing checkouts and policy conflicts, and maps only an explicitly selected matching clone. No real SSH or GUI proof."
         }
       ],
       "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
@@ -249,6 +254,11 @@
           "level": "fixture",
           "source": "tests/service.test.mjs",
           "scope": "Generic detached committed-source landing preserves dirty task work and idempotent replay. Full topology, metadata and adopted policy variants remain open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/project-registry.test.mjs",
+          "scope": "Paired project metadata excludes host paths, survives offline/lost replies and journal restart, exposes missing checkouts and policy conflicts, and maps only an explicitly selected matching clone. No real SSH or GUI proof."
         }
       ],
       "nextStep": "Full topology, metadata and adopted policy variants remain open."
@@ -432,6 +442,11 @@
           "level": "fixture",
           "source": "tests/adopted-landing.test.mjs",
           "scope": "All four synthetic adopted policies run original-shaped native or registered captured-source paths. Dirty/advanced source work, original candidate requirements, terminal queue removal, contention, post-promotion uncertainty and observation-only repair are preserved. Actual original module API parity is recorded separately; full live workers and cross-host imports remain unqualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adoption.test.mjs",
+          "scope": "Existing migrated second clones reconstruct the original gate and deterministic migration from committed history; changed sources, dispatcher, snapshots and authority refuse activation. All-writer owner cutover remains separately blocked."
         }
       ],
       "nextStep": "Complete original landing/import adapters and current real-project policy parity, then perform only authorized live cutover."
@@ -662,7 +677,13 @@
       "source": "requirements/06-ACCEPTANCE_TESTS.md",
       "implementation": "not_started",
       "outcome": "not_run",
-      "evidence": [],
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/project-registry.test.mjs",
+          "scope": "Paired project metadata excludes host paths, survives offline/lost replies and journal restart, exposes missing checkouts and policy conflicts, and maps only an explicitly selected matching clone. No real SSH or GUI proof."
+        }
+      ],
       "nextStep": "Implement the owning milestone, then run the original case in its required environment."
     },
     {
@@ -1195,6 +1216,11 @@
           "level": "fixture",
           "source": "tests/legacy-authority-fence.test.mjs",
           "scope": "Internal macOS persistent lease fencing survives creator exit and exact recovery windows while preserving foreign/replaced state. Adopted peer owner transfer is still blocked; this primitive is not proof of an enabled two-host cutover."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adoption.test.mjs",
+          "scope": "Existing migrated second clones reconstruct the original gate and deterministic migration from committed history; changed sources, dispatcher, snapshots and authority refuse activation. All-writer owner cutover remains separately blocked."
         }
       ],
       "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."

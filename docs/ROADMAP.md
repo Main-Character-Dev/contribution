@@ -16,9 +16,9 @@ Implementation continues across the remaining milestones. [IMPLEMENTATION_STATUS
 | M1 | Durable service, admission, journal, events, logs, cancellation and recovery foundation | M0 | Implemented foundation with fixtures; hardening ongoing |
 | M2 | First useful explicit push workflow, exact preview scope, one gate, observed delivery | M1 | Generic real Git fixtures passing |
 | M3 | GitHub/PR observation, information design, logs and notifications | M2 | Observation and native client implemented; qualification ongoing |
-| M4 | Shared mechanics extracted with repository-specific policy and migration parity | M1–M3 foundations | Planned |
+| M4 | Shared mechanics extracted with repository-specific policy and migration parity | M1–M3 foundations | Local adoption, checks and captured landing have fixture proof; complete cross-host cutover remains in progress |
 | M5 | Durable two-Mac enrollment, bootstrap, handoff, authority cutover and safe mirrors | M4 and real host access | Generic protocol fixtures passing; adopted/live proof pending |
-| M6 | Signed packaging, safe updates, lifecycle and complete core qualification | Core behavior and release credentials | Planned |
+| M6 | Signed packaging, safe updates, lifecycle and complete core qualification | Core behavior and release credentials | Maintenance, immutable payload and signed-release tooling implemented; actual signed release and update proof pending |
 
 M2 should use a generic disposable fixture before migrating real repositories. M4 begins with reporting parity, then extraction, then one-repository-at-a-time adoption. Neither these milestones nor repository setup authorizes GitHub publication or changing unrelated live project configuration.
 

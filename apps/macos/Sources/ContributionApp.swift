@@ -12,6 +12,8 @@ import ContributionPlatform
     @ObservationIgnored private var loadedOperation: String?
     var notificationContext: NotificationContext?
     var repositories: [JSONValue] = []
+    var sharedProjects: [SharedProject] = []
+    var mappingProject: String?
     var operations: [JSONValue] = []
     var selectedRepository: String?
     var selectedOperation: String?
@@ -46,7 +48,11 @@ import ContributionPlatform
         if let response = await call("service.status") {
             let result = response.fields["result"]?.object ?? [:]; service = result["state"]?.text ?? "Unknown"; paused = result["paused"]?.boolean ?? false
         } else { service = "Service unavailable"; return }
-        if let response = await call("repos.list") { repositories = response.fields["result"]?.object["repositories"]?.array ?? [] }
+        if let response = await call("repos.list") {
+            repositories = response.fields["result"]?.object["repositories"]?.array ?? []
+            sharedProjects = (response.fields["result"]?.object["peerProjects"]?.array ?? []).map(SharedProject.init)
+                .filter { $0.fields.object["state"]?.text != "mapped" }
+        }
         if let response = await call("runs.list") { operations = response.fields["result"]?.object["operations"]?.array ?? [] }
         await loadSelection()
     }
@@ -66,6 +72,18 @@ import ContributionPlatform
         guard panel.runModal() == .OK, let url = panel.url else { return }
         _ = await call("repos.add", ["path": .string(url.path)]); await refresh()
     }
+    func resolveProject(_ project: SharedProject) async {
+        guard mappingProject == nil else { return }
+        mappingProject = project.id; defer { mappingProject = nil }
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+        panel.title = "Select local clone"
+        panel.message = "Select this project's existing checkout with its matching contribution.json."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let fields = project.fields.object
+        _ = await call("repos.resolve", ["repo": fields["repositoryId"] ?? .null, "host": fields["hostId"] ?? .null,
+            "expectedRevision": fields["policyRevision"] ?? .null, "path": .string(url.path)])
+        await refresh()
+    }
     func previewPush() async {
         guard let selectedRepository, let response = await call("push", ["repo": .string(selectedRepository), "preview": .bool(true)]), let result = response.fields["result"] else { return }
         preview = PublicationPreview(repository: selectedRepository, fields: result)
@@ -83,6 +101,18 @@ import ContributionPlatform
 }
 private struct PublicationPreview: Identifiable {
     let id = UUID(), repository: String, fields: JSONValue
+}
+private struct SharedProject: Identifiable {
+    let fields: JSONValue
+    var id: String { (fields.object["hostId"]?.text ?? "") + ":" + (fields.object["repositoryId"]?.text ?? "") }
+    var status: String {
+        switch fields.object["state"]?.text {
+        case "checkout_required": "Local checkout needed"
+        case "configuration_conflict": "Configuration differs between Macs"
+        case "removed_on_peer": "Removed from paired Mac"
+        default: "Setup needs review"
+        }
+    }
 }
 private struct NotificationContext: Identifiable { let id = UUID(); let value: JSONValue }
 
@@ -107,6 +137,20 @@ private struct WorkspaceView: View {
                     ForEach(workspace.repositories, id: \.identity) { repo in
                         Label(repo.object["config"]?.object["name"]?.text ?? "Repository", systemImage: "folder")
                             .tag(repo.object["id"]?.text as String?)
+                    }
+                }
+                if !workspace.sharedProjects.isEmpty {
+                    Section("From paired Mac") {
+                        ForEach(workspace.sharedProjects) { project in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Label(project.fields.object["name"]?.text ?? "Shared project", systemImage: "desktopcomputer")
+                                Text(project.status).font(.caption).foregroundStyle(.secondary)
+                                if project.fields.object["state"]?.text == "checkout_required" {
+                                    Button("Select local clone") { Task { await workspace.resolveProject(project) } }
+                                        .disabled(workspace.mappingProject != nil)
+                                }
+                            }.padding(.vertical, 4)
+                        }
                     }
                 }
             }

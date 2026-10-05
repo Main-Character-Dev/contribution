@@ -30,9 +30,11 @@ export class Repositories {
     const matching = this.all().filter(repo => repo.commonDir === common);
     requireValue(matching.length === 1, 'REPOSITORY_NOT_ENROLLED', 'Supply one enrolled repository ID or checkout path.', 2); return matching[0]!;
   }
-  async add(path: string, profile: 'local-development' | 'standard' = 'local-development', availability: 'this-mac' | 'both-macs' = 'this-mac', supplied?: Repository): Promise<Enrolled> {
+  async add(path: string, profile: 'local-development' | 'standard' = 'local-development', availability: 'this-mac' | 'both-macs' = 'this-mac', supplied?: Repository, expected?: { repositoryId: string; revision: string }): Promise<Enrolled> {
     const info = await identity(path); const existing = this.all().find(repo => repo.commonDir === info.commonDir);
     if (existing) {
+      requireValue(!expected || (existing.id === expected.repositoryId && existing.revision === expected.revision), 'REGISTRY_MAPPING_CONFLICT', 'The selected enrolled clone belongs to another project or configuration revision.');
+      if (expected) await this.current(existing);
       requireValue(existing.availability === availability, 'AUTHORITY_TRANSITION_REQUIRED', 'Re-enrollment cannot change canonical ownership.'); return existing;
     }
     requireValue(availability === 'this-mac', 'PAIRING_REQUIRED', 'Pair and reconcile the canonical host before enabling both-macs availability.', 3);
@@ -51,6 +53,8 @@ export class Repositories {
         validation: { profile, gate: adopted?.gate ?? (hookPath ? 'enabled' : 'inactive'), adapter: hookPath || adopted ? 'migration-required' : 'generic-v1', builtins: [], checks: [] },
         runtime: { node: 'repository', packageManager: 'repository' } };
     }
+    requireValue(!expected || (config.repositoryId === expected.repositoryId && digest(config) === expected.revision), 'REGISTRY_MAPPING_CONFLICT', 'Select a clone with the matching reviewed contribution.json identity and configuration. No project was enrolled.');
+    requireValue(!expected || info.branch === config.integration.branch, 'ACTIVE_BRANCH_CHANGED', 'Select the local checkout on the project’s configured integration branch.');
     requireValue(!this.all().some(repo => repo.id === config.repositoryId), 'CLONE_IDENTITY_CONFLICT', 'This logical repository already has a different local clone. Reconcile its mapping explicitly.');
     const repo: Enrolled = { id: config.repositoryId, path: info.path, commonDir: info.commonDir, config, revision: digest(config),
       canonicalHostId: this.store.hostId, availability, policySource: existsSync(file) ? 'tracked' : 'generated', hookPath };

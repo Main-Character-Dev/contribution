@@ -57,6 +57,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID] [--prepare-reporting|--prepare-adoption --request-id UUID]',
         'repos migration --repo ID --adoption-plan ID', 'repos migration --repo ID --apply-adoption|--activate-adoption|--rollback-adoption ID --expected-revision REV --request-id UUID',
         'repos migration --repo ID --prepare-existing-adoption --original-tip OID --migration-tip OID --request-id UUID',
+        'hosts sync --host HOST', 'repos resolve PATH --repo ID --host HOST --expected-revision REVISION',
         'devices list|status|apps|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
         'devices profile --repo ID', 'devices configure --repo ID --file PATH --expected-revision REVISION --request-id UUID', 'devices artifacts list|get --repo ID [--artifact ID]',
         'devices evidence record --repo ID --file PATH --request-id UUID', 'devices evidence get|review --repo ID --evidence ID [--expected-revision REV --request-id UUID]',
@@ -88,7 +89,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     else throw new Fault('INVALID_USAGE', 'Unknown command. Use contribution help.', 2);
     if (command === 'devices.artifacts') { const action = words.shift(); if (!['list', 'get', 'transfer'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices artifacts list, get or transfer.', 2); command += `.${action}`; }
     if (command === 'devices.evidence') { const action = words.shift(); if (!['record', 'get', 'review'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices evidence record, get or review.', 2); command += `.${action}`; }
-    if (['repos.add', 'repos.create', 'repos.relocate'].includes(command)) args['path'] = words.shift();
+    if (['repos.add', 'repos.create', 'repos.relocate', 'repos.resolve'].includes(command)) args['path'] = words.shift();
     if (command.startsWith('runs.') && !['runs.list', 'runs.events'].includes(command) || ['logs', 'repair-context'].includes(command)) args['operationId'] = words.shift();
     if (command === 'devices.reconcile') args['operationId'] = words.shift();
     if (words.length) throw new Fault('INVALID_USAGE', 'Unexpected positional arguments.', 2);
