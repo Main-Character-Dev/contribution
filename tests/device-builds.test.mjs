@@ -50,6 +50,9 @@ test('offline preparation retains an immutable artifact without observing, quali
     assert.equal('path' in listed.result.artifacts[0], false);
     assert.equal(result.result.artifact.recordMode, 'fixture'); assert.equal(f.calls.phone, 0); assert.equal(f.calls.build, 1);
     const artifact = f.store.record('deviceArtifact', result.result.artifactRef.artifactId);
+    const output = f.store.record('buildOutput', result.result.artifact.build.attemptId);
+    assert.equal(output.phase, 'sealed'); assert.equal(output.operationId, accepted.operationId);
+    assert(output.files.every(file => !file.path.startsWith(join(output.directory, 'source') + '/')));
     assert.equal(digest(readFileSync(artifact.path)), artifact.provenance.artifact.sha256); assert.equal(statSync(artifact.path).mode & 0o777, 0o400);
     assert.equal(f.engine.devices.ownership(f.args.device).state, 'unowned'); assert.equal(f.store.records('deviceCapability').length, 0);
     assert.equal((await f.call('devices.prepare', f.args)).operationId, accepted.operationId); assert.equal(f.calls.build, 1);

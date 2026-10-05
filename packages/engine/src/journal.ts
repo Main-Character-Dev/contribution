@@ -186,7 +186,7 @@ export class Journal {
     return { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
         logRetention: { truncated: this.record('logTruncation', op.attemptId) ?? null, expired: this.record('logEviction', op.attemptId) ?? null },
-        outputRetention: [...['legacy-working', 'legacy-sealed'].map(kind => this.record('storageEviction', `${kind}:${op.attemptId}`)), this.record('worktreeEviction', op.attemptId)].filter(Boolean),
+        outputRetention: [...['legacy-working', 'legacy-sealed', 'build'].map(kind => this.record('storageEviction', `${kind}:${op.attemptId}`)), this.record('worktreeEviction', op.attemptId)].filter(Boolean),
         acceptance: ['device', 'remote.device', 'device_transfer'].includes(op.kind) ? op.result['acceptance'] : op.kind === 'artifact_transfer' ? { localDurable: true, executionHostAccepted: true, executionHostId: this.hostId, acceptedAt: op.createdAt } : { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
           canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
   }

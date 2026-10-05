@@ -18,6 +18,7 @@ import { OwnedWorktrees } from './owned-worktrees.js';
 import type { AdoptedHooks } from './adopted-hooks.js';
 import { RobotyDevicePolicy } from './roboty-device-policy.js';
 import { RobotyOfflineBuild } from './roboty-offline-build.js';
+import { BuildOutput } from './build-output.js';
 
 type Build = DeviceProfileConfiguration['builds'][number];
 type Host = DeviceContext['host'];
@@ -134,9 +135,7 @@ export class DeviceBuilds {
     requireValue(registration.revision === receipt.intent.policyRevision, 'POLICY_CHANGED', 'Build configuration changed before preparation.');
     await clean(repo.path); const source = await identity(repo.path), inputDigest = await inputFingerprint(repo.path);
     requireValue(source.tip === receipt.intent.sourceCommit, 'SOURCE_CHANGED', 'The exact approved source changed before preparation.');
-    const root = join(this.store.directory, 'device-builds'); privateDirectory(root);
-    const directory = join(root, op.attemptId); requireValue(!existsSync(directory), 'BUILD_OUTPUT_RECONCILIATION_REQUIRED', 'Retained output from this build attempt must be inspected before any retry.');
-    mkdirSync(directory, { mode: 0o700 });
+    const output = new BuildOutput(this.store), directory = output.begin(op);
     const options: RunOptions = { signal, output: text => this.store.log(op, text), started: (pid, start) => {
       const latest = this.store.get(op.operationId); this.store.update(latest, { result: { ...latest.result, processes: [...(latest.result['processes'] as ObjectValue[] ?? []), { pid, start }] } });
     } };
@@ -172,6 +171,7 @@ export class DeviceBuilds {
     assertContract('artifact-provenance', provenance);
     const artifact: RetainedDeviceArtifact = { provenance, path, appPath, appDigest: beforeCopy };
     this.store.transaction(() => { this.store.put('deviceBuildEvidence', evidenceRef, { operationId: op.operationId, recordMode: this.mode, source: provenance.source, details: prepared.evidence }); this.store.put('deviceArtifact', artifactId, artifact); this.store.put('devicePreparedArtifact', op.operationId, { artifactId, policy: registration.revision, sourceTip: source.tip }); });
+    output.seal(op);
     return { artifact: provenance, artifactRef: { artifactId, sha256: provenance.artifact.sha256 }, evidenceRefs: [evidenceRef] };
   }
   reconcile(op: Operation, receipt: DeviceOperation): ObjectValue {

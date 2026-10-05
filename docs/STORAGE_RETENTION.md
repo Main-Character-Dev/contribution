@@ -11,7 +11,7 @@ contribution service storage --preview --json
 contribution service storage --scope-token PREVIEW_UUID --request-id REQUEST_UUID --json
 ```
 
-The preview lists candidates, bytes, policy and protected entries without removing output. Execution rechecks the exact scope, file identities, operation state, pins and dependent queued or unresolved requests. Only positively owned generated directories are eligible. Unknown files, symlinks, shared hardlinks and changed output are preserved. Source worktrees, Git bundles and refs, backups, installed payloads, exports and the database are outside this cleanup boundary.
+The preview lists candidates, bytes, policy and protected entries without removing output. Execution rechecks the exact scope, file identities, operation state, pins and dependent queued or unresolved requests. Only positively owned generated directories are eligible. Unknown files, shared hardlinks and changed output are preserved. Artifact and gate-output symlinks remain protected; completed build intermediates have the separately recorded link handling below. Source worktrees, Git bundles and refs, backups, installed payloads, exports and the database are outside this cleanup boundary.
 
 Removal retains its intent before deleting each reviewed path and keeps a tombstone for every output. A crash can leave a partial directory; resume with the same scope and request UUID. New files or dependencies stop recovery without removing them. A different request cannot take over the retained cleanup. A completed request returns its original result. Cleanup does not run during an update maintenance hold.
 
@@ -26,13 +26,31 @@ Only new checkouts with a complete creation record are eligible. The record bind
 
 Execution rechecks the review and persists its cleanup intent before invoking `git worktree remove` without force. It never resets or cleans a source checkout. New jobs in affected clones wait while removal is unresolved; duplicate requests still return their original operations. After an interruption, resume the same cleanup request. An already absent checkout and administration directory complete the retained removal receipt; partial or replaced state requires inspection. New user files are preserved. Git retention refs and bundles remain available, and original operation receipts expose the checkout expiration. Build products outside the source checkout are not removed by this command.
 
+Successful offline builds now retain a separate creation identity and completion
+snapshot for their generated app, DerivedData, result bundle and intermediate
+files. The source checkout is excluded from that snapshot. After its owned Git
+checkout has been removed through the workflow above, the regular output
+preview can include the remaining build directory once `rawLogDays` expires.
+Every filename and filesystem identity must still match the completion
+snapshot. New or modified files, replaced directories, unacknowledged work,
+unresolved clone jobs, potentially live workers and pinned associated artifact
+evidence keep the output protected. Older builds without these records and
+failed/unsealable build directories do not acquire inferred cleanup authority.
+
+Recorded build cache symlinks are inspected without traversing their targets.
+Cleanup unlinks only the unchanged recorded link; its target is untouched.
+Shared hardlinks remain ineligible. Interrupted build-output cleanup resumes
+the exact original file subset and refuses new or changed entries. Operation
+results expose the removal receipt, while artifact provenance, retained signed
+archives, request replay and Git retention references remain independent.
+
 The native Settings → Storage view exposes both cleanup categories and raw-log policy/usage. Errors after retained partial removal carry `requestRetained: true`, the original request identity and a concrete resume action. The client keeps that request through early maintenance refusals as well as file/dependency failures; it clears it only after confirmed completion. This does not label every error an uncertain effect: the response still explains the actual blocking condition.
 
 Accepted incoming transfer reservations are released only after a confirmed removal tombstone. Missing archive files alone never release quota. Historical begin/finish replies still return the completion receipt after expiration; a new install or transfer using unavailable output returns `ARTIFACT_EXPIRED`. Artifact listings and operation output metadata make expiration visible without rewriting the original evidence.
 
-Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, remaining build products, Git retention release, payload and backup cleanup remain separate unfinished work. Cleanup does not imply that all retained sources can expire; managed-data accounting below separately limits new admission and dispatch.
+Current limits: the generated-output census handles at most 10,000 operations, 50,000 entries per directory, 32 directory levels and 4 GiB per candidate. Checkout cleanup also requires a complete dependency census of at most 10,000 operations. Larger or uncertain output stays protected. Summary compaction, unconfirmed build output, Git retention release, payload and backup cleanup remain separate unfinished work. Cleanup does not imply that all retained sources can expire; managed-data accounting below separately limits new admission and dispatch.
 
-`tests/storage.test.mjs`, `tests/retention.test.mjs`, `tests/owned-worktrees.test.mjs` and `tests/device-transfer.test.mjs` cover terminal/pinned/unresolved decisions, stale selections, links, partial recovery, receipt replay and quota release in disposable fixtures. They do not provide physical device evidence.
+`tests/storage.test.mjs`, `tests/retention.test.mjs`, `tests/owned-worktrees.test.mjs`, `tests/build-output.test.mjs` and `tests/device-transfer.test.mjs` cover terminal/pinned/unresolved decisions, stale selections, links, partial recovery, receipt replay and quota release in disposable fixtures. They do not provide physical device evidence.
 
 ## Managed-data accounting and admission
 

@@ -1,13 +1,17 @@
-import { lstatSync, readdirSync, unlinkSync, rmdirSync, openSync, closeSync, fsyncSync } from 'node:fs';
+import { lstatSync, realpathSync, unlinkSync, rmdirSync, openSync, closeSync, fsyncSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import type { Journal, Operation } from './journal.js';
 import type { RetainedDeviceArtifact } from './devices.js';
-import { digest, id, now, requireValue } from './core.js';
+import { digest, id, now, requireValue, Fault } from './core.js';
 import type { ObjectValue } from './core.js';
 import { validateContractFormat } from '@contribution/contracts';
+import { outputFile, outputManifest, sameOutputFile } from './output-files.js';
+import type { OutputFile } from './output-files.js';
+import type { BuildOutputOwner } from './build-output.js';
+import { alive, processIdentity } from './process.js';
 
-interface FileIdentity { path: string; directory: boolean; dev: number; ino: number; size: number; mtime: number; ctime: number }
-interface Candidate { key: string; kind: 'artifact' | 'incoming' | 'legacy'; directory: string; repositoryId: string; operationId?: string; attemptId?: string; artifactId?: string; transferId?: string; bytes: number; files: FileIdentity[] }
+type FileIdentity = OutputFile;
+interface Candidate { key: string; kind: 'artifact' | 'incoming' | 'legacy' | 'build'; directory: string; repositoryId: string; operationId?: string; attemptId?: string; artifactId?: string; transferId?: string; bytes: number; files: FileIdentity[] }
 interface Preview { token: string; createdAt: string; candidates: Candidate[]; policy: ObjectValue }
 interface Cleanup { requestId: string; token: string; preview: Preview; completed: string[]; state: 'removing' | 'completed'; result?: ObjectValue }
 interface Incoming { manifest: { transferId: string; provenance: RetainedDeviceArtifact['provenance']; repositoryId: string }; directory: string; path: string; accepted?: { retainedAt: string } }
@@ -31,20 +35,6 @@ export class StorageRetention {
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(name) || join(parent, name) !== path || !present(parent)) return false;
     const info = lstatSync(parent); return info.isDirectory() && !info.isSymbolicLink() && info.uid === process.getuid?.();
   }
-  private manifest(directory: string): FileIdentity[] {
-    const entries: FileIdentity[] = []; let bytes = 0;
-    requireValue(lstatSync(directory).isDirectory(), 'STORAGE_OUTPUT_UNCONFIRMED', 'The retained output root is no longer a directory.', 3);
-    const visit = (path: string, depth: number): void => {
-      const info = lstatSync(path);
-      requireValue(info.uid === process.getuid?.() && !info.isSymbolicLink() && (info.isDirectory() || (info.isFile() && info.nlink === 1)) && depth <= 32 && entries.length < 50000,
-        'STORAGE_OUTPUT_UNCONFIRMED', 'Linked, shared, foreign or unusually nested output remains protected.', 3);
-      bytes += info.isFile() ? info.size : 0;
-      requireValue(bytes <= 4 * 1024 ** 3, 'STORAGE_OUTPUT_UNCONFIRMED', 'Output exceeds this bounded cleanup inspection.', 3);
-      entries.push({ path, directory: info.isDirectory(), dev: info.dev, ino: info.ino, size: info.size, mtime: info.mtimeMs, ctime: info.ctimeMs });
-      if (info.isDirectory()) for (const name of readdirSync(path).sort()) visit(join(path, name), depth + 1);
-    };
-    visit(directory, 0); return entries;
-  }
   private settled(op: Operation | undefined, cutoff: number): boolean {
     return Boolean(op && !op.pinned && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof op.result['completedAt'] === 'string' &&
       Date.parse(op.result['completedAt']) <= cutoff && !this.store.record('peerOperation', op.operationId));
@@ -54,11 +44,17 @@ export class StorageRetention {
     const rawLogDays = this.store.getMeta<{ retention: { rawLogDays: number } }>('settings')?.retention.rawLogDays ?? 30;
     const artifactCutoff = observedAt - 30 * 86400000, logCutoff = observedAt - rawLogDays * 86400000;
     const candidates: Candidate[] = [], protectedEntries: ObjectValue[] = [], visited = new Set<string>();
-    const add = (value: Omit<Candidate, 'bytes' | 'files'>, eligible: boolean, category: string): void => {
+    const add = (value: Omit<Candidate, 'bytes' | 'files'>, eligible: boolean, category: string, sealedFiles?: FileIdentity[]): void => {
       if (visited.has(value.directory) || !present(value.directory)) return; visited.add(value.directory);
       if (!eligible || !this.ownedDirectory(value.directory, category)) { protectedEntries.push({ key: value.key, reason: 'UNRESOLVED_PINNED_RECENT_OR_UNCONFIRMED' }); return; }
       try {
-        const files = this.manifest(value.directory), bytes = files.filter(file => !file.directory).reduce((total, file) => total + file.size, 0);
+        const files = outputManifest(value.directory, { allowLinks: value.kind === 'build' }), bytes = files.filter(file => !file.directory).reduce((total, file) => total + file.size, 0);
+        if (sealedFiles) {
+          const partial = this.store.record<{ state: string }>('storageEviction', value.key)?.state === 'removing';
+          const sealed = new Map(sealedFiles.map(file => [file.path, file]));
+          requireValue((partial || files.length === sealedFiles.length) && files.every(file => sealed.has(file.path) && sameOutputFile(sealed.get(file.path)!, file)),
+            'STORAGE_OUTPUT_UNCONFIRMED', 'Build output changed after its completion snapshot.', 3);
+        }
         candidates.push({ ...value, files, bytes });
       } catch { protectedEntries.push({ key: value.key, reason: 'OUTPUT_IDENTITY_UNCONFIRMED' }); }
     };
@@ -83,8 +79,26 @@ export class StorageRetention {
       const sealed = this.store.record<{ snapshot: string }>('legacyEvidence', attempt.attemptId);
       if (sealed) add({ key: `legacy-sealed:${attempt.attemptId}`, kind: 'legacy', operationId: attempt.operationId, attemptId: attempt.attemptId, repositoryId: attempt.repositoryId, directory: sealed.snapshot }, eligible, 'legacy-evidence');
     }
+    for (const owner of this.store.records<BuildOutputOwner>('buildOutput')) {
+      const op = operations.find(value => value.operationId === owner.operationId), source = join(realpathSync(this.store.directory), 'device-builds', owner.attemptId, 'source');
+      const checkout = this.store.record<{ operationId: string; directory: string; kind: string }>('ownedWorktree', owner.attemptId);
+      const removal = this.store.record<{ operationId: string; directory: string }>('worktreeEviction', owner.attemptId);
+      const artifacts = this.store.records<RetainedDeviceArtifact>('deviceArtifact').filter(value => value.provenance.build.attemptId === owner.attemptId);
+      const dependent = operations.some(other => other.repositoryId === owner.repositoryId && (!['succeeded', 'failed', 'cancelled'].includes(other.state) ||
+        other.pinned && (other.operationId === owner.operationId || JSON.stringify({ input: other.input, result: other.result }).includes(owner.directory)) ||
+        (other.result['processes'] as { pid: number; start: string | null }[] | undefined)?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start))));
+      let directoriesMatch = false;
+      try { directoriesMatch = Boolean(owner.root && owner.parent && [owner.root, owner.parent].every(entry => {
+        const current = outputFile(entry.path); return current.directory && current.dev === entry.dev && current.ino === entry.ino;
+      })); } catch { /* Replaced or absent roots remain unconfirmed. */ }
+      add({ key: `build:${owner.attemptId}`, kind: 'build', directory: owner.directory, repositoryId: owner.repositoryId, operationId: owner.operationId, attemptId: owner.attemptId },
+        Boolean(owner.phase === 'sealed' && owner.files && directoriesMatch && op?.attemptId === owner.attemptId && op.repositoryId === owner.repositoryId &&
+          owner.directory === join(this.store.directory, 'device-builds', owner.attemptId) && this.settled(op, logCutoff) && !dependent && artifacts.every(value => artifactIdle(value.provenance.artifactId)) &&
+          checkout?.kind === 'build' && checkout.operationId === owner.operationId && checkout.directory === source && removal?.operationId === owner.operationId && removal.directory === source && !present(source)),
+        'device-builds', owner.files);
+    }
     return { candidates: candidates.sort((a, b) => a.key.localeCompare(b.key)), protected: protectedEntries,
-      policy: { artifactsDays: 30, legacyRawOutputDays: rawLogDays, preserved: ['request_and_effect_receipts', 'provenance', 'source_worktrees', 'git_transfers_and_refs', 'backups', 'unresolved_or_pinned_dependencies'] } };
+      policy: { artifactsDays: 30, legacyRawOutputDays: rawLogDays, buildOutputDays: rawLogDays, buildSourceRemoval: 'requires_prior_confirmed_git_cleanup', preserved: ['request_and_effect_receipts', 'provenance', 'source_worktrees', 'git_transfers_and_refs', 'backups', 'unresolved_or_pinned_dependencies'] } };
   }
   preview(): ObjectValue {
     const observedAt = Date.now(), census = this.census(observedAt), preview: Preview = { token: id(), createdAt: new Date(observedAt).toISOString(), candidates: census.candidates, policy: census.policy };
@@ -110,7 +124,10 @@ export class StorageRetention {
         // A partially removed directory still must be eligible. An absent owned
         // directory can complete its retained tombstone without touching files.
         requireValue(!present(candidate.directory) || observed, 'STORAGE_SELECTION_CHANGED', 'A new dependency or uncertain output blocks the retained cleanup.');
-        if (observed) requireValue(observed.files.every(file => candidate.files.some(prior => prior.path === file.path && this.same(prior, file))), 'STORAGE_SELECTION_CHANGED', 'New or changed files are preserved during cleanup recovery.');
+        if (observed) {
+          const selected = new Map(candidate.files.map(file => [file.path, file]));
+          requireValue(observed.files.every(file => selected.has(file.path) && this.same(selected.get(file.path)!, file)), 'STORAGE_SELECTION_CHANGED', 'New or changed files are preserved during cleanup recovery.');
+        }
       }
     }
     cleanup ??= { requestId, token, preview, completed: [], state: 'removing' };
@@ -118,19 +135,23 @@ export class StorageRetention {
     for (const candidate of preview.candidates) {
       if (cleanup.completed.includes(candidate.key)) continue;
       this.store.put('storageEviction', candidate.key, { state: 'removing', requestId, repositoryId: candidate.repositoryId, operationId: candidate.operationId ?? null, attemptId: candidate.attemptId ?? null, artifactId: candidate.artifactId ?? null, transferId: candidate.transferId ?? null, directory: candidate.directory, bytes: candidate.bytes, observedAt: now() });
+      const selectedFiles = new Map(candidate.files.map(file => [file.path, file]));
       // Never recurse into an unreviewed filename. A new file causes rmdir to
       // fail and preserves the remaining directory for explicit reconciliation.
       for (const file of [...candidate.files].reverse()) {
         if (!present(file.path)) continue;
         // Recheck each reviewed ancestor as well as the file. A replaced
         // directory must never redirect a later unlink outside this output.
-        for (const parent of candidate.files.filter(value => value.directory && file.path.startsWith(value.path + '/'))) {
+        for (let parentPath = dirname(file.path); parentPath === candidate.directory || parentPath.startsWith(candidate.directory + '/'); parentPath = dirname(parentPath)) {
+          const parent = selectedFiles.get(parentPath);
+          requireValue(parent?.directory, 'STORAGE_SELECTION_CHANGED', 'An unreviewed output ancestor is preserved.', 3);
           const observed = lstatSync(parent.path);
           requireValue(observed.isDirectory() && !observed.isSymbolicLink() && observed.dev === parent.dev && observed.ino === parent.ino,
             'STORAGE_SELECTION_CHANGED', 'A replaced output directory is preserved for inspection.');
         }
-        const stat = lstatSync(file.path), actual: FileIdentity = { path: file.path, directory: stat.isDirectory(), dev: stat.dev, ino: stat.ino, size: stat.size, mtime: stat.mtimeMs, ctime: stat.ctimeMs };
-        requireValue(stat.uid === process.getuid?.() && !stat.isSymbolicLink() && (file.directory || (stat.isFile() && stat.nlink === 1)) && this.same(file, actual), 'STORAGE_SELECTION_CHANGED', 'A changed output is preserved instead of being removed.');
+        let actual: FileIdentity;
+        try { actual = outputFile(file.path, candidate.kind === 'build'); } catch { throw new Fault('STORAGE_SELECTION_CHANGED', 'A changed output is preserved instead of being removed.', 3); }
+        requireValue(this.same(file, actual), 'STORAGE_SELECTION_CHANGED', 'A changed output is preserved instead of being removed.');
         if (file.directory) rmdirSync(file.path); else unlinkSync(file.path);
       }
       const fd = openSync(dirname(candidate.directory), 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
@@ -144,6 +165,6 @@ export class StorageRetention {
   }
   private same(a: FileIdentity, b: FileIdentity): boolean {
     // Directory metadata necessarily changes as its reviewed children disappear.
-    return a.path === b.path && a.directory === b.directory && a.dev === b.dev && a.ino === b.ino && (a.directory || (a.size === b.size && a.mtime === b.mtime && a.ctime === b.ctime));
+    return sameOutputFile(a, b);
   }
 }
