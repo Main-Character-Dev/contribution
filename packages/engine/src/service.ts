@@ -168,7 +168,7 @@ export class Engine {
     if (terminal.has(op.state)) return this.store.response(op);
     const controller = this.active.get(op.operationId);
     if (controller) { controller.abort(); return this.store.response(this.store.get(op.operationId)); }
-    if (op.state === 'queued_local' && op.result['transferAttempted']) return this.store.response(this.store.update(op, { result: { ...op.result, cancelRequested: true, nextPeerAttempt: 0 } }));
+    if (op.result['remoteOperationId'] || (op.state === 'queued_local' && op.result['transferAttempted'])) return this.store.response(this.store.update(op, { state: 'queued_local', error: null, result: { ...op.result, cancelRequested: true, nextPeerAttempt: 0 } }));
     const receipt = op.result['deviceOperation'] as DeviceOperation | undefined;
     if (receipt) { receipt.operationState = 'cancelled'; receipt.completedAt = now(); for (const effect of receipt.effects) if (effect.state === 'queued') effect.state = 'cancelled'; assertContract('device-operation', receipt); }
     return this.store.response(this.store.update(op, { state: 'cancelled', stage: 'cancelled_before_dispatch', ...(receipt ? { result: { ...op.result, deviceOperation: receipt } } : {}) }));
@@ -231,8 +231,11 @@ export class Engine {
       if (command === 'runs.events') return completed({ events: this.store.events(Math.max(0, Number(args['after'] ?? 0)), typeof args['operationId'] === 'string' ? args['operationId'] : undefined) });
       if (['runs.get', 'runs.cancel', 'runs.pin', 'runs.unpin', 'runs.reconcile', 'logs', 'repair-context'].includes(command)) {
         let op = this.store.get(string(args['operationId'], 'operationId'));
-        if (command === 'runs.reconcile') { await this.recoverObservedEffects(op.operationId); this.kick(); op = this.store.get(op.operationId); }
-        if (command === 'logs') return completed({ operationId: op.operationId, attemptId: op.attemptId, text: this.store.logs(op, Number(args['tail'] ?? 200)) });
+        if (command === 'runs.reconcile') { if (op.result['remoteOperationId']) await this.peers.observeOperation(op, true); else await this.recoverObservedEffects(op.operationId); this.kick(); op = this.store.get(op.operationId); }
+        if (command === 'logs') {
+          const cached = op.result['remoteOperationId'] ? this.store.record<ObjectValue>('remoteLog', op.operationId) : undefined;
+          return completed({ operationId: op.operationId, attemptId: op.attemptId, ...(cached ?? {}), text: cached ? String(cached['text']).split('\n').slice(-Math.max(1, Math.min(2000, Number(args['tail'] ?? 200)))).join('\n') : this.store.logs(op, Number(args['tail'] ?? 200)), ...(op.result['remoteOperationId'] ? { freshness: 'cached' } : {}) });
+        }
         if (command === 'repair-context') return completed({ operation: op, log: this.store.logs(op, 100), boundaries: ['Repair only the recorded failure.', 'Preserve unrelated work.', 'Publication needs a new explicit preview when scope changes.'] });
         if (command === 'runs.pin' || command === 'runs.unpin') return this.store.response(this.store.update(op, { pinned: command === 'runs.pin' }));
         if (command === 'runs.cancel' && !terminal.has(op.state)) {
@@ -322,6 +325,18 @@ export class Engine {
       }
       if (command === 'checks.run') {
         requireValue(!(args['sourcePath'] && args['canonical']), 'SOURCE_SELECTION_CONFLICT', 'Choose a local source or the canonical checkout.', 2);
+        if (args['canonical'] && repo.canonicalHostId !== this.store.hostId) {
+          const requestId = string(args['requestId'], 'requestId'), input = { destinationHostId: repo.canonicalHostId, checkId: args['checkId'] ?? null, fresh: args['fresh'] === true };
+          const previous = this.store.existing(requestId, 'remote.checks', repo.id, input); if (previous) return this.store.response(previous);
+          // Canonical source selection is frozen by the owner at admission. An
+          // unavailable owner cannot silently substitute the local mirror.
+          const receipt = await this.peers.call(repo.canonicalHostId, 'checks.start', { repositoryId: repo.id, requestId, ...input });
+          const response = receipt['response'] as Response; assertContract('response', response);
+          if (response.error) return response;
+          requireValue(response.operationId, 'PEER_PROTOCOL_ERROR', 'The canonical owner did not retain a check identity.', 3);
+          const op = this.store.admit(requestId, 'remote.checks', repo.id, input, this.payload.identity, 'queued_local', () => ({ remoteOperationId: response.operationId, canonicalHostAccepted: true, canonicalHostId: repo.canonicalHostId, canonicalObservation: response }));
+          return this.store.response(op);
+        }
         const sourcePath = args['canonical'] ? repo.path : typeof args['sourcePath'] === 'string' ? args['sourcePath'] : cwd;
         const selection = { sourcePath, checkId: args['checkId'] ?? null, fresh: args['fresh'] === true };
         const requestId = string(args['requestId'], 'requestId');

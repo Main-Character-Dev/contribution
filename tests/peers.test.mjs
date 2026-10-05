@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { Engine } from '../packages/engine/dist/service.js';
 import { Fault } from '../packages/engine/dist/core.js';
+import { compatiblePeer } from '../packages/engine/dist/peers.js';
 import { repository, commit, git } from './integration/service.mjs';
 
 async function pairFixture() {
@@ -41,6 +42,37 @@ async function pairFixture() {
   return { root, hosts, source, target, config, call, wait, offline: value => { offline = value; }, loseActivation: () => { loseActivation = true; }, loseReceipt: () => { loseReceipt = true; },
     cleanup: async () => { for (const host of Object.values(hosts)) host.stopping = true; while (Object.values(hosts).some(host => host.active.size || host.peers.busy)) await new Promise(resolve => setTimeout(resolve, 20)); for (const store of stores) store.close(); rmSync(root, { recursive: true }); } };
 }
+
+test('adjacent peer patch compatibility requires explicit stable protocol and request semantics', () => {
+  assert.equal(compatiblePeer({ version: '0.1.1', protocolVersion: 1, requestSchemaVersion: 1 }), true);
+  for (const version of ['0.1.2', '0.2.0', '1.0.0', '0.1.1-preview']) assert.equal(compatiblePeer({ version, protocolVersion: 1, requestSchemaVersion: 1 }), false);
+  assert.equal(compatiblePeer({ version: '0.1.1' }), false);
+  assert.equal(compatiblePeer({ version: '0.1.0', protocolVersion: 2, requestSchemaVersion: 1 }), false);
+});
+
+test('canonical checks run on the owner and an unreachable owner never substitutes a mirror check', async () => {
+  const f = await pairFixture(); try {
+    const repo = f.config.repositoryId;
+    const bootstrap = await f.call('laptop', 'repos.initialize', { repo, requestId: randomUUID() }); await f.wait('laptop', bootstrap.operationId);
+    assert.equal((await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() })).error, null);
+    const seed = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); await f.wait('laptop', seed.operationId);
+    f.offline(true);
+    const unavailable = await f.call('laptop', 'checks.run', { repo, canonical: true, requestId: randomUUID() });
+    assert.equal(unavailable.error.code, 'PEER_UNAVAILABLE'); assert.equal(unavailable.operationId, null);
+    f.offline(false);
+    const request = { repo, canonical: true, requestId: randomUUID() }, accepted = await f.call('laptop', 'checks.run', request);
+    assert.equal(accepted.error, null); assert.equal(accepted.result.canonicalHostId, f.hosts.mini.store.hostId);
+    const remote = f.hosts.mini.store.get(accepted.result.remoteOperationId); assert.equal(remote.input.sourcePath, realpathSync(f.target));
+    assert.equal((await f.call('laptop', 'checks.run', request)).operationId, accepted.operationId);
+    const result = await f.wait('laptop', accepted.operationId);
+    assert.equal(result.operationState, 'waiting'); assert.equal(result.error.code, 'CHECKS_UNCONFIGURED');
+    const log = await f.call('laptop', 'logs', { operationId: accepted.operationId });
+    assert.equal(log.result.originHostId, f.hosts.mini.store.hostId); assert.equal(log.result.freshness, 'cached'); assert.match(log.result.text, /CHECKS_UNCONFIGURED/);
+    await f.call('laptop', 'runs.cancel', { operationId: accepted.operationId });
+    assert.equal((await f.wait('laptop', accepted.operationId)).operationState, 'cancelled');
+    assert.equal(f.hosts.mini.store.get(remote.operationId).state, 'cancelled');
+  } finally { await f.cleanup(); }
+});
 
 test('first history reaches an unborn owner; detached dirty task handoff survives lost receipt and lands once', async () => {
   const f = await pairFixture(); try {

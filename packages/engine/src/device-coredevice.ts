@@ -10,6 +10,18 @@ import type { Journal } from './journal.js';
 import type { DeviceBackend, DeviceObservation, DeviceProfile, RetainedDeviceArtifact } from './devices.js';
 
 type Effect = DeviceOperation['effects'][number];
+export async function provisioningIdentity(input: Buffer): Promise<{ expiration: string; devices: string[]; teams: string[] }> {
+  const extract = async (key: string, format: 'raw' | 'json', type: string): Promise<string> => {
+    const result = await run('/usr/bin/plutil', ['-extract', key, format, '-expect', type, '-o', '-', '--', '-'], { input, timeoutMs: 5000 });
+    requireValue(result.code === 0, 'PROVISIONING_INVALID', 'A required provisioning identity field is missing or has an incompatible type.', 3); return result.stdout.trim();
+  };
+  // Complete mobileprovision plists contain dates and certificate data that JSON
+  // cannot represent. Extract only the typed identity fields needed for this gate.
+  const [expiration, devicesJSON, teamsJSON] = await Promise.all([extract('ExpirationDate', 'raw', 'date'), extract('ProvisionedDevices', 'json', 'array'), extract('TeamIdentifier', 'json', 'array')]);
+  const devices: unknown = JSON.parse(devicesJSON), teams: unknown = JSON.parse(teamsJSON);
+  requireValue(Array.isArray(devices) && devices.every(value => typeof value === 'string') && Array.isArray(teams) && teams.every(value => typeof value === 'string'), 'PROVISIONING_INVALID', 'Provisioning device/team identities have an incompatible shape.', 3);
+  return { expiration, devices, teams };
+}
 interface Selection { deviceId: string; identifier: string; udid: string; model: string | null; iOSVersion: string | null; iOSBuild: string | null; paired: boolean; tunnel: string; transport: string }
 export function appTreeDigest(root: string): string {
   const files: [string, number, string][] = []; let count = 0, bytes = 0;
@@ -92,10 +104,10 @@ export class CoreDeviceBackend implements DeviceBackend {
     requireValue(info['CFBundleIdentifier'] === receipt.intent.app.bundleId && info['CFBundleVersion'] === receipt.intent.app.buildVersion && info['CFBundleShortVersionString'] === receipt.intent.app.marketingVersion,
       'APP_IDENTITY_MISMATCH', 'The signed bundle identity differs from the approved artifact.');
     const decoded = await run('/usr/bin/security', ['cms', '-D', '-i', profilePath], { timeoutMs: 10000 }); requireValue(decoded.code === 0, 'PROVISIONING_INVALID', 'The provisioning profile could not be decoded.', 3);
-    const provision = await this.plist(Buffer.from(decoded.stdout));
-    requireValue(typeof provision['ExpirationDate'] === 'string' && Date.parse(provision['ExpirationDate']) > Date.now(), 'PROVISIONING_EXPIRED', 'Provisioning is expired or unconfirmed.', 3);
-    requireValue(Array.isArray(provision['ProvisionedDevices']) && provision['ProvisionedDevices'].includes(this.selection(receipt.deviceId).udid), 'PROVISIONING_DEVICE_MISMATCH', 'The selected phone is not covered by provisioning.', 3);
-    requireValue(Array.isArray(provision['TeamIdentifier']) && provision['TeamIdentifier'].includes(receipt.intent.app.teamId), 'SIGNING_TEAM_MISMATCH', 'Provisioning belongs to a different team.');
+    const provision = await provisioningIdentity(Buffer.from(decoded.stdout));
+    requireValue(Date.parse(provision.expiration) > Date.now(), 'PROVISIONING_EXPIRED', 'Provisioning is expired or unconfirmed.', 3);
+    requireValue(provision.devices.includes(this.selection(receipt.deviceId).udid), 'PROVISIONING_DEVICE_MISMATCH', 'The selected phone is not covered by provisioning.', 3);
+    requireValue(provision.teams.includes(receipt.intent.app.teamId), 'SIGNING_TEAM_MISMATCH', 'Provisioning belongs to a different team.');
     requireValue(digest(readFileSync(profilePath)) === artifact.provenance.signing.provisioningProfileDigest, 'PROVISIONING_CHANGED', 'The retained provisioning bytes changed.');
     const entitlements = await run('/usr/bin/codesign', ['--display', '--entitlements', ':-', artifact.appPath], { timeoutMs: 10000 });
     requireValue(entitlements.code === 0, 'SIGNING_UNAVAILABLE', 'The signed entitlements could not be read.', 3);
