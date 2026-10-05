@@ -177,3 +177,25 @@ test('paired milestone delivery is claimed only on the preferred host and opens 
     assert.equal((await f.call('laptop', 'notifications.claim', { ...route, requestId: randomUUID() })).error.code, 'NOTIFICATION_ALREADY_CLAIMED');
   } finally { await f.cleanup(); }
 });
+
+
+test('hook adoption alone cannot change canonical ownership, and unknown legacy boundaries are preserved', async () => {
+  const f = await pairFixture(); try {
+    const repositoryId = f.config.repositoryId, original = await f.hosts.laptop.repos.get(repositoryId);
+    const config = structuredClone(original.config); config.integration.adapter = config.validation.adapter = 'maincharacter-v1';
+    f.hosts.laptop.repos.save({ ...original, config });
+    let result = await f.call('laptop', 'repos.pair', { repo: repositoryId, host: f.hosts.mini.store.hostId, requestId: randomUUID() });
+    assert.equal(result.error.code, 'ADOPTED_AUTHORITY_MIGRATION_REQUIRED'); assert.equal(f.hosts.laptop.store.record('authority', repositoryId), undefined);
+    f.hosts.laptop.repos.save(original);
+    for (const name of ['primary-checkout-mutation.lock', 'primary-checkout-mutation.lock.recovery', 'contribution-writer.lock']) {
+      const directory = join(original.commonDir, name); mkdirSync(directory); writeFileSync(join(directory, 'unconfirmed'), 'preserve');
+      result = await f.call('laptop', 'repos.pair', { repo: repositoryId, host: f.hosts.mini.store.hostId, requestId: randomUUID() });
+      assert.equal(result.error.code, 'REPOSITORY_BUSY'); assert.equal(f.hosts.laptop.store.record('authority', repositoryId), undefined);
+      rmSync(directory, { recursive: true });
+    }
+    const destination = await f.hosts.mini.repos.get(repositoryId); f.hosts.mini.repos.save({ ...destination, config });
+    result = await f.call('mini', 'peer.exchange', { envelope: { fromHostId: f.hosts.laptop.store.hostId, expectedHostId: f.hosts.mini.store.hostId,
+      action: 'authority.activate', body: { repositoryId, transition: {} } } });
+    assert.equal(result.error.code, 'ADOPTED_AUTHORITY_MIGRATION_REQUIRED'); assert.equal(f.hosts.mini.store.record('authority', repositoryId), undefined);
+  } finally { await f.cleanup(); }
+});

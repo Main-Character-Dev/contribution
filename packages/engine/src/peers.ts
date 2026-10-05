@@ -7,7 +7,7 @@ import type { ObjectValue } from './core.js';
 import type { Journal, Operation } from './journal.js';
 import type { Repositories, Enrolled } from './repositories.js';
 import { identity, git, gitText, ordinaryHistory, oid, clean } from './git.js';
-import { run, Lease } from './process.js';
+import { run } from './process.js';
 import { privateDirectory } from './private-files.js';
 import { Milestones } from './notifications.js';
 
@@ -81,7 +81,8 @@ export class Peers {
   }
   private idle(repo: Enrolled): void {
     requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Reconcile all retained work before transferring repository authority.');
-    requireValue(!Lease.inspect(repo.commonDir), 'REPOSITORY_BUSY', 'A repository writer currently owns the mutation lease.');
+    requireValue(!['contribution-writer.lock', 'primary-checkout-mutation.lock', 'primary-checkout-mutation.lock.recovery'].some(path => existsSync(join(repo.commonDir, path))),
+      'REPOSITORY_BUSY', 'A writer or unconfirmed recovery boundary remains retained. Reconcile it before transferring authority.');
   }
   private prepareRequest(repo: Enrolled, from: string, requestId: string, scope: ObjectValue): void {
     const existing = this.store.byRequest(requestId), association = existing && this.store.record<{ from: string }>('peerOperation', existing.operationId);
@@ -93,6 +94,8 @@ export class Peers {
   }
   async bind(repo: Enrolled, hostId: string, requestId: string): Promise<ObjectValue> {
     uuid(requestId, 'requestId'); uuid(hostId, 'hostId');
+    requireValue(repo.config.integration.adapter === 'generic-v1', 'ADOPTED_AUTHORITY_MIGRATION_REQUIRED',
+      'Publication-hook adoption does not fence every existing landing entry point. Complete the cooperating-writer cutover before changing this project’s canonical host.', 3);
     return this.serial(repo.id, async () => {
       const previous = this.store.record<Authority>('authority', repo.id);
       if (previous?.transitionId === requestId) {
@@ -133,6 +136,8 @@ export class Peers {
     const result = await this.serial(repositoryId, async (): Promise<ObjectValue> => {
       if (action === 'repository.inspect') return { repositoryId, branch: repo.config.integration.branch, policy: repo.revision, tip: (await identity(repo.path)).tip, canonicalHostId: repo.canonicalHostId };
       if (action === 'authority.activate') {
+        requireValue(repo.config.integration.adapter === 'generic-v1', 'ADOPTED_AUTHORITY_MIGRATION_REQUIRED',
+          'The adopted project needs its complete cooperating-writer cutover before it can accept canonical ownership.', 3);
         const transition = object(body['transition']);
         requireValue(transition['ownerHostId'] === this.store.hostId && transition['previousOwnerHostId'] === from && transition['phase'] === 'frozen', 'AUTHORITY_FENCE_REQUIRED', 'The previous owner must first durably disable its writer.');
         const transitionId = uuid(transition['transitionId'], 'transitionId'), prior = this.store.record<Authority>('authority', repositoryId);
