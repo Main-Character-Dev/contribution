@@ -1,4 +1,4 @@
-import { openSync, closeSync, fsyncSync, readFileSync, writeFileSync, statSync, existsSync, readdirSync, appendFileSync } from 'node:fs';
+import { openSync, closeSync, fsyncSync, writeFileSync, statSync, existsSync, readdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildIdentity, validateContractFormat, assertContract } from '@contribution/contracts';
 import type { Response } from '@contribution/contracts';
@@ -12,6 +12,7 @@ import { privateDirectory } from './private-files.js';
 import { Milestones } from './notifications.js';
 import { ProjectRegistry } from './project-registry.js';
 import type { ProjectCatalog } from './project-registry.js';
+import { StableFileReader, stableFileDigest } from './bounded-file.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
 export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
@@ -21,6 +22,10 @@ export interface TransferManifest {
   policy: string; objectFormat: string; sourceRef: string; bundleDigest: string; bytes: number;
 }
 interface Transfer { manifest: TransferManifest; path: string; accepted?: ObjectValue }
+interface HistoryCapture {
+  manifest: Omit<TransferManifest, 'bundleDigest' | 'bytes'>; path: string; commonDir: string;
+  destinationHostId: string; authority: string; bundle?: { bytes: number; sha256: string };
+}
 interface Authority { transitionId: string; epoch: number; previousTransitionId: string | null; ownerHostId: string; previousOwnerHostId: string; phase: 'frozen' | 'active'; peerHostId: string; tip: string | null; policy: string }
 const CHUNK = 256 * 1024, MAX_BUNDLE = 256 * 1024 * 1024;
 export const remoteDeviceCommands = new Set(['devices.connect', 'devices.prepare', 'devices.install', 'devices.launch', 'devices.logs', 'devices.test', 'devices.ui', 'devices.debug', 'devices.capture', 'devices.disconnect', 'devices.qualify', 'devices.artifacts.transfer']);
@@ -279,7 +284,9 @@ export class Peers {
     const data = Buffer.from(encoded, 'base64'), offset = Number(body['offset']), current = statSync(transfer.path).size;
     requireValue(data.toString('base64') === encoded && data.length <= CHUNK && Number.isSafeInteger(offset) && offset >= 0 && offset + data.length <= transfer.manifest.bytes, 'INVALID_CHUNK', 'Chunk has an invalid range.', 2);
     if (offset < current) {
-      requireValue(offset + data.length <= current && readFileSync(transfer.path).subarray(offset, offset + data.length).equals(data), 'CHUNK_CONFLICT', 'Previously acknowledged bytes differ.');
+      const retained = new StableFileReader(transfer.path, MAX_BUNDLE, 'CHUNK_CONFLICT');
+      try { requireValue(offset + data.length <= retained.size && retained.read(offset, data.length).equals(data), 'CHUNK_CONFLICT', 'Previously acknowledged bytes differ.'); }
+      finally { retained.close(); }
     } else { requireValue(!transfer.accepted && offset === current, 'CHUNK_OFFSET', 'Resume at the last confirmed offset.'); appendFileSync(transfer.path, data); sync(transfer.path); }
     return { transferId: transfer.manifest.transferId, offset: statSync(transfer.path).size };
   }
@@ -287,9 +294,10 @@ export class Peers {
     const transfer = this.store.record<Transfer>('transfer', uuid(body['transferId'], 'transferId'));
     requireValue(transfer && transfer.manifest.senderHostId === from && transfer.manifest.repositoryId === repo.id, 'TRANSFER_NOT_FOUND', 'No transfer belongs to this peer.');
     if (transfer.accepted) return transfer.accepted;
-    const m = transfer.manifest, bytes = readFileSync(transfer.path);
+    const m = transfer.manifest, file = new StableFileReader(transfer.path, MAX_BUNDLE, 'BUNDLE_DIGEST_MISMATCH');
+    try {
     this.prepareRequest(repo, from, m.requestId, { manifest: m });
-    requireValue(bytes.length === m.bytes && digest(bytes) === m.bundleDigest, 'BUNDLE_DIGEST_MISMATCH', 'The retained bundle does not match its immutable manifest.');
+    requireValue(file.size === m.bytes && file.digest() === m.bundleDigest, 'BUNDLE_DIGEST_MISMATCH', 'The retained bundle does not match its immutable manifest.');
     requireValue((await identity(repo.path)).objectFormat === m.objectFormat, 'OBJECT_FORMAT_MISMATCH', 'The peer Git object formats differ.');
     const heads = await gitText(repo.path, ['bundle', 'list-heads', transfer.path]);
     requireValue(heads === `${m.tip} ${m.sourceRef}`, 'UNEXPECTED_BUNDLE_REFS', 'A transfer must contain exactly its declared source ref.');
@@ -298,7 +306,10 @@ export class Peers {
     const incoming = `refs/contribution/incoming/${from}/${m.requestId}`;
     const priorRef = await git(repo.path, ['rev-parse', '--verify', incoming]);
     requireValue(priorRef.code !== 0 || priorRef.stdout.trim() === m.tip, 'REQUEST_ID_CONFLICT', 'This request already retained a different source tip.');
+    file.verify();
     await gitText(repo.path, ['-c', 'core.hooksPath=/dev/null', '-c', 'maintenance.auto=false', 'fetch', '--no-tags', '--no-write-fetch-head', transfer.path, `${m.sourceRef}:${incoming}`]);
+    file.verify();
+    requireValue(await gitText(repo.path, ['rev-parse', '--verify', incoming]) === m.tip, 'BUNDLE_SOURCE_CHANGED', 'The imported source differs from the immutable transfer selection.');
     await ordinaryHistory(repo.path, m.tip);
     if (m.base) {
       requireValue((await git(repo.path, ['merge-base', '--is-ancestor', m.base, m.tip])).code === 0 && m.base !== m.tip && !await gitText(repo.path, ['rev-list', '--merges', `${m.base}..${m.tip}`]), 'INVALID_SOURCE_RANGE', 'The incoming task range must have complete linear ancestry.');
@@ -307,40 +318,77 @@ export class Peers {
       requireValue(authors.size === 1 && (count === 1 || typeof m.metadata['integrationMessage'] === 'string'), 'NEEDS_INPUT', 'Incoming generic tasks require one author and an explicit multi-commit message.', 2);
     }
     requireValue(repo.config.integration.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Imported sources need an explicitly adopted repository adapter.', 3);
+    file.verify();
     const input = { tip: m.tip, base: m.base, metadata: m.metadata, policy: m.policy, senderHostId: from, incomingRef: incoming };
     const op = this.store.admit(m.requestId, m.kind === 'submit' ? 'submit' : m.kind, repo.id, input, this.payload);
     const receipt = { transferId: m.transferId, requestId: m.requestId, sourceTip: m.tip, incomingRef: incoming, response: this.store.response(op), acceptedAt: now() };
     this.store.put('transfer', m.transferId, { ...transfer, accepted: receipt }); return receipt;
+    } finally { file.close(); }
   }
   async send(hostId: string, manifest: TransferManifest, path: string): Promise<ObjectValue> {
-    requireValue(digest(readFileSync(path)) === manifest.bundleDigest, 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
+    const file = new StableFileReader(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
+    try {
+    requireValue(file.size === manifest.bytes && file.digest() === manifest.bundleDigest, 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
     const begin = await this.call(hostId, 'transfer.begin', { repositoryId: manifest.repositoryId, manifest });
     if (begin['accepted']) return object(begin['accepted']);
-    let offset = Number(begin['offset']); const data = readFileSync(path);
-    requireValue(Number.isSafeInteger(offset) && offset >= 0 && offset <= data.length, 'PEER_PROTOCOL_ERROR', 'Peer returned an invalid transfer offset.');
-    while (offset < data.length) {
-      const chunk = data.subarray(offset, offset + CHUNK);
+    let offset = Number(begin['offset']); file.verify();
+    requireValue(Number.isSafeInteger(offset) && offset >= 0 && offset <= file.size, 'PEER_PROTOCOL_ERROR', 'Peer returned an invalid transfer offset.');
+    while (offset < file.size) {
+      const chunk = file.read(offset, Math.min(CHUNK, file.size - offset));
       const result = await this.call(hostId, 'transfer.chunk', { repositoryId: manifest.repositoryId, transferId: manifest.transferId, offset, data: chunk.toString('base64') });
       requireValue(result['offset'] === offset + chunk.length, 'PEER_PROTOCOL_ERROR', 'Peer did not retain the exact chunk.'); offset += chunk.length;
     }
-    return this.call(hostId, 'transfer.finish', { repositoryId: manifest.repositoryId, transferId: manifest.transferId });
+    file.verify();
+    return await this.call(hostId, 'transfer.finish', { repositoryId: manifest.repositoryId, transferId: manifest.transferId });
+    } finally { file.close(); }
   }
   async captureHistory(repo: Enrolled, kind: 'seed' | 'mirror', requestId: string): Promise<Operation> {
-    const prior = this.store.list(100000).find(op => op.requestId === requestId);
+    uuid(requestId, 'requestId');
+    return this.serial(`history:${requestId}`, () => this.serial(repo.id, () => this.captureSelectedHistory(repo, kind, requestId)));
+  }
+  private async captureSelectedHistory(repo: Enrolled, kind: 'seed' | 'mirror', requestId: string): Promise<Operation> {
+    const prior = this.store.byRequest(requestId);
     if (prior) { requireValue(prior.kind === `transfer.${kind}` && prior.repositoryId === repo.id, 'REQUEST_ID_CONFLICT', 'Request ID identifies another operation.'); return prior; }
     this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
-    await this.repos.current(repo); const info = await identity(repo.path); requireValue(info.tip, 'UNBORN_REPOSITORY', 'No committed history is available to transfer.', 3);
-    await ordinaryHistory(repo.path, info.tip);
+    await this.repos.current(repo); const info = await identity(repo.path);
     const authority = this.store.record<Authority>('authority', repo.id); requireValue(authority?.phase === 'active', 'AUTHORITY_TRANSITION_PENDING', 'Complete repository pairing before history transfer.', 3);
     requireValue(kind === 'mirror' ? repo.canonicalHostId === this.store.hostId : repo.canonicalHostId !== this.store.hostId, 'TRANSFER_DIRECTION_INVALID', 'History transfer does not match this host role.');
-    const sourceRef = `refs/contribution/outbox/${digest({ requestId })}`;
-    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
-    await gitText(repo.path, ['update-ref', sourceRef, info.tip]);
-    const directory = join(this.store.directory, 'transfers'); privateDirectory(directory); const path = join(directory, `${digest({ requestId })}.bundle`);
+    let selected = this.store.record<HistoryCapture>('historyCaptureIntent', requestId);
+    if (!selected) {
+      requireValue(info.tip, 'UNBORN_REPOSITORY', 'No committed history is available to transfer.', 3);
+      await ordinaryHistory(repo.path, info.tip);
+      selected = { manifest: { schemaVersion: 1, transferId: id(), requestId, repositoryId: repo.id, senderHostId: this.store.hostId, kind, branch: repo.config.integration.branch,
+        tip: info.tip, base: null, metadata: { schemaVersion: 1 }, policy: repo.revision, objectFormat: info.objectFormat, sourceRef: `refs/contribution/outbox/${digest({ requestId })}` },
+        path: join(this.store.directory, 'transfers', `${digest({ requestId })}.bundle`), commonDir: repo.commonDir, destinationHostId: authority.peerHostId, authority: digest(authority) };
+    }
+    const selection = selected, m = selection.manifest;
+    requireValue(m.kind === kind && m.repositoryId === repo.id, 'REQUEST_ID_CONFLICT', 'This request already selected different history.');
+    const currentSelection = (): void => {
+      const live = this.repos.all().find(value => value.id === repo.id);
+      requireValue(live?.revision === m.policy && live.commonDir === selection.commonDir && live.canonicalHostId === repo.canonicalHostId,
+        'HISTORY_SELECTION_CHANGED', 'The enrollment changed while retaining selected history.', 3);
+      requireValue(selection.commonDir === info.commonDir && m.objectFormat === info.objectFormat && m.policy === repo.revision && selection.authority === digest(this.store.record('authority', repo.id)),
+        'HISTORY_SELECTION_CHANGED', 'The retained history selection requires its original clone, configuration and authority. Preserve it for reconciliation.', 3);
+      this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
+    };
+    currentSelection();
+    requireValue(!this.store.record('captureIntent', requestId), 'REQUEST_ID_CONFLICT', 'This request already selected task source.');
+    this.store.put('historyCaptureIntent', requestId, selected);
+    const sourceRef = m.sourceRef, path = selected.path;
+    const retained = await git(repo.path, ['rev-parse', '--verify', sourceRef]);
+    requireValue(retained.code !== 0 || retained.stdout.trim() === m.tip, 'HISTORY_SELECTION_CHANGED', 'The retained source ref changed; preserve both histories for reconciliation.', 3);
+    if (retained.code !== 0) await gitText(repo.path, ['update-ref', sourceRef, m.tip, '0'.repeat(m.tip.length)]);
+    const directory = join(this.store.directory, 'transfers'); privateDirectory(directory);
     if (!existsSync(path)) await gitText(repo.path, ['bundle', 'create', path, sourceRef]); sync(path);
-    const manifest: TransferManifest = { schemaVersion: 1, transferId: id(), requestId, repositoryId: repo.id, senderHostId: this.store.hostId, kind, branch: repo.config.integration.branch,
-      tip: info.tip, base: null, metadata: { schemaVersion: 1 }, policy: repo.revision, objectFormat: info.objectFormat, sourceRef, bundleDigest: digest(readFileSync(path)), bytes: statSync(path).size };
-    return this.store.admit(requestId, `transfer.${kind}`, repo.id, { manifest, path, destinationHostId: authority.peerHostId }, this.payload, 'queued_local');
+    const bundle = stableFileDigest(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
+    requireValue(!selected.bundle || digest(selected.bundle) === digest(bundle), 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
+    await gitText(repo.path, ['bundle', 'verify', path]);
+    requireValue(await gitText(repo.path, ['bundle', 'list-heads', path]) === `${m.tip} ${m.sourceRef}`, 'HISTORY_SELECTION_CHANGED', 'The retained bundle differs from the selected history.');
+    requireValue(digest(stableFileDigest(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED')) === digest(bundle), 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed during validation.');
+    await this.repos.current(repo); currentSelection();
+    this.store.put('historyCaptureIntent', requestId, { ...selected, bundle });
+    const manifest: TransferManifest = { ...m, bundleDigest: bundle.sha256, bytes: bundle.bytes };
+    return this.store.admit(requestId, `transfer.${kind}`, repo.id, { manifest, path, destinationHostId: selected.destinationHostId }, this.payload, 'queued_local');
   }
   async applyHistory(op: Operation, repo: Enrolled): Promise<ObjectValue> {
     if (op.kind === 'seed') this.assertWriter(repo);

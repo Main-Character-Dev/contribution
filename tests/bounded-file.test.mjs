@@ -4,7 +4,45 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readStableFile } from '../packages/engine/dist/bounded-file.js';
+import { createHash } from 'node:crypto';
+import { readStableFile, StableFileReader, stableFileDigest } from '../packages/engine/dist/bounded-file.js';
+
+test('large artifact digests and range reads use finite buffers and retain binary identity', t => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'ct-artifact-read-')), path = join(root, 'bundle');
+  const data = Buffer.alloc(3 * 1024 ** 2 + 17, 255); data.write('binary\0content', 0);
+  const originalRead = fs.readSync; let calls = 0;
+  try {
+    fs.writeFileSync(path, data);
+    t.mock.method(fs, 'readSync', (...args) => { calls++; assert(args[3] <= 1024 ** 2); return originalRead(...args); }); syncBuiltinESMExports();
+    assert.deepEqual(stableFileDigest(path, data.length, 'CHANGED'), { bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') });
+    const file = new StableFileReader(path, data.length, 'CHANGED');
+    try {
+      assert.deepEqual(file.read(1024 ** 2 - 5, 17), data.subarray(1024 ** 2 - 5, 1024 ** 2 + 12));
+      for (const range of [[-1, 1], [0, 1024 ** 2 + 1], [data.length, 1], [0.5, 1]]) assert.throws(() => file.read(...range), { code: 'CHANGED' });
+    } finally { file.close(); }
+    assert.equal(calls, 5);
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); fs.rmSync(root, { recursive: true }); }
+});
+
+test('retained artifact readers reject changes between asynchronous transfer chunks', async () => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'ct-artifact-change-'));
+  try {
+    for (const mutation of ['grow', 'rewrite', 'replace', 'parent', 'link']) {
+      const directory = join(root, mutation); fs.mkdirSync(directory); const path = join(directory, 'bundle'); fs.writeFileSync(path, 'original');
+      const file = new StableFileReader(path, 64, 'CHANGED');
+      try {
+        assert.equal(file.read(0, 3).toString(), 'ori'); await new Promise(resolve => setImmediate(resolve));
+        if (mutation === 'grow') fs.appendFileSync(path, 'more');
+        if (mutation === 'rewrite') fs.writeFileSync(path, 'mutated!');
+        if (mutation === 'replace') { fs.renameSync(path, path + '-original'); fs.writeFileSync(path, 'original'); }
+        if (mutation === 'parent') { fs.renameSync(directory, directory + '-original'); fs.mkdirSync(directory); fs.writeFileSync(path, 'original'); }
+        if (mutation === 'link') fs.linkSync(path, path + '-shared');
+        assert.throws(() => file.read(3, 3), { code: 'CHANGED' }, mutation);
+        assert.throws(() => file.digest(), { code: 'CHANGED' }, mutation);
+      } finally { file.close(); }
+    }
+  } finally { fs.rmSync(root, { recursive: true }); }
+});
 
 test('bounded descriptor reads reject growth, replacement and same-size rewriting during inspection', t => {
   const root = fs.mkdtempSync(join(tmpdir(), 'ct-bounded-read-'));

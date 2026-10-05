@@ -16,6 +16,7 @@ import { LegacyPrimaryLease } from './legacy-lease.js';
 import { AdoptedLanding } from './adopted-landing.js';
 import { AdoptedChecks } from './adopted-checks.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
+import { StableFileReader } from './bounded-file.js';
 
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
@@ -71,17 +72,27 @@ export class Workflows {
       requireValue(commits.length === 1 || (typeof metadata['integrationMessage'] === 'string' && metadata['integrationMessage'].trim()), 'NEEDS_INPUT', 'A multi-commit task requires an explicit combined integration message.', 2);
     } else await this.adoptedLanding.capture(repo, requestId, sourcePath, tip, base, metadata);
     this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
+    const concurrent = this.store.record<{ identity: string }>('captureIntent', requestId);
+    requireValue(!this.store.record('historyCaptureIntent', requestId) && (!concurrent || concurrent.identity === digest({ repositoryId: repo.id, input })),
+      'REQUEST_ID_CONFLICT', 'This request already selected a different retained source.');
     this.store.put('captureIntent', requestId, { identity: digest({ repositoryId: repo.id, input }), repositoryId: repo.id, input });
     const retention = `refs/contribution/outbox/${digest({ requestId })}`;
-    await gitText(sourcePath, ['update-ref', retention, tip]);
+    const retained = await git(sourcePath, ['rev-parse', '--verify', retention]);
+    requireValue(retained.code !== 0 || retained.stdout.trim() === tip, 'CAPTURE_RECOVERY_REQUIRED', 'The retained source ref changed; preserve it for reconciliation.');
+    if (retained.code !== 0) await gitText(sourcePath, ['update-ref', retention, tip, '0'.repeat(tip.length)]);
     const directory = join(this.store.directory, 'transfers'); mkdirSync(directory, { recursive: true, mode: 0o700 });
     const bundle = join(directory, `${digest({ requestId })}.bundle`);
     if (!existsSync(bundle)) await gitText(sourcePath, ['bundle', 'create', bundle, retention]);
+    const artifact = new StableFileReader(bundle, 256 * 1024 * 1024, 'CAPTURE_RECOVERY_REQUIRED');
+    try {
+    const bundleDigest = artifact.digest();
     await gitText(sourcePath, ['bundle', 'verify', bundle]);
     requireValue(await gitText(sourcePath, ['bundle', 'list-heads', bundle]) === `${tip} ${retention}`, 'CAPTURE_RECOVERY_REQUIRED', 'The retained bundle differs from the captured source. Preserve it for reconciliation.');
     const file = openSync(bundle, 'r'); fsyncSync(file); closeSync(file);
-    this.store.put('capture', requestId, { retention, bundle, commits, tip, base, bundleDigest: digest(readFileSync(bundle)), acceptedAt: now() });
+    artifact.verify();
+    this.store.put('capture', requestId, { retention, bundle, commits, tip, base, bundleDigest, acceptedAt: now() });
     return this.store.admit(requestId, 'submit', repo.id, input, this.payload.identity, repo.canonicalHostId === this.store.hostId ? 'queued' : 'queued_local');
+    } finally { artifact.close(); }
   }
   async initialize(op: Operation, repo: Enrolled): Promise<ObjectValue> {
     await this.repos.current(repo);

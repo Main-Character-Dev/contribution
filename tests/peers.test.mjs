@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync, readFileSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID, randomBytes } from 'node:crypto';
@@ -48,6 +48,66 @@ test('adjacent peer patch compatibility requires explicit stable protocol and re
   for (const version of ['0.1.2', '0.2.0', '1.0.0', '0.1.1-preview']) assert.equal(compatiblePeer({ version, protocolVersion: 1, requestSchemaVersion: 1 }), false);
   assert.equal(compatiblePeer({ version: '0.1.1' }), false);
   assert.equal(compatiblePeer({ version: '0.1.0', protocolVersion: 2, requestSchemaVersion: 1 }), false);
+});
+
+test('interrupted history capture freezes the original tip and transfer identity before creating or admitting its bundle', async t => {
+  for (const stop of ['selection', 'admission']) {
+    const f = await pairFixture(); try {
+      const tip = commit(f.source, 'first.txt', 'selected'), repo = f.config.repositoryId;
+      assert.equal((await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() })).error, null);
+      const store = f.hosts.laptop.store, request = { repo, requestId: randomUUID() }, originalPut = store.put.bind(store), originalAdmit = store.admit.bind(store);
+      let interrupted = false;
+      const mock = stop === 'selection' ? t.mock.method(store, 'put', (...args) => {
+        const result = originalPut(...args);
+        if (!interrupted && args[0] === 'historyCaptureIntent') { interrupted = true; throw new Fault('FIXTURE_INTERRUPTED', 'Stopped after durable selection.'); }
+        return result;
+      }) : t.mock.method(store, 'admit', (...args) => {
+        if (!interrupted && args[1] === 'transfer.seed') { interrupted = true; throw new Fault('FIXTURE_INTERRUPTED', 'Stopped before admission.'); }
+        return originalAdmit(...args);
+      });
+      assert.equal((await f.call('laptop', 'repos.seed', request)).error.code, 'FIXTURE_INTERRUPTED'); mock.mock.restore();
+      const selected = store.record('historyCaptureIntent', request.requestId); assert.equal(selected.manifest.tip, tip); assert.equal(store.byRequest(request.requestId), undefined);
+      const advanced = commit(f.source, 'later.txt', 'unrelated later work');
+      const results = await Promise.all([f.call('laptop', 'repos.seed', request), f.call('laptop', 'repos.seed', request)]);
+      assert.equal(results[0].error, null, JSON.stringify(results[0])); assert.equal(results[1].operationId, results[0].operationId);
+      const operation = store.get(results[0].operationId); assert.equal(operation.input.manifest.tip, tip); assert.equal(operation.input.manifest.transferId, selected.manifest.transferId);
+      assert.equal(git(f.source, 'rev-parse', selected.manifest.sourceRef), tip);
+      assert.equal((await f.wait('laptop', results[0].operationId)).operationState, 'succeeded');
+      assert.equal(git(f.target, 'rev-parse', 'HEAD'), tip); assert.equal(git(f.source, 'rev-parse', 'HEAD'), advanced);
+    } finally { t.mock.restoreAll(); await f.cleanup(); }
+  }
+});
+
+test('history capture preserves a changed retention ref instead of silently overwriting it', async t => {
+  const f = await pairFixture(); try {
+    const tip = commit(f.source, 'first.txt', 'selected'), repo = f.config.repositoryId;
+    assert.equal((await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() })).error, null);
+    const store = f.hosts.laptop.store, request = { repo, requestId: randomUUID() }, original = store.admit.bind(store);
+    const mock = t.mock.method(store, 'admit', (...args) => { if (args[1] === 'transfer.seed') throw new Fault('FIXTURE_INTERRUPTED', 'Stopped before admission.'); return original(...args); });
+    assert.equal((await f.call('laptop', 'repos.seed', request)).error.code, 'FIXTURE_INTERRUPTED'); mock.mock.restore();
+    const selected = store.record('historyCaptureIntent', request.requestId), changed = commit(f.source, 'new.txt', 'preserve');
+    git(f.source, 'update-ref', selected.manifest.sourceRef, changed, tip);
+    assert.equal((await f.call('laptop', 'repos.seed', request)).error.code, 'HISTORY_SELECTION_CHANGED');
+    assert.equal(git(f.source, 'rev-parse', selected.manifest.sourceRef), changed); assert.equal(store.byRequest(request.requestId), undefined);
+  } finally { t.mock.restoreAll(); await f.cleanup(); }
+});
+
+test('sender rejects a replaced bundle after peer acknowledgment and never finishes the changed transfer', async t => {
+  const f = await pairFixture(); try {
+    const repo = f.config.repositoryId; commit(f.source, 'large.bin', randomBytes(600000));
+    await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() });
+    const result = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); assert.equal(result.error, null);
+    const peer = f.hosts.laptop.peers, operation = f.hosts.laptop.store.get(result.operationId), path = operation.input.path, original = peer.call.bind(peer);
+    let finished = false;
+    t.mock.method(peer, 'call', async (host, action, body) => {
+      if (action === 'transfer.finish') finished = true;
+      const result = await original(host, action, body);
+      if (action === 'transfer.chunk') { const bytes = readFileSync(path); renameSync(path, path + '-original'); writeFileSync(path, bytes); }
+      return result;
+    });
+    await assert.rejects(peer.send(f.hosts.mini.store.hostId, operation.input.manifest, path), { code: 'LOCAL_BUNDLE_CHANGED' });
+    assert.equal(finished, false); assert.equal(f.hosts.mini.store.byRequest(operation.requestId), undefined);
+  } finally { t.mock.restoreAll(); await f.cleanup(); }
 });
 
 test('canonical checks run on the owner and an unreachable owner never substitutes a mirror check', async () => {
