@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readdirSync, lstatSync, openSync, closeSync, fsyncSync, renameSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve, dirname } from 'node:path';
 import { assertContract } from '@contribution/contracts';
 import type { Repository } from '@contribution/contracts';
 import { identifyAdoption } from '@contribution/adapters';
@@ -13,7 +13,9 @@ export interface Enrolled {
   availability: 'this-mac' | 'both-macs'; policySource: 'generated' | 'tracked'; hookPath: string | null;
 }
 interface ConfigurationIntent { requestId: string; identity: string; previous: Enrolled; updated: Enrolled; state: 'prepared' | 'completed' }
+interface CreationIntent { requestId: string; requestedPath: string; path: string; directory?: { dev: number; ino: number }; repository?: Enrolled }
 export class Repositories {
+  private readonly creating = new Map<string, Promise<Enrolled>>();
   constructor(readonly store: Journal) {
     for (const intent of store.records<ConfigurationIntent>('configurationIntent').filter(record => record.state === 'prepared')) {
       try { this.finishConfiguration(intent); } catch { /* Preserve the approved intent and block dependent writers until the same request can reconcile it. */ }
@@ -54,11 +56,49 @@ export class Repositories {
       canonicalHostId: this.store.hostId, availability, policySource: existsSync(file) ? 'tracked' : 'generated', hookPath };
     this.save(repo); return repo;
   }
-  async create(path: string): Promise<Enrolled> {
-    requireValue(!existsSync(path) || readdirSync(path).length === 0, 'DESTINATION_NOT_EMPTY', 'Create needs a new or empty directory.');
-    const parent = existsSync(path) ? path : join(path, '..');
-    for (const key of ['user.name', 'user.email']) requireValue((await git(parent, ['config', '--get', key])).code === 0, 'GIT_IDENTITY_REQUIRED', 'Configure your Git author identity before creating a repository.', 3);
-    mkdirSync(path, { recursive: true }); await gitText(path, ['init', '--initial-branch=dev']); return this.add(path);
+  async create(inputPath: string, requestId: string): Promise<Enrolled> {
+    const absolute = resolve(inputPath);
+    let intent = this.store.record<CreationIntent>('creationIntent', requestId);
+    if (intent) requireValue(intent.requestedPath === absolute, 'REQUEST_ID_CONFLICT', 'This creation request already identifies a different destination.');
+    else {
+      const path = join(realpathSync(dirname(absolute)), basename(absolute));
+      requireValue(!this.store.db.prepare('SELECT id FROM operations WHERE request_id=?').get(requestId), 'REQUEST_ID_CONFLICT', 'This request already identifies another operation.');
+      requireValue(!this.store.records<CreationIntent>('creationIntent').some(value => value.path === path), 'CREATION_ALREADY_PENDING', 'Retry the original creation request for this destination.');
+      requireValue(!existsSync(path) || (lstatSync(path).isDirectory() && !lstatSync(path).isSymbolicLink() && readdirSync(path).length === 0), 'DESTINATION_NOT_EMPTY', 'Create needs a new or empty regular directory.');
+      intent = { requestId, requestedPath: absolute, path }; this.store.put('creationIntent', requestId, intent);
+    }
+    const current = this.creating.get(requestId); if (current) return current;
+    const pending = this.finishCreation(intent); this.creating.set(requestId, pending);
+    try { return await pending; } finally { this.creating.delete(requestId); }
+  }
+  private async finishCreation(intent: CreationIntent): Promise<Enrolled> {
+    if (intent.repository) return intent.repository;
+    const { path } = intent;
+    for (const key of ['user.name', 'user.email']) requireValue((await git(dirname(path), ['config', '--get', key])).code === 0, 'GIT_IDENTITY_REQUIRED', 'Configure your Git author identity before creating a repository.', 3);
+    if (!intent.directory) {
+      if (!existsSync(path)) mkdirSync(path);
+      const info = lstatSync(path);
+      requireValue(info.isDirectory() && !info.isSymbolicLink() && readdirSync(path).length === 0, 'DESTINATION_CHANGED', 'The requested empty destination changed; preserve it for reconciliation.');
+      intent.directory = { dev: info.dev, ino: info.ino }; this.store.put('creationIntent', intent.requestId, intent);
+    }
+    const info = lstatSync(path);
+    requireValue(info.isDirectory() && !info.isSymbolicLink() && info.dev === intent.directory.dev && info.ino === intent.directory.ino,
+      'DESTINATION_CHANGED', 'The retained creation directory was replaced; preserve its current contents.');
+    requireValue(readdirSync(path).every(name => name === '.git'), 'DESTINATION_CHANGED', 'Unrelated contents appeared before creation completed; preserve them for review.');
+    const gitDirectory = join(path, '.git'), marker = join(gitDirectory, 'contribution-creation.json');
+    const content = JSON.stringify({ schemaVersion: 1, requestId: intent.requestId, path }) + '\n';
+    if (!existsSync(gitDirectory)) {
+      mkdirSync(gitDirectory, { mode: 0o700 }); writeFileSync(marker, content, { mode: 0o600, flag: 'wx' });
+      for (const entry of [marker, gitDirectory, path]) { const fd = openSync(entry, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); } }
+    }
+    requireValue(lstatSync(gitDirectory).isDirectory() && !lstatSync(gitDirectory).isSymbolicLink() && existsSync(marker) && lstatSync(marker).isFile() && !lstatSync(marker).isSymbolicLink() && readFileSync(marker, 'utf8') === content,
+      'CREATION_OWNERSHIP_UNCONFIRMED', 'The partial Git directory has no matching creation receipt; preserve it for explicit reconciliation.');
+    if (existsSync(join(gitDirectory, 'HEAD'))) {
+      const before = await identity(path);
+      requireValue(!before.tip && before.branch === 'dev' && before.commonDir === realpathSync(gitDirectory), 'CREATION_HISTORY_CHANGED', 'The partial repository gained different history or ownership; do not initialize it again.');
+    }
+    await gitText(path, ['init', '--initial-branch=dev']);
+    const repo = await this.add(path); intent.repository = repo; this.store.put('creationIntent', intent.requestId, intent); return repo;
   }
   async current(repo: Enrolled): Promise<void> {
     requireValue(!this.store.records<ConfigurationIntent>('configurationIntent').some(intent => intent.previous.id === repo.id && intent.state === 'prepared'), 'CONFIGURATION_RECONCILIATION_REQUIRED', 'A retained policy change needs reconciliation before another writer can run.', 3);
@@ -117,9 +157,12 @@ export class Repositories {
       if (cached) return { ...cached, publication: { ...(cached['publication'] as ObjectValue), freshness: 'stale' } };
     }
     const info = await identity(repo.path); const { remote, branch } = repo.config.publication;
+    const selected = await git(repo.path, ['rev-parse', '--verify', `refs/heads/${repo.config.integration.branch}`]);
+    const canonicalTip = selected.code === 0 ? selected.stdout.trim() : null;
+    const branchChanged = info.branch !== repo.config.integration.branch;
     let remoteTip: string | null = null, relation = 'unconfigured', action = 'configure', observedAt: string | null = null;
     let ahead: number | null = null, behind: number | null = null, blockedReason: string | null = null;
-    if (remote && branch && info.tip) {
+    if (remote && branch && canonicalTip) {
       if (!refresh) { relation = 'unknown'; action = 'refresh'; }
       else {
         const destinations = (await gitText(repo.path, ['remote', 'get-url', '--push', '--all', remote])).split('\n');
@@ -130,9 +173,9 @@ export class Repositories {
         else if (result.code !== 0 || !/^[a-f0-9]{40,64}\trefs\/heads\//.test(result.stdout)) { relation = 'unknown'; action = 'refresh'; blockedReason = 'REMOTE_OBSERVATION_FAILED'; }
         else {
           remoteTip = result.stdout.split('\t')[0]!;
-          if (remoteTip === info.tip) { relation = 'equal'; action = 'none'; ahead = 0; behind = 0; }
+          if (remoteTip === canonicalTip) { relation = 'equal'; action = 'none'; ahead = 0; behind = 0; }
           else {
-            const counts = await git(repo.path, ['rev-list', '--left-right', '--count', `${info.tip}...${remoteTip}`]);
+            const counts = await git(repo.path, ['rev-list', '--left-right', '--count', `${canonicalTip}...${remoteTip}`]);
             if (counts.code === 0) {
               [ahead, behind] = counts.stdout.trim().split(/\s+/).map(Number) as [number, number];
               relation = ahead > 0 && behind > 0 ? 'diverged' : ahead > 0 ? 'ahead' : 'behind'; action = relation === 'ahead' ? 'push' : 'reconcile';
@@ -141,9 +184,10 @@ export class Repositories {
         }
       }
     }
+    if (branchChanged) { blockedReason = 'ACTIVE_BRANCH_CHANGED'; action = 'reconcile'; }
     const unsettled = this.store.unsettled().filter(op => op.repositoryId === repo.id);
     const result = { repositoryId: repo.id, canonicalHostId: repo.canonicalHostId, canonicalBranch: repo.config.integration.branch,
-      canonicalTip: info.tip, publication: { remote, branch, remoteTip, relation, ahead, behind, observedAt,
+      canonicalTip, checkout: { branch: info.branch, tip: info.tip, matchesCanonicalBranch: !branchChanged }, publication: { remote, branch, remoteTip, relation, ahead, behind, observedAt,
         freshness: observedAt ? 'fresh' : 'unknown', action, enabled: !blockedReason && repo.canonicalHostId === this.store.hostId, blockedReason },
       pending: { localSubmissions: unsettled.filter(op => op.state === 'queued_local').length, landingJobs: unsettled.filter(op => op.kind === 'submit').length,
         dirtyWorktrees: (await gitText(repo.path, ['status', '--porcelain=v1'])).length ? 1 : 0 } };

@@ -1,0 +1,12 @@
+{
+  "module": "github.com/danielpaulus/go-ios",
+  "version": "v1.3.3-0.20261002094649-273d3e06e803",
+  "revision": "273d3e06e803fb6ee95e4df914d8be82c5ee4bb0",
+  "sum": "h1:fjgXgKqzZDtG/NPo7oIxKYJ7UUyvoCjYCYw4OZwZQIM=",
+  "goModSum": "h1:A3Oz+qKOuQs0RorxTPTxojxO2cVpdUEfiP3hfvd9IcQ=",
+  "toolchain": "go1.26.5",
+  "target": "darwin/arm64",
+  "enabledInProduct": false,
+  "upstreamLicense": "MIT",
+  "runtimePolicy": "No automatic tunnel, pairing, privilege escalation, developer image download, or device operation. CLI prototype is excluded from product payloads."
+}

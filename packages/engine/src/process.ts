@@ -8,6 +8,20 @@ export function processIdentity(pid: number): string | null {
   try { return execFileSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8', timeout: 2000 }).trim() || null; } catch { return null; }
 }
 export function alive(pid: number): boolean { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; } }
+export function descendantOf(pid: number, expectedStart: string, ancestor: { pid: number; start: string }): boolean {
+  if (processIdentity(pid) !== expectedStart || processIdentity(ancestor.pid) !== ancestor.start) return false;
+  const seen = new Set<number>();
+  for (let depth = 0; depth < 32 && pid > 1 && !seen.has(pid); depth++) {
+    seen.add(pid); if (pid === ancestor.pid) return processIdentity(pid) === ancestor.start;
+    const before = processIdentity(pid); if (!before) return false;
+    try {
+      const parent = Number(execFileSync('/bin/ps', ['-p', String(pid), '-o', 'ppid='], { encoding: 'utf8', timeout: 2000 }).trim());
+      if (!Number.isSafeInteger(parent) || parent < 1 || processIdentity(pid) !== before) return false;
+      pid = parent;
+    } catch { return false; }
+  }
+  return false;
+}
 export interface ProcessResult { code: number; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean }
 export interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number;
   signal?: AbortSignal; output?: (text: string) => void; started?: (pid: number, start: string | null) => void }

@@ -32,7 +32,7 @@ const allowed: Record<string, string[]> = {
   'runs.list': ['repo'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
   'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
   'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'peer.exchange': ['envelope'],
-  'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin'], 'update.check': [], 'update.apply': ['whenIdle'],
+  'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
 };
 for (const name of ['connect', 'prepare', 'install', 'launch', 'logs', 'test', 'ui', 'debug', 'capture', 'disconnect', 'qualify'])
   allowed[`devices.${name}`] = ['repo', 'host', 'device', 'requestId', 'artifact', 'launch', 'sourceTip', 'buildProfile', 'appRef', 'plan', 'sessionProfile', 'durationSeconds', 'maxBytes', 'kind'];
@@ -221,7 +221,8 @@ export class Engine {
         return completed({ repository: await this.repos.add(string(args['path'], 'path'), args['profile'] as 'local-development' | 'standard' | undefined, args['availability'] as 'this-mac' | 'both-macs' | undefined, args['config'] as Repository | undefined) });
       }
       if (command === 'repos.create') {
-        const repo = await this.repos.create(string(args['path'], 'path')); return this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
+        const requestId = string(args['requestId'], 'requestId');
+        const repo = await this.repos.create(string(args['path'], 'path'), requestId); return this.admit(requestId, 'initialize', repo.id, { policy: repo.revision });
       }
       if (command === 'runs.list') return completed({ operations: this.store.list().filter(op => !args['repo'] || op.repositoryId === args['repo']) });
       if (command === 'runs.events') return completed({ events: this.store.events(Math.max(0, Number(args['after'] ?? 0)), typeof args['operationId'] === 'string' ? args['operationId'] : undefined) });

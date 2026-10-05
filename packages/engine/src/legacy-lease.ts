@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, rmdirSync, readdirSync, lstatSync, openSync, closeSync, fsyncSync } from 'node:fs';
 import { join } from 'node:path';
 import { id, now, requireValue, Fault } from './core.js';
-import { processIdentity } from './process.js';
+import { processIdentity, descendantOf } from './process.js';
 
 export interface LegacyOwner {
   version: 1; token: string; pid: number; purpose: string; acquired_at: string; start_time: string;
@@ -60,4 +60,11 @@ export class LegacyPrimaryLease {
     unlinkSync(file); rmdirSync(path); return true;
   }
   release(): void { LegacyPrimaryLease.removeOwned(this.directory, this.owner); }
+  static borrow(commonDirectory: string, expected: LegacyOwner, caller: { pid: number; start: string }, invocation: { pid: number; start: string }): { status: 'acquired'; leasePath: string; token: string; owner: LegacyOwner; contributionBorrowed: true } {
+    const owner = this.inspect(commonDirectory);
+    requireValue(owner && owner.token === expected.token && owner.pid === expected.pid && owner.start_time === expected.start_time && processIdentity(owner.pid) === owner.start_time,
+      'HOOK_LEASE_INVALID', 'The shared writer lease no longer belongs to this managed invocation.');
+    requireValue(descendantOf(caller.pid, caller.start, invocation), 'HOOK_PROCESS_MISMATCH', 'The requesting hook is not a live descendant of the recorded Git invocation.');
+    return { status: 'acquired', leasePath: join(commonDirectory, 'primary-checkout-mutation.lock'), token: owner.token, owner, contributionBorrowed: true };
+  }
 }

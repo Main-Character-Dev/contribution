@@ -7,7 +7,7 @@ import type { Enrolled } from './repositories.js';
 import { digest, Fault, id, now, requireValue, string, object } from './core.js';
 import type { ObjectValue } from './core.js';
 import { clean, git, gitText, identity, oid, ordinaryHistory, contained, inputFingerprint } from './git.js';
-import { Lease, executable, processIdentity, run } from './process.js';
+import { Lease, executable, processIdentity, descendantOf, run } from './process.js';
 import type { RunOptions } from './process.js';
 import type { Payload } from './payload.js';
 import { ProjectRuntimes } from './project-runtime.js';
@@ -183,8 +183,14 @@ export class Workflows {
     const hookToken = id();
     this.store.put('hookInvocation', op.operationId, { hookToken, lease: lease.owner, scope, remoteBefore: publication['remoteTip'], invoked: false });
     this.store.update(this.store.get(op.operationId), { stage: 'git_push', effectDispatched: true });
+    const options = this.options(op, signal);
     const result = await git(repo.path, ['push', '--porcelain', scope.remote, `refs/heads/${scope.branch}:${scope.ref}`], {
-      ...this.options(op, signal), timeoutMs: 60 * 60 * 1000,
+      ...options, timeoutMs: 60 * 60 * 1000,
+      started: (pid, start) => {
+        options.started?.(pid, start);
+        const invocation = this.store.record<ObjectValue>('hookInvocation', op.operationId)!;
+        this.store.put('hookInvocation', op.operationId, { ...invocation, process: { pid, start } });
+      },
       env: { CONTRIBUTION_OPERATION_ID: op.operationId, CONTRIBUTION_HOOK_TOKEN: hookToken } });
     const gate = this.store.record<ObjectValue>('gate', op.operationId) ?? { state: 'not_run' };
     const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
@@ -211,11 +217,14 @@ export class Workflows {
     requireValue(repo.canonicalHostId === this.store.hostId, 'CANONICAL_OWNER_REQUIRED', 'Use Contribution Push on the canonical owner.');
     const operationId = string(args['operationId'], 'operationId');
     const op = this.store.get(operationId);
-    const invocation = this.store.record<{ hookToken: string; lease: Lease['owner']; scope: PushScope; remoteBefore: string | null; invoked: boolean }>('hookInvocation', operationId);
+    const invocation = this.store.record<{ hookToken: string; lease: Lease['owner']; scope: PushScope; remoteBefore: string | null; invoked: boolean; process?: { pid: number; start: string } }>('hookInvocation', operationId);
     const owner = Lease.inspect(repo.commonDir);
     requireValue(invocation && owner && owner.token === invocation.lease.token && owner.attemptId === op.attemptId && owner.pid === process.pid && processIdentity(owner.pid) === owner.start &&
       args['hookToken'] === invocation.hookToken && !invocation.invoked && op.state === 'running' && op.kind === 'push' && args['remote'] === invocation.scope.remote && args['url'] === invocation.scope.destination,
     'HOOK_LEASE_INVALID', 'This hook has no verified managed invocation lease.');
+    const caller = object(args['caller']);
+    requireValue(invocation.process && typeof caller['pid'] === 'number' && typeof caller['start'] === 'string' && descendantOf(caller['pid'], caller['start'], invocation.process),
+      'HOOK_PROCESS_MISMATCH', 'The hook must belong to the recorded live Git invocation.');
     const lines = string(args['stdin'], 'hook input').trim().split('\n'); requireValue(lines.length === 1, 'REF_TRANSACTION_UNSUPPORTED', 'Only one enrolled branch may be published.');
     const fields = lines[0]!.split(/\s+/);
     requireValue(fields.length === 4 && fields[0] === `refs/heads/${invocation.scope.branch}` && fields[1] === invocation.scope.tip && fields[2] === invocation.scope.ref && fields[3] === (invocation.remoteBefore ?? '0'.repeat(invocation.scope.tip.length)), 'STALE_PUSH_SELECTION', 'The hook ref transaction differs from the previewed destination state.');

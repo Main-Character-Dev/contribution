@@ -12,6 +12,7 @@ import { alive, processIdentity } from './process.js';
 import type { Engine, Request } from './service.js';
 
 export const defaultStateDirectory = (): string => join(homedir(), 'Library', 'Application Support', 'Contribution');
+export const callerIdentity = (): { pid: number; start: string | null } => ({ pid: process.pid, start: processIdentity(process.pid) });
 export const socketPath = (directory: string): string => join(tmpdir(), `ct-${process.getuid?.()}-${digest(directory).slice(0, 12)}`, 'service.sock');
 const MAX_FRAME = 1024 * 1024;
 function credential(directory: string): string {

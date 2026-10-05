@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { request, defaultStateDirectory } from '@contribution/engine/client';
+import { request, defaultStateDirectory, callerIdentity } from '@contribution/engine/client';
 import { Fault, object, rejected, terminal } from '@contribution/engine/core';
 import type { ObjectValue } from '@contribution/engine/core';
 import { helpResponse, versionResponse } from '@contribution/engine';
@@ -85,6 +85,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     if (command === 'hook.pre-push') {
       args['operationId'] = process.env['CONTRIBUTION_OPERATION_ID'] ?? '';
       args['hookToken'] = process.env['CONTRIBUTION_HOOK_TOKEN'] ?? '';
+      args['caller'] = callerIdentity();
       const chunks: Buffer[] = []; let bytes = 0;
       for await (const chunk of process.stdin) { const data = Buffer.from(chunk); bytes += data.length; if (bytes > 65536) throw new Fault('REF_TRANSACTION_UNSUPPORTED', 'Hook input exceeds its bound.', 2); chunks.push(data); }
       args['stdin'] = Buffer.concat(chunks).toString('utf8');
