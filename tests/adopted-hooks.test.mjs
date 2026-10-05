@@ -22,7 +22,7 @@ async function fixture({ inactive = false, exit = 0, rejected = false, changePol
   if (rejected) writeFileSync(join(remote, 'hooks/pre-receive'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
   const adapter = inactive ? 'glassalpha-v1' : 'maincharacter-v1', policy = adoptionPolicies.find(value => value.id === adapter);
   for (const file of policy.policyFiles) { mkdirSync(join(path, file, '..'), { recursive: true }); writeFileSync(join(path, file), 'fixture policy definition'); }
-  writeFileSync(join(path, '.node-version'), process.version.slice(1) + '\n'); writeFileSync(join(path, 'package.json'), JSON.stringify({ name: policy.packageName, packageManager: 'pnpm@11.23.0' }));
+  writeFileSync(join(path, '.nvmrc'), process.version.slice(1) + '\n'); writeFileSync(join(path, 'package.json'), JSON.stringify({ name: policy.packageName, packageManager: 'pnpm@11.23.0' }));
   writeFileSync(join(path, 'scripts/lib/primary-checkout-lease.mjs'), leaseBridgePatch('export function acquirePrimaryCheckoutLease() { throw new Error("fixture needs managed borrow"); }\nexport function releasePrimaryCheckoutLease() { return false; }\n'));
   const hooks = join(path, '.fixture-hooks'); mkdirSync(hooks); git(path, 'config', 'core.hooksPath', hooks);
   const dispatcher = join(hooks, 'pre-push'); writeFileSync(dispatcher, '#!/bin/sh\nexec "$CONTRIBUTION_BRIDGE_NODE" "$CONTRIBUTION_BRIDGE_CLI" hook adopted --repo "$CONTRIBUTION_BRIDGE_REPO" --state-dir "$CONTRIBUTION_BRIDGE_STATE" --remote "$1" --url "$2" --json\n', { mode: 0o700 });

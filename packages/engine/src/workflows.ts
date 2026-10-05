@@ -156,7 +156,7 @@ export class Workflows {
     requireValue(selected.length > 0, 'CHECKS_UNCONFIGURED', 'No checks are configured for this source/profile.', 3);
     const results: ObjectValue[] = [];
     const runtimes = new ProjectRuntimes(this.store);
-    const needsRuntime = existsSync(join(sourcePath, '.node-version')) || selected.some(check => ['node', 'pnpm', 'npm', 'npx'].includes(basename(check.argv[0]!)));
+    const needsRuntime = ['.nvmrc', '.node-version'].some(file => existsSync(join(sourcePath, file))) || selected.some(check => ['node', 'pnpm', 'npm', 'npx'].includes(basename(check.argv[0]!)));
     const runtime = needsRuntime ? await runtimes.resolve(repo, sourcePath) : null;
     for (const check of selected) {
       const name = check.argv[0]!;

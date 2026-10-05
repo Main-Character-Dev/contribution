@@ -358,6 +358,12 @@ export class Engine {
         let op = this.store.get(string(args['operationId'], 'operationId'));
         if (command === 'runs.reconcile') {
           if (['artifact_transfer', 'device_transfer'].includes(op.kind) && ['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'resuming_retained_transfer', error: null });
+          else if (op.kind === 'submit' && ['waiting', 'interrupted'].includes(op.state) && !op.effectDispatched && (await this.repos.get(op.repositoryId)).config.integration.adapter !== 'generic-v1') {
+            const processes = op.result['processes'] as { pid: number; start: string | null }[] | undefined;
+            requireValue(!this.active.has(op.operationId) && !processes?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start)),
+              'WORKER_STILL_ACTIVE', 'The retained worker must stop before resuming its original selection.', 3);
+            this.store.update(op, { state: 'queued', stage: 'rechecking_original_source', error: null });
+          }
           else if (op.result['remoteOperationId']) await this.peers.observeOperation(op, true);
           else await this.recoverObservedEffects(op.operationId);
           this.kick(); op = this.store.get(op.operationId);

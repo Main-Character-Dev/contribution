@@ -20,7 +20,7 @@ async function fixture(adapter = 'maincharacter-v1') {
   const engine = new Engine(store, { identity: 'fixture', node: process.execPath, cli: resolve('packages/cli/dist/main.js') }), server = await listen(engine);
   try {
     for (const file of policy.policyFiles) { mkdirSync(join(path, file, '..'), { recursive: true }); writeFileSync(join(path, file), 'fixture policy\n'); }
-    writeFileSync(join(path, '.node-version'), process.version.slice(1) + '\n'); writeFileSync(join(path, 'package.json'), JSON.stringify({ name: policy.packageName, packageManager: 'pnpm@11.23.0' }));
+    writeFileSync(join(path, '.nvmrc'), process.version.slice(1) + '\n'); writeFileSync(join(path, 'package.json'), JSON.stringify({ name: policy.packageName, packageManager: 'pnpm@11.23.0' }));
     const lease = join(path, 'scripts/lib/primary-checkout-lease.mjs');
     writeFileSync(lease, 'export function acquirePrimaryCheckoutLease() { throw Error("fixture requires adopted borrow"); }\nexport function releasePrimaryCheckoutLease() { return false; }\n');
     if (adapter === 'mathy-v1') writeFileSync(join(path, 'scripts/lib/pre-push-reporting.mjs'), 'const logDirectory="fixture", EVIDENCE_PREFIX="fixture", environment=process.env; const path={join(){}}; export const paths={failureArchive: path.join(logDirectory, `${EVIDENCE_PREFIX}-failures`),};\n');

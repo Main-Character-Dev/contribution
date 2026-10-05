@@ -1,0 +1,59 @@
+{
+  "recordMode": "fixture",
+  "physicalEvidence": false,
+  "originalProjectsModified": false,
+  "results": [
+    {
+      "adapter": "mathy-v1",
+      "sourceCommit": "6e7bdd6a8544e0213ff4bf92813bca097ebf99b7",
+      "sourcePolicyDigest": "a25a025bb1f25c5c89f6fc124b6152f09eb2c329e647b06ddc18884a90c65371",
+      "declaredPins": {
+        "node": "24.19.0",
+        "pnpm": "11.22.0",
+        "inputs": "38cfb28fbacbd09e1d64110af092142d53483130ea35bfa49bc2e01c3af340d7"
+      },
+      "runtimeUsed": "v24.21.0",
+      "result": "passed",
+      "scope": "Original eligibility, candidate enqueue metadata, receipt rejection and terminal queue removal APIs with disposable synthetic history; not a full worker or project gate run"
+    },
+    {
+      "adapter": "maincharacter-v1",
+      "sourceCommit": "9d20ff9803b9bd305204e02d100bae337d0d02c4",
+      "sourcePolicyDigest": "0796b56f50b32af68423058087b0012a5a2b7c990ea1774f59aba0d19eea0318",
+      "declaredPins": {
+        "node": "24.21.0",
+        "pnpm": "11.23.0",
+        "inputs": "70f7af2f2572b4fdd291b0edec9c541e2fb5af2f997e317a00c543b9c30aa4af"
+      },
+      "runtimeUsed": "v24.21.0",
+      "result": "passed",
+      "scope": "Original eligibility, candidate enqueue metadata, receipt rejection and terminal queue removal APIs with disposable synthetic history; not a full worker or project gate run"
+    },
+    {
+      "adapter": "roboty-v1",
+      "sourceCommit": "38ac66be63384faa5dc94e932978c75e21d11a80",
+      "sourcePolicyDigest": "68badeb9e27d5e222e66659ae8477f298f49d6bb59fc79c0cb9e8079d59ac0cb",
+      "declaredPins": {
+        "node": "24.21.0",
+        "pnpm": "12.4.2",
+        "inputs": "7693d9da6b2b9e3ce6648b72a111809144a844f28172b66013069090ac51b602"
+      },
+      "runtimeUsed": "v24.21.0",
+      "result": "passed",
+      "scope": "Original eligibility, candidate enqueue metadata, receipt rejection and terminal queue removal APIs with disposable synthetic history; not a full worker or project gate run"
+    },
+    {
+      "adapter": "glassalpha-v1",
+      "sourceCommit": "871532fb343150ec3b896a11505d43019a6b26d3",
+      "sourcePolicyDigest": "08cb76bd2eeda9f7c8e1c924ab9efdd3cbd7be4f7c703d427176d8bc98c6e180",
+      "declaredPins": {
+        "node": "24.19.0",
+        "pnpm": "11.22.0",
+        "inputs": "38cfb28fbacbd09e1d64110af092142d53483130ea35bfa49bc2e01c3af340d7"
+      },
+      "runtimeUsed": "v24.21.0",
+      "result": "passed",
+      "scope": "Original eligibility, candidate enqueue metadata, receipt rejection and terminal queue removal APIs with disposable synthetic history; not a full worker or project gate run"
+    }
+  ]
+}

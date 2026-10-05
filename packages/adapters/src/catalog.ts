@@ -7,7 +7,7 @@ export interface AdoptionPolicy {
   landing: 'policy-only' | 'integration-only'; attributionDates: 'one' | 'multiple';
   validation: 'cumulative' | 'local-safety' | 'inactive'; policyFiles: readonly string[];
 }
-const common = ['AGENTS.md', 'package.json', '.node-version', 'scripts/worktree-land', 'scripts/worktree-landing-worker', 'scripts/pre-push-worktree-guard.mjs', 'scripts/lib/primary-checkout-lease.mjs', 'scripts/lib/worktree-landing-flight.mjs', 'scripts/lib/worktree-landing-state.mjs'];
+const common = ['AGENTS.md', 'package.json', '.nvmrc', 'scripts/worktree-land', 'scripts/worktree-landing-worker', 'scripts/pre-push-worktree-guard.mjs', 'scripts/lib/primary-checkout-lease.mjs', 'scripts/lib/worktree-landing-flight.mjs', 'scripts/lib/worktree-landing-state.mjs'];
 export const adoptionPolicies: readonly AdoptionPolicy[] = [
   { id: 'mathy-v1', packageName: 'mathy', gate: 'enabled', hookOwner: 'trusted-dispatcher', landing: 'policy-only', attributionDates: 'multiple', validation: 'cumulative',
     policyFiles: [...common, '.githooks/pre-push', '.githooks/_/runtime-bootstrap.sh', 'scripts/prepare-push.mjs', 'scripts/lib/pre-push-reporting.mjs', 'scripts/validation-profile.mjs', 'scripts/lib/process-identity.mjs'] },
@@ -37,8 +37,9 @@ export function policyInventory(root: string, adapterId: string): { policy: Adop
   return { policy, files, readyForParity: Object.values(files).every(Boolean) };
 }
 export function projectPins(root: string): { node: string; pnpm: string; inputs: string } {
-  const nodeFile = bounded(join(root, '.node-version'), 4096), packageFile = bounded(join(root, 'package.json'), 1024 * 1024);
-  const node = nodeFile.toString('utf8').trim().replace(/^v/, ''), packageManager = (JSON.parse(packageFile.toString('utf8')) as { packageManager?: string }).packageManager;
-  if (!/^\d+\.\d+\.\d+$/.test(node) || !/^pnpm@\d+\.\d+\.\d+(?:\+sha(?:224|256|512)\.[a-f0-9]+)?$/.test(packageManager ?? '')) throw new Error('The project must declare exact Node and pnpm pins.');
-  return { node, pnpm: packageManager!.slice('pnpm@'.length).split('+')[0]!, inputs: createHash('sha256').update(nodeFile).update(packageManager!).digest('hex') };
+  const nodeFiles = ['.nvmrc', '.node-version'].filter(file => lstatSync(join(root, file), { throwIfNoEntry: false })).map(file => ({ file, text: bounded(join(root, file), 4096).toString('utf8') }));
+  const versions = nodeFiles.map(value => value.text.trim().replace(/^v/, '')), node = versions[0] ?? '';
+  const packageManager = (JSON.parse(bounded(join(root, 'package.json'), 1024 * 1024).toString('utf8')) as { packageManager?: string }).packageManager;
+  if (!/^\d+\.\d+\.\d+$/.test(node) || versions.some(version => version !== node) || !/^pnpm@\d+\.\d+\.\d+(?:\+sha(?:224|256|512)\.[a-f0-9]+)?$/.test(packageManager ?? '')) throw new Error('The project must declare matching exact Node and pnpm pins.');
+  return { node, pnpm: packageManager!.slice('pnpm@'.length).split('+')[0]!, inputs: createHash('sha256').update(JSON.stringify(nodeFiles)).update(packageManager!).digest('hex') };
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -27,7 +27,7 @@ test('adoption enrollment preserves an inactive gate while requiring migration o
     const path = repository(f.root), policy = adoptionPolicies.find(p => p.id === 'glassalpha-v1');
     for (const file of policy.policyFiles) { mkdirSync(dirname(join(path, file)), { recursive: true }); writeFileSync(join(path, file), 'fixture\n'); }
     writeFileSync(join(path, 'package.json'), JSON.stringify({ name: 'glassalpha', packageManager: 'pnpm@11.22.0' }));
-    writeFileSync(join(path, '.node-version'), '24.19.0\n'); git(path, 'config', 'core.hooksPath', '.husky/_');
+    writeFileSync(join(path, '.nvmrc'), '24.19.0\n'); git(path, 'config', 'core.hooksPath', '.husky/_');
     const result = await f.call('repos.add', { path }); assert.equal(result.error, null);
     assert.equal(result.result.repository.config.validation.gate, 'inactive'); assert.equal(result.result.repository.config.integration.adapter, 'migration-required');
     assert.equal(git(path, 'config', '--get', 'core.hooksPath'), '.husky/_');
@@ -57,4 +57,16 @@ test('runtime pin inspection does not accept floating package-manager requiremen
   const root = mkdtempSync(join(tmpdir(), 'ct-pins-'));
   try { writeFileSync(join(root, '.node-version'), '24.19.0\n'); writeFileSync(join(root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@latest' })); assert.throws(() => projectPins(root), /exact Node and pnpm/); }
   finally { rmSync(root, { recursive: true }); }
+});
+
+test('original nvmrc pins work without node-version and conflicting, floating or linked declarations fail closed', () => {
+  const root=mkdtempSync(join(tmpdir(),'ct-nvmrc-'));
+  try {
+    writeFileSync(join(root,'package.json'),JSON.stringify({packageManager:'pnpm@11.22.0'}));writeFileSync(join(root,'.nvmrc'),'v24.19.0\n');
+    const original=projectPins(root);assert.equal(original.node,'24.19.0');assert.equal(original.pnpm,'11.22.0');
+    writeFileSync(join(root,'.node-version'),'24.19.0\n');assert.equal(projectPins(root).node,'24.19.0');assert.notEqual(projectPins(root).inputs,original.inputs);
+    writeFileSync(join(root,'.node-version'),'24.21.0\n');assert.throws(()=>projectPins(root),/matching exact/);
+    rmSync(join(root,'.node-version'));writeFileSync(join(root,'.nvmrc'),'lts/*\n');assert.throws(()=>projectPins(root),/matching exact/);
+    rmSync(join(root,'.nvmrc'));symlinkSync(join(root,'missing'),join(root,'.nvmrc'));writeFileSync(join(root,'.node-version'),'24.19.0\n');assert.throws(()=>projectPins(root),/bounded regular file/);
+  } finally {rmSync(root,{recursive:true});}
 });
