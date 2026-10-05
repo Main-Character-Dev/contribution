@@ -22,6 +22,7 @@ import { createBoundedBundle, MAX_GIT_BUNDLE } from './git-bundle.js';
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
 export class Workflows {
+  private readonly captures = new Map<string, Promise<Operation>>();
   readonly adopted: AdoptedHooks;
   readonly adoptedLanding: AdoptedLanding;
   readonly adoptedChecks: AdoptedChecks;
@@ -56,13 +57,26 @@ export class Workflows {
     return { scope };
   }
   async capture(repo: Enrolled, requestId: string, sourcePath: string, tip: string, base: string, metadata: ObjectValue): Promise<Operation> {
-    const input = { sourcePath, tip, base, metadata, policy: repo.revision };
-    const prior = this.store.existing(requestId, 'submit', repo.id, input); if (prior) return prior;
+    const previous = this.captures.get(requestId) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(() => this.captureSelected(repo, requestId, sourcePath, tip, base, metadata)); this.captures.set(requestId, next);
+    try { return await next; } finally { if (this.captures.get(requestId) === next) this.captures.delete(requestId); }
+  }
+  private async captureSelected(repo: Enrolled, requestId: string, sourcePath: string, tip: string, base: string, metadata: ObjectValue): Promise<Operation> {
+    const supplied = { sourcePath, tip, base, metadata }, prior = this.store.byRequest(requestId);
+    if (prior) {
+      const previous = prior.input;
+      requireValue(prior.kind === 'submit' && prior.repositoryId === repo.id && digest({ sourcePath: previous['sourcePath'], tip: previous['tip'], base: previous['base'], metadata: previous['metadata'] }) === digest(supplied),
+        'REQUEST_ID_CONFLICT', 'This request already identifies different submitted source.');
+      return prior;
+    }
+    const input = { ...supplied, policy: repo.revision };
     this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
-    const pending = this.store.record<{ identity: string }>('captureIntent', requestId);
+    const pending = this.store.record<{ identity: string; validated?: boolean; commonDir?: string; canonicalSourcePath?: string; canonicalHostId?: string }>('captureIntent', requestId);
     requireValue(!pending || pending.identity === digest({ repositoryId: repo.id, input }), 'REQUEST_ID_CONFLICT', 'This request already retained a different committed source.');
+    requireValue(!pending?.canonicalHostId || pending.canonicalHostId === repo.canonicalHostId, 'CAPTURE_AUTHORITY_CHANGED', 'The destination authority changed before admission. Preserve the selected source and reconcile the original request.', 3);
     const info = await identity(sourcePath); oid(tip, info.objectFormat); oid(base, info.objectFormat);
-    requireValue(info.commonDir === repo.commonDir && info.tip === tip && info.path !== repo.path, 'SOURCE_OWNERSHIP_REQUIRED', 'Select the exact committed tip of a separate registered Git worktree in this enrolled clone.');
+    const selected = pending?.validated === true && pending.commonDir === info.commonDir && pending.canonicalSourcePath === info.path;
+    requireValue(info.commonDir === repo.commonDir && (selected || info.tip === tip) && info.path !== repo.path, 'SOURCE_OWNERSHIP_REQUIRED', 'Select the exact committed tip of a separate registered Git worktree in this enrolled clone.');
     await ordinaryHistory(sourcePath, tip);
     requireValue((await git(sourcePath, ['merge-base', '--is-ancestor', base, tip])).code === 0 && tip !== base, 'INVALID_SOURCE_RANGE', 'The declared base must precede the source tip.');
     requireValue((await gitText(sourcePath, ['rev-list', '--merges', `${base}..${tip}`])) === '', 'SOURCE_TOPOLOGY_UNSUPPORTED', 'This adapter requires a linear completed task range.');
@@ -71,12 +85,13 @@ export class Workflows {
       const authors = new Set((await gitText(sourcePath, ['log', '--format=%an <%ae>', `${base}..${tip}`])).split('\n'));
       requireValue(authors.size === 1, 'AUTHOR_POLICY_CONFLICT', 'The generic adapter requires one original source author.');
       requireValue(commits.length === 1 || (typeof metadata['integrationMessage'] === 'string' && metadata['integrationMessage'].trim()), 'NEEDS_INPUT', 'A multi-commit task requires an explicit combined integration message.', 2);
-    } else await this.adoptedLanding.capture(repo, requestId, sourcePath, tip, base, metadata);
+    } else if (selected) await this.adoptedLanding.retainedSelection(repo, requestId, sourcePath, tip, base);
+    else await this.adoptedLanding.capture(repo, requestId, sourcePath, tip, base, metadata);
     this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
     const concurrent = this.store.record<{ identity: string }>('captureIntent', requestId);
     requireValue(!this.store.record('historyCaptureIntent', requestId) && (!concurrent || concurrent.identity === digest({ repositoryId: repo.id, input })),
       'REQUEST_ID_CONFLICT', 'This request already selected a different retained source.');
-    this.store.put('captureIntent', requestId, { identity: digest({ repositoryId: repo.id, input }), repositoryId: repo.id, input });
+    this.store.put('captureIntent', requestId, { identity: digest({ repositoryId: repo.id, input }), repositoryId: repo.id, input, validated: true, commonDir: info.commonDir, canonicalSourcePath: info.path, canonicalHostId: repo.canonicalHostId });
     const retention = `refs/contribution/outbox/${digest({ requestId })}`;
     const retained = await git(sourcePath, ['rev-parse', '--verify', retention]);
     requireValue(retained.code !== 0 || retained.stdout.trim() === tip, 'CAPTURE_RECOVERY_REQUIRED', 'The retained source ref changed; preserve it for reconciliation.');
@@ -90,6 +105,10 @@ export class Workflows {
     await gitText(sourcePath, ['bundle', 'verify', bundle]);
     requireValue(await gitText(sourcePath, ['bundle', 'list-heads', bundle]) === `${tip} ${retention}`, 'CAPTURE_RECOVERY_REQUIRED', 'The retained bundle differs from the captured source. Preserve it for reconciliation.');
     const file = openSync(bundle, 'r'); fsyncSync(file); closeSync(file);
+    artifact.verify();
+    await this.repos.current(repo);
+    requireValue(this.repos.all().some(value => value.id === repo.id && value.revision === repo.revision && value.commonDir === repo.commonDir && value.canonicalHostId === repo.canonicalHostId),
+      'POLICY_CHANGED', 'Enrollment or policy changed while capturing source. The original history remains retained.', 3);
     artifact.verify();
     this.store.put('capture', requestId, { retention, bundle, commits, tip, base, bundleDigest, acceptedAt: now() });
     return this.store.admit(requestId, 'submit', repo.id, input, this.payload.identity, repo.canonicalHostId === this.store.hostId ? 'queued' : 'queued_local');

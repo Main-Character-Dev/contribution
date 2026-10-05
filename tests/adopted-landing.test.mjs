@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { Engine } from '../packages/engine/dist/service.js';
-import { digest } from '../packages/engine/dist/core.js';
+import { digest, Fault } from '../packages/engine/dist/core.js';
 import { LegacyLandingFlight } from '../packages/engine/dist/legacy-flight.js';
 import { adoptionPolicies, policyInventory, projectPins } from '../packages/adapters/dist/index.js';
 import { repository, git } from './integration/service.mjs';
@@ -92,6 +92,22 @@ test('all adopted families run the original native landing and receipt/source gu
       if (policy.id === 'mathy-v1') assert.equal(readFileSync(join(f.path, '.git/message-observed'), 'utf8'), f.args.metadata.integrationMessage + '\n');
     } finally { await f.cleanup(); }
   }
+});
+
+test('adopted capture interrupted before admission reuses original eligibility after the task advances', async t => {
+  const f = await fixture(); try {
+    const original = f.store.admit.bind(f.store);
+    const mock = t.mock.method(f.store, 'admit', (...args) => { if (args[1] === 'submit') throw new Fault('FIXTURE_STOPPED', 'Before admission'); return original(...args); });
+    assert.equal((await f.call('submit', f.args)).error.code, 'FIXTURE_STOPPED'); mock.mock.restore();
+    const selected = f.store.record('adoptedLandingSelection', f.args.requestId);
+    writeFileSync(join(f.args.sourcePath, 'later-work'), 'preserve'); git(f.args.sourcePath, 'add', 'later-work'); git(f.args.sourcePath, 'commit', '-m', 'Later task work');
+    const newer = git(f.args.sourcePath, 'rev-parse', 'HEAD'); writeFileSync(join(f.args.sourcePath, 'draft'), 'preserve draft');
+    const accepted = await f.call('submit', f.args); assert.equal(accepted.error, null, JSON.stringify(accepted));
+    assert.deepEqual(f.store.record('adoptedLandingSelection', f.args.requestId), selected);
+    const completed = await f.wait(accepted.operationId); assert.equal(completed.state, 'succeeded', JSON.stringify(completed));
+    assert.equal(completed.result.landedTip, f.args.sourceTip); assert.equal(git(f.args.sourcePath, 'rev-parse', 'HEAD'), newer);
+    assert.equal(readFileSync(join(f.args.sourcePath, 'draft'), 'utf8'), 'preserve draft');
+  } finally { t.mock.restoreAll(); await f.cleanup(); }
 });
 
 test('dirty and changed queued tasks land only their captured commits while preserving unrelated work', async () => {

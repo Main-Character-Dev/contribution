@@ -52,7 +52,7 @@ const allowed: Record<string, string[]> = {
   'repos.runtime': ['repo', 'node', 'pnpm'], 'repos.migration': ['repo', 'adapter', 'prepareReporting', 'requestId', 'prepareAdoption', 'prepareExistingAdoption', 'originalTip', 'migrationTip', 'applyAdoption', 'activateAdoption', 'rollbackAdoption', 'adoptionPlan', 'expectedRevision'],
   'repos.initialize': ['repo', 'requestId', 'expectedRevision'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
-  'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata'],
+  'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata', 'resume'],
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
   'runs.list': ['repo'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
   'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
@@ -275,6 +275,21 @@ export class Engine {
       // Even an early maintenance/version/usage refusal must not make the
       // native client forget a previously retained partial cleanup.
       const args = (value as Request | null)?.args;
+      if (['submit', 'repos.seed', 'repos.mirror'].includes(String(command)) && response.error && !response.operationId && typeof args?.['requestId'] === 'string' && !this.store.byRequest(args['requestId'])) {
+        const requestId = args['requestId'], task = this.store.record<{ repositoryId: string; input: ObjectValue }>('captureIntent', requestId);
+        const history = this.store.record<{ manifest: { repositoryId: string; kind: string; tip: string } }>('historyCaptureIntent', requestId);
+        const repositoryId = command === 'submit' ? task?.repositoryId : history?.manifest.repositoryId;
+        const repo = this.repos.all().find(repo => repo.id === repositoryId);
+        const selectorMatches = args['repo'] === repositoryId || args['repo'] === repo?.path;
+        const taskMatches = task && (args['resume'] === true && Object.keys(args).every(key => ['repo', 'requestId', 'resume'].includes(key)) ||
+          digest({ sourcePath: args['sourcePath'], tip: args['sourceTip'], base: args['base'], metadata: args['metadata'] ?? { schemaVersion: 1 } }) ===
+          digest({ sourcePath: task.input['sourcePath'], tip: task.input['tip'], base: task.input['base'], metadata: task.input['metadata'] }));
+        if (repositoryId && selectorMatches && (command === 'submit' ? taskMatches : history?.manifest.kind === String(command).slice('repos.'.length))) {
+          response.result = { ...response.result, requestRetained: true, requestId, repositoryId, sourceTip: task?.input['tip'] ?? history?.manifest.tip, admission: 'not_completed' };
+          response.error.nextActions = [{ id: 'resume-capture', label: 'Resolve the reported condition and resume the same selected history', argv: ['contribution',
+            ...(command === 'submit' ? ['submit', '--resume'] : ['repos', String(command).slice('repos.'.length)]), '--repo', repositoryId, '--request-id', requestId, '--json'] }];
+        }
+      }
       if (command === 'repos.create' && response.error && typeof args?.['requestId'] === 'string' && typeof args['path'] === 'string') {
         const requestId = args['requestId'], intent = this.store.record<{ requestedPath: string }>('creationIntent', requestId);
         if (intent?.requestedPath === resolve(args['path']) && !this.store.byRequest(requestId)) {
@@ -616,8 +631,19 @@ export class Engine {
         const input = await this.workflows.pushInput(repo, string(args['expectedTip'], 'expectedTip'), string(args['scopeToken'], 'scopeToken'), requestId);
         return this.admit(requestId, 'push', repo.id, input);
       }
-      if (command === 'submit') { assertContract('submission-metadata', args['metadata'] ?? { schemaVersion: 1 });
-        const op = await this.workflows.capture(repo, string(args['requestId'], 'requestId'), string(args['sourcePath'], 'sourcePath'), string(args['sourceTip'], 'sourceTip'), string(args['base'], 'base'), object(args['metadata'] ?? { schemaVersion: 1 }));
+      if (command === 'submit') {
+        requireValue(args['resume'] === undefined || args['resume'] === true, 'INVALID_USAGE', 'Use --resume with only the retained repository and request ID.', 2);
+        let selection = args;
+        const requestId = string(args['requestId'], 'requestId');
+        if (args['resume'] === true) {
+          requireValue(Object.keys(args).every(key => ['repo', 'requestId', 'resume'].includes(key)), 'INVALID_USAGE', 'Resuming retains all original source and metadata selections; do not supply replacements.', 2);
+          const prior = this.store.byRequest(requestId), retained = this.store.record<{ repositoryId: string; input: ObjectValue }>('captureIntent', requestId);
+          requireValue(prior ? prior.kind === 'submit' && prior.repositoryId === repo.id : retained?.repositoryId === repo.id, 'CAPTURE_NOT_FOUND', 'No retained task capture belongs to this repository and request.', 3);
+          if (prior) return this.store.response(prior);
+          selection = { ...retained!.input, sourceTip: retained!.input['tip'] };
+        }
+        assertContract('submission-metadata', selection['metadata'] ?? { schemaVersion: 1 });
+        const op = await this.workflows.capture(repo, requestId, string(selection['sourcePath'], 'sourcePath'), string(selection['sourceTip'], 'sourceTip'), string(selection['base'], 'base'), object(selection['metadata'] ?? { schemaVersion: 1 }));
         this.kick(); return this.store.response(op);
       }
       if (command === 'checks.run') {

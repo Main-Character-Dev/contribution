@@ -126,8 +126,11 @@ export class AdoptedLanding {
     await clean(directory); retained = { ...retained, phase: 'ready' }; this.store.put('adoptedLandingSnapshot', op.operationId, retained); return retained;
   }
   private async selected(op: Operation, repo: Enrolled): Promise<Selection> {
-    const selected = this.store.record<Selection>('adoptedLandingSelection', op.requestId);
-    requireValue(selected && selected.sourcePath === op.input['sourcePath'] && selected.sourceTip === op.input['tip'] && selected.base === op.input['base'], 'ADOPTED_CAPTURE_REQUIRED', 'The original source-policy selection is missing; preserve the captured history.', 3);
+    return this.retainedSelection(repo, op.requestId, string(op.input['sourcePath'], 'sourcePath'), string(op.input['tip'], 'tip'), string(op.input['base'], 'base'));
+  }
+  async retainedSelection(repo: Enrolled, requestId: string, sourcePath: string, tip: string, base: string): Promise<Selection> {
+    const selected = this.store.record<Selection>('adoptedLandingSelection', requestId);
+    requireValue(selected && selected.sourcePath === sourcePath && selected.sourceTip === tip && selected.base === base, 'ADOPTED_CAPTURE_REQUIRED', 'The original source-policy selection is missing; preserve the captured history.', 3);
     requireValue(selected.adoptionDigest === digest(await this.hooks.verify(repo)), 'ADOPTED_POLICY_CHANGED', 'The reviewed original adapter changed after source capture.', 3);
     return selected;
   }

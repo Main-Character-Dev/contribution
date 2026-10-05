@@ -19,6 +19,7 @@ values['--original-tip'] = 'originalTip'; values['--migration-tip'] = 'migration
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch', '--prepare-reporting': 'prepareReporting', '--prepare-adoption': 'prepareAdoption' };
 flags['--prepare-existing-adoption'] = 'prepareExistingAdoption';
 flags['--worktrees'] = 'worktrees';
+flags['--resume'] = 'resume';
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
 export function exitCode(response: Response): number {
@@ -51,6 +52,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
       const response = helpResponse();
       response.result = { commands: ['version', 'doctor', 'repos list|discover|add|create|initialize|inspect|configure|relocate|remove', 'status [--refresh]',
         'submit --repo ID --source-path PATH --source-tip OID --base OID --request-id ID [--metadata-file PATH]',
+        'submit --repo ID --request-id ID --resume',
         'push --repo ID --preview', 'push --repo ID --expected-tip OID --scope-token TOKEN --request-id ID [--wait]',
         'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',
         'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'service storage [--worktrees] --preview', 'service storage [--worktrees] --scope-token TOKEN --request-id UUID', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',
