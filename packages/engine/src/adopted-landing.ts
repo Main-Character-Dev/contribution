@@ -4,9 +4,9 @@ import { policyInventory } from '@contribution/adapters';
 import type { Journal, Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import type { ObjectValue } from './core.js';
-import { digest, object, requireValue, string, Fault, now, redact } from './core.js';
+import { digest, object, requireValue, string, Fault, now, redact, id } from './core.js';
 import { clean, identity, gitText } from './git.js';
-import { run } from './process.js';
+import { run, alive, processIdentity } from './process.js';
 import type { RunOptions } from './process.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import type { AdoptedHooks } from './adopted-hooks.js';
@@ -30,7 +30,18 @@ const candidate = state.readLandingCandidate(input.primary, input.tip);
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])) : value;
 const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
 let result;
-if (input.action === 'source') {
+if (input.action === 'native-scope') {
+  const receipt = state.readLandingValidationReceipt(input.primary, input.tip);
+  const requiredCandidate = input.retainedCandidate ?? candidate;
+  if (!requiredCandidate) throw Error('The retained candidate requirements are unavailable.');
+  const identity = state.resolveValidatedLandingIdentity(input.primary, input.branch, receipt, {
+    reconciliationStatus: 'failed', checksCommand: 'pnpm test:changed', requiredUITestSelectors: requiredCandidate.required_ui_test_selectors ?? []
+  });
+  if (!identity || identity.candidateSha !== input.tip) throw Error('No validated canonical landing has this failed native reconciliation.');
+  const selected = new Set([input.tip, ...(identity.supersedes ?? [])]);
+  const candidates = state.listLandingCandidates(input.primary).filter(item => selected.has(item.sha)).sort((a,b)=>a.sha.localeCompare(b.sha));
+  result = { landedTip: identity.commitSha, receiptDigest: digest(receipt), candidatesDigest: digest(candidates), requiredUITestSelectors: requiredCandidate.required_ui_test_selectors ?? [] };
+} else if (input.action === 'source') {
   state.assertManagedLandingSourceWorktree({ worktreePath: input.source, primaryRepoRoot: input.primary, candidateShas: [input.tip, ...(candidate?.supersedes ?? [])] });
   result = { sourceEligible: true, candidate: candidate ?? null };
 } else if (input.action === 'queue-preview' || input.action === 'queue') {
@@ -70,6 +81,42 @@ if (input.action === 'source') {
 process.stdout.write('\nCONTRIBUTION_LANDING_RESULT=' + JSON.stringify(result) + '\n');
 `;
 
+// Recheck the reviewed identity inside the original worker's acquired primary
+// lease, before its native planning or workspace effects. The project still
+// owns planning, simulator leases, workspace restoration and receipt cleanup.
+const nativeRepair = String.raw`
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+const input = JSON.parse(readFileSync(0, 'utf8')), scope = input.scope;
+const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])) : value;
+const digest = value => createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+const git = args => execFileSync('/usr/bin/git', args, { cwd: input.primary, encoding: 'utf8', timeout: 10000 }).trim();
+const policy = () => { for(const [file, hash] of Object.entries(input.policyFiles)) {
+  if (createHash('sha256').update(readFileSync(join(input.primary,file))).digest('hex') !== hash) throw Error('Reviewed native policy changed.');
+} };
+policy();
+const state = await import(pathToFileURL(join(input.primary, 'scripts/lib/worktree-landing-state.mjs')));
+const verify = () => {
+  policy();
+  if (git(['branch','--show-current']) !== scope.branch || git(['rev-parse','HEAD']) !== scope.primaryTip || git(['status','--porcelain=v1'])) throw Error('Reviewed primary changed.');
+  const receipt = state.readLandingValidationReceipt(input.primary, scope.candidateTip);
+  const identity = state.resolveValidatedLandingIdentity(input.primary, scope.branch, receipt, { reconciliationStatus:'failed', checksCommand:'pnpm test:changed', requiredUITestSelectors:scope.requiredUITestSelectors });
+  if (!identity || identity.candidateSha !== scope.candidateTip || identity.commitSha !== scope.landedTip || digest(receipt) !== scope.receiptDigest) throw Error('Reviewed landed receipt changed.');
+  const selected = new Set([scope.candidateTip, ...(identity.supersedes ?? [])]);
+  const candidates = state.listLandingCandidates(input.primary).filter(item=>selected.has(item.sha)).sort((a,b)=>a.sha.localeCompare(b.sha));
+  if (digest(candidates) !== scope.candidatesDigest) throw Error('Reviewed candidate generation changed.');
+};
+verify();
+const native = await import(pathToFileURL(join(input.primary, 'scripts/ios-development.mjs')));
+const repair = await import(pathToFileURL(join(input.primary, 'scripts/worktree-reconcile')));
+await repair.reconcileLandedCandidate({ cwd: input.primary, candidateSha: scope.candidateTip, planCommand: (...args) => {
+  verify(); const plan = native.planNativeReconciliation(...args); verify(); return plan;
+} });
+`;
+
 interface Selection { adoptionDigest: string; sourcePath: string; canonicalSourcePath: string; sourceTip: string; base: string; selectedAt: string; originalCandidate: ObjectValue | null }
 interface Snapshot { directory: string; tip: string; base: string; originalSource: string; phase: 'creating' | 'ready' }
 export class AdoptedLanding {
@@ -82,7 +129,7 @@ export class AdoptedLanding {
     for (const key of Object.keys(process.env)) if (key.startsWith('CONTRIBUTION_') || key.startsWith('CODEX_')) env[key] = undefined;
     return env;
   }
-  private async inspect(repo: Enrolled, sourcePath: string, tip: string, action: 'source' | 'receipt' | 'queue-preview' | 'queue', options: RunOptions = {}, extra: ObjectValue = {}): Promise<ObjectValue> {
+  private async inspect(repo: Enrolled, sourcePath: string, tip: string, action: 'source' | 'receipt' | 'queue-preview' | 'queue' | 'native-scope', options: RunOptions = {}, extra: ObjectValue = {}): Promise<ObjectValue> {
     const runtime = await this.runtimes.resolve(repo, repo.path);
     const result = await run(runtime.node, ['--input-type=module', '--eval', probe], { ...options, cwd: repo.path, env: this.environment(runtime), timeoutMs: 30000,
       input: JSON.stringify({ primary: repo.path, source: sourcePath, tip, branch: repo.config.integration.branch, adapter: repo.config.integration.adapter, action, ...extra }) });
@@ -134,10 +181,76 @@ export class AdoptedLanding {
     requireValue(selected.adoptionDigest === digest(await this.hooks.verify(repo)), 'ADOPTED_POLICY_CHANGED', 'The reviewed original adapter changed after source capture.', 3);
     return selected;
   }
+  private assertInactive(op: Operation): void {
+    const processes = op.result['processes'] as { pid: number; start: string | null }[] | undefined;
+    requireValue(!processes?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start)),
+      'WORKER_STILL_ACTIVE', 'The retained worker must stop before native reconciliation can be reviewed or resumed.', 3);
+  }
+  assertNativeAdmission(op: Operation, repairOperationId?: string): void {
+    requireValue(!this.store.list(100000).some(other => other.operationId !== repairOperationId && other.kind === 'native_reconciliation' && other.input['sourceOperationId'] === op.operationId &&
+      other.state !== 'succeeded' && (!['failed', 'cancelled'].includes(other.state) || other.effectDispatched)),
+      'NATIVE_RECONCILIATION_PENDING', 'Observe the retained native repair before admitting another attempt.', 3);
+  }
+  private async nativeScope(op: Operation, repo: Enrolled, repairOperationId?: string, options: RunOptions = {}): Promise<ObjectValue> {
+    requireValue(repo.config.integration.adapter === 'mathy-v1' && op.kind === 'submit' && op.effectDispatched && op.state === 'outcome_unknown' && !op.result['remoteOperationId'],
+      'NATIVE_RECONCILIATION_UNAVAILABLE', 'Select a local Mathy landing with a verified failed native follow-up.', 3);
+    this.assertInactive(op);
+    this.assertNativeAdmission(op, repairOperationId);
+    const selected = await this.selected(op, repo), info = await identity(repo.path); await clean(repo.path);
+    requireValue(info.branch === repo.config.integration.branch && info.tip, 'CANONICAL_BRANCH_CHANGED', 'Restore the configured primary branch before native reconciliation.', 3);
+    const retainedCandidate = this.store.record<ObjectValue>('adoptedLandingCandidate', op.operationId) ?? selected.originalCandidate;
+    const observed = await this.inspect(repo, selected.sourcePath, selected.sourceTip, 'native-scope', options, { retainedCandidate });
+    return { sourceOperationId: op.operationId, repositoryId: repo.id, policy: repo.revision, adoptionDigest: selected.adoptionDigest,
+      candidateTip: selected.sourceTip, primaryTip: info.tip, branch: info.branch, ...observed };
+  }
+  async previewNative(op: Operation, repo: Enrolled): Promise<ObjectValue> {
+    const scope = await this.nativeScope(op, repo), scopeToken = id(); this.store.put('nativeReconciliationPreview', scopeToken, scope);
+    return { scopeToken, scope, action: 'Resume the original project’s dependency and native reconciliation for this landed candidate.',
+      workspaceEffects: 'The project may rebuild generated native dependencies and temporarily close and restore its Xcode workspace.', publication: 'not_requested' };
+  }
+  async selectNative(op: Operation, repo: Enrolled, scopeToken: string, requestId: string): Promise<ObjectValue> {
+    const scope = this.store.record<ObjectValue>('nativeReconciliationPreview', scopeToken);
+    requireValue(scope?.['sourceOperationId'] === op.operationId && scope['repositoryId'] === repo.id, 'STALE_NATIVE_SELECTION', 'Review this exact native follow-up before resuming it.', 3);
+    const input = { sourceOperationId: op.operationId, scope };
+    if (this.store.existing(requestId, 'native_reconciliation', repo.id, input)) return input;
+    requireValue(digest(await this.nativeScope(op, repo)) === digest(scope), 'STALE_NATIVE_SELECTION', 'The landed receipt, candidate, primary or policy changed. Review the native follow-up again.', 3);
+    return input;
+  }
+  async resumeNative(op: Operation, repo: Enrolled, options: RunOptions): Promise<ObjectValue> {
+    requireValue(!op.effectDispatched, 'NATIVE_RECONCILIATION_PENDING', 'Observe this retained native attempt; it cannot be replayed.', 6);
+    const source = this.store.get(string(op.input['sourceOperationId'], 'source operation')), scope = object(op.input['scope']);
+    requireValue(digest(await this.nativeScope(source, repo, op.operationId, options)) === digest(scope), 'STALE_NATIVE_SELECTION', 'The reviewed native follow-up changed while queued.', 3);
+    const runtime = await this.runtimes.resolve(repo, repo.path), policyFiles = policyInventory(repo.path, repo.config.integration.adapter).files;
+    this.store.update(this.store.get(op.operationId), { effectDispatched: true, stage: 'original_native_reconciliation' });
+    const worker = await run(runtime.node, ['--input-type=module', '--eval', nativeRepair], { ...options, cwd: repo.path, env: this.environment(runtime), timeoutMs: 60 * 60 * 1000,
+      input: JSON.stringify({ primary: repo.path, scope, policyFiles }) });
+    this.store.put('nativeReconciliationExit', op.operationId, { exitCode: worker.code, cancelled: worker.cancelled, timedOut: worker.timedOut, observedAt: now() });
+    try { return { ...await this.observeNative(op, repo), workerExit: worker.code }; }
+    catch { throw new Fault('NATIVE_RECONCILIATION_REQUIRED', 'The native follow-up stopped without a fully verified original receipt and source guard. Inspect its retained attempt; integration was not replayed.', 6, { workerExit: worker.code }); }
+  }
+  async observeNative(op: Operation, repo: Enrolled): Promise<ObjectValue> {
+    this.assertInactive(this.store.get(op.operationId));
+    const source = this.store.get(string(op.input['sourceOperationId'], 'source operation')); this.assertInactive(source);
+    const result = await this.reconcile(source, repo, { output: text => this.store.log(op, text) });
+    requireValue(result['landedTip'] === object(op.input['scope'])['landedTip'], 'LANDED_IDENTITY_CHANGED', 'The repaired receipt no longer identifies the reviewed landed commit.', 6);
+    this.store.update(this.store.get(source.operationId), { state: 'succeeded', stage: 'native_reconciled', error: null,
+      result: { ...this.store.get(source.operationId).result, ...result, nativeReconciliationOperationId: op.operationId, completedAt: now() } });
+    return { ...result, sourceOperationId: source.operationId, reconciliation: 'passed', integrationReplayed: false };
+  }
   async reconcile(op: Operation, repo: Enrolled, options: RunOptions = {}): Promise<ObjectValue> {
     const selected = await this.selected(op, repo), snapshot = this.store.record<Snapshot>('adoptedLandingSnapshot', op.operationId), sourcePath = snapshot?.directory ?? selected.sourcePath;
     const retainedCandidate = this.store.record<ObjectValue>('adoptedLandingCandidate', op.operationId) ?? selected.originalCandidate;
-    const observed = await this.inspect(repo, sourcePath, selected.sourceTip, 'receipt', options, { retainedCandidate: retainedCandidate ?? null });
+    let observed: ObjectValue;
+    try { observed = await this.inspect(repo, sourcePath, selected.sourceTip, 'receipt', options, { retainedCandidate: retainedCandidate ?? null }); }
+    catch (error) {
+      if (repo.config.integration.adapter === 'mathy-v1') {
+        let failed: ObjectValue | undefined;
+        try { failed = await this.inspect(repo, sourcePath, selected.sourceTip, 'native-scope', options, { retainedCandidate: retainedCandidate ?? null }); } catch { /* Missing or invalid evidence stays uncertain. */ }
+        if (failed) throw new Fault('LANDED_RECONCILIATION_FAILED', 'The task is landed and its validation is confirmed. The original native follow-up failed; review Resume native setup for that recorded commit.', 6,
+          { sourceTip: selected.sourceTip, landedTip: failed['landedTip'], integration: 'landed_reconciliation_failed', nativeReconciliation: { state: 'failed', landedTip: failed['landedTip'], receiptDigest: failed['receiptDigest'] }, publication: 'not_requested' });
+      }
+      throw error;
+    }
     requireValue(observed['confirmed'] === true, 'LANDING_RECEIPT_UNCONFIRMED', 'No original candidate-specific receipt confirms this landing. Inspect the original blocker; do not replay integration.', 3);
     const runtime = await this.runtimes.resolve(repo, repo.path);
     const guard = await run(runtime.node, [join(repo.path, 'scripts/pre-push-worktree-guard.mjs'), '--target-ref', repo.config.integration.branch, '--worktree', sourcePath],
@@ -148,6 +261,7 @@ export class AdoptedLanding {
     const capture = this.store.record<{ commits: string[] }>('capture', op.requestId);
     const result = { sourceTip: selected.sourceTip, sourceBase: selected.base, sourceCommits: capture?.commits ?? [], landedTip,
       target: receipt['target_sha'] ?? null, originalReceipt: receipt, validation: receipt['validation_status'], adapter: repo.config.integration.adapter,
+      integration: 'landed', exitCode: 0, ...(repo.config.integration.adapter === 'mathy-v1' ? { nativeReconciliation: { state: 'passed', landedTip } } : {}),
       publication: 'not_requested', sourceWorkspace: { path: selected.sourcePath, owner: 'native_task', retained: true },
       capturedSource: snapshot ? { path: snapshot.directory, owner: 'contribution', tip: snapshot.tip, retained: true } : null };
     this.store.put('landing', digest({ repositoryId: repo.id, tip: selected.sourceTip, base: selected.base }), result); return result;
@@ -201,6 +315,9 @@ export class AdoptedLanding {
     // Even a nonzero worker can have promoted before native reconciliation or
     // source verification failed. Only the original receipt+guard prove success.
     try { return { ...await this.reconcile(op, repo, { output: text => this.store.log(op, text) }), workerExit: worker.code }; }
-    catch { throw new Fault('LANDING_RECONCILIATION_REQUIRED', 'The original worker stopped without a fully verified receipt and completion guard. Inspect its retained output and original repair path; Contribution will not replay it.', 6, { workerExit: worker.code }); }
+    catch (error) {
+      if (error instanceof Fault && error.code === 'LANDED_RECONCILIATION_FAILED') throw new Fault(error.code, error.message, error.exit, { ...error.details, workerExit: worker.code });
+      throw new Fault('LANDING_RECONCILIATION_REQUIRED', 'The original worker stopped without a fully verified receipt and completion guard. Inspect its retained output and original repair path; Contribution will not replay it.', 6, { workerExit: worker.code });
+    }
   }
 }

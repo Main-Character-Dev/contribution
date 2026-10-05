@@ -160,6 +160,11 @@
           "level": "fixture",
           "source": "tests/adopted-landing.test.mjs",
           "scope": "All four synthetic adopted policies run original-shaped native or registered captured-source paths. Dirty/advanced source work, original candidate requirements, terminal queue removal, contention, post-promotion uncertainty and observation-only repair are preserved. Actual original module API parity is recorded separately; full live workers and cross-host imports remain unqualified."
+        },
+        {
+          "level": "fixture",
+          "source": "scripts/check-native-reconciliation-parity.mjs",
+          "scope": "Actual Mathy reconciliation export against disposable canonical Git identities with inert native/workspace callbacks: success, planner failure and lease release, existing primary writer, changed receipt refusal. Synthetic service tests also cover reviewed native-only retry, concurrent admission, inner-lease drift, immutable logs and restart observation without repeating integration. No real native dependency or two-Mac qualification."
         }
       ],
       "nextStep": "Exercise all source integration crash boundaries and post-promotion receipt recovery; bootstrap recovery is covered separately by AT-H07."

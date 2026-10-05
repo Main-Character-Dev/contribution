@@ -29,6 +29,11 @@ export function enqueueLandingCandidate({primaryRoot,sha,worktreePath,taskId,sup
 }
 export function readLandingValidationReceipt(primary,tip) { const file=join(primary,'.git','fixture-receipt'); return existsSync(file)?JSON.parse(readFileSync(file)):null; }
 export function resolveCanonicalLandingForCandidate(primary,head,candidate) { appendFileSync(join(primary,'.git','validator-count'),'canonical\\n'); return {commitSha:head,requiredUITestSelectors:candidate.required_ui_test_selectors}; }
+export function resolveValidatedLandingIdentity(primary,branch,receipt,options) {
+ if(!receipt || receipt.status!=='landed' || receipt.validation_status!=='passed' || receipt.reconciliation_status!==options.reconciliationStatus || !options.requiredUITestSelectors?.includes('required-selector'))return null;
+ if(existsSync(join(primary,'.git','invalid-native-identity')))return null;
+ return {commitSha:receipt.landed_sha,candidateSha:receipt.candidate_sha,supersedes:readLandingCandidate(primary,'')?.supersedes??[]};
+}
 `;
   writeFileSync(join(path, 'scripts/lib/worktree-landing-state.mjs'), stateSource);
   const entry = `
@@ -59,6 +64,25 @@ if(process.argv[1]&&pathToFileURL(process.argv[1]).href===import.meta.url) {
 }
 `;
   writeFileSync(join(path, 'scripts/worktree-land'), entry);
+  if(adapter==='mathy-v1') {
+    writeFileSync(join(path,'scripts/ios-development.mjs'), `import {appendFileSync,existsSync} from 'node:fs';import {join} from 'node:path';export function planNativeReconciliation({root}){if(!existsSync(join(root,'.git','fixture-native-lease')))throw Error('Native plan must run inside original lease');appendFileSync(join(root,'.git','native-plan-count'),'plan\\n');return {mode:'fixture',requiresLease:true};}`);
+    writeFileSync(join(path,'scripts/worktree-reconcile'), `
+import {readFileSync,writeFileSync,appendFileSync,existsSync,rmSync} from 'node:fs';import {join} from 'node:path';
+export async function reconcileLandedCandidate({cwd,candidateSha,planCommand}){
+ if(existsSync(join(cwd,'.git','primary-checkout-mutation.lock'))||process.env.CONTRIBUTION_OPERATION_ID||process.env.CODEX_THREAD_ID)throw Error('Unexpected outer authority');
+ appendFileSync(join(cwd,'.git','native-worker-count'),'native\\n');
+ const file=join(cwd,'.git','fixture-receipt'),lease=join(cwd,'.git','fixture-native-lease');writeFileSync(lease,'owned');
+ try {
+  if(existsSync(join(cwd,'.git','native-race'))) {const changed=JSON.parse(readFileSync(file));changed.detail='changed inside original lease';writeFileSync(file,JSON.stringify(changed));}
+  planCommand({root:cwd});
+  const receipt=JSON.parse(readFileSync(file));if(receipt.candidate_sha!==candidateSha)throw Error('Wrong native candidate');
+  if(existsSync(join(cwd,'.git','native-fail')))throw Error('Native fixture failed');
+  receipt.reconciliation_status='passed';writeFileSync(file,JSON.stringify(receipt));
+  if(existsSync(join(cwd,'.git','native-exit-loss')))process.exit(21);
+ }finally{rmSync(lease,{force:true});}
+}
+`);
+  }
   writeFileSync(join(path, 'scripts/worktree-landing-worker'), entry + `\nexport function integrationContractDigest(){return 'a'.repeat(64);}\n`);
   writeFileSync(join(path, 'scripts/pre-push-worktree-guard.mjs'), `import {appendFileSync,existsSync} from 'node:fs';import {join} from 'node:path';appendFileSync(join(process.cwd(),'.git','guard-count'),'guard\\n'); if(existsSync(join(process.cwd(),'.git','guard-fail')))process.exit(1);`);
   const hooks = join(path, '.fixture-hooks'); mkdirSync(hooks); const dispatcher = join(hooks, 'pre-push'); writeFileSync(dispatcher, '#!/bin/sh\nexit 9\n', { mode: 0o700 }); git(path, 'config', 'core.hooksPath', hooks);
@@ -92,6 +116,112 @@ test('all adopted families run the original native landing and receipt/source gu
       if (policy.id === 'mathy-v1') assert.equal(readFileSync(join(f.path, '.git/message-observed'), 'utf8'), f.args.metadata.integrationMessage + '\n');
     } finally { await f.cleanup(); }
   }
+});
+
+async function failedNativeLanding(f) {
+  const admission = await f.call('submit', f.args); assert.equal(admission.error, null, JSON.stringify(admission));
+  const op = await f.wait(admission.operationId); assert.equal(op.state, 'outcome_unknown', JSON.stringify(op));
+  if(f.repo.config.integration.adapter==='mathy-v1'){assert.equal(op.result.integration,'landed_reconciliation_failed');assert.equal(op.result.landedTip,f.args.sourceTip);}
+  return op;
+}
+async function nativePreview(f, op) {
+  const response = await f.call('runs.reconcile', {operationId:op.operationId,resumeNative:true,preview:true});
+  assert.equal(response.error,null,JSON.stringify(response));return response.result;
+}
+test('explicit native follow-up has a separate immutable attempt and resumes only original native work', async () => {
+  const f = await fixture('mathy-v1','reconciliation');try {
+    const source=await failedNativeLanding(f), preview=await nativePreview(f,source);
+    assert.equal(preview.scope.landedTip,f.args.sourceTip);assert.equal(preview.scope.candidateTip,f.args.sourceTip);
+    await f.call('runs.reconcile',{operationId:source.operationId});assert(!existsSync(join(f.path,'.git/native-worker-count')));
+    const originalLog=f.store.logs(source,2000);
+    const args={operationId:source.operationId,resumeNative:true,scopeToken:preview.scopeToken,requestId:randomUUID()};
+    f.store.setMeta('paused',true);
+    const admitted=await f.call('runs.reconcile',args);assert.equal(admitted.error,null,JSON.stringify(admitted));assert.notEqual(admitted.operationId,source.operationId);
+    assert.equal((await f.call('runs.reconcile',args)).operationId,admitted.operationId);
+    assert.equal((await f.call('runs.reconcile',{...args,requestId:randomUUID()})).error.code,'NATIVE_RECONCILIATION_PENDING');
+    f.store.setMeta('paused',false);f.engine.kick();const repair=await f.wait(admitted.operationId);
+    assert.equal(repair.state,'succeeded',JSON.stringify(repair));assert.equal(repair.result.integrationReplayed,false);assert.equal(repair.result.reconciliation,'passed');
+    assert.equal(f.store.get(source.operationId).state,'succeeded');assert.equal(f.store.get(source.operationId).stage,'native_reconciled');
+    assert.equal(f.store.get(source.operationId).result.integration,'landed');assert.equal(f.store.get(source.operationId).result.nativeReconciliation.state,'passed');assert.equal(f.store.get(source.operationId).result.exitCode,0);
+    assert.equal(repair.result.exitCode,0);
+    assert.equal((await f.call('runs.reconcile',args)).operationId,repair.operationId);
+    assert.equal(readFileSync(join(f.path,'.git/worker-count'),'utf8'),'worker\n');assert.equal(readFileSync(join(f.path,'.git/native-worker-count'),'utf8'),'native\n');
+    assert.equal(f.store.logs(source,2000),originalLog);assert.notEqual(repair.attemptId,source.attemptId);assert.notEqual(f.store.logPath(repair),f.store.logPath(source));
+    assert.equal(git(f.path,'rev-parse','HEAD'),f.args.sourceTip);assert.equal(git(f.args.sourcePath,'rev-parse','HEAD'),f.args.sourceTip);
+  }finally{await f.cleanup();}
+});
+
+test('native repair revalidates queued primary, receipt and candidate scope without replaying integration', async () => {
+  for(const changed of ['receipt','candidate','primary','policy']){
+    const f=await fixture('mathy-v1','reconciliation');try{
+      const source=await failedNativeLanding(f), preview=await nativePreview(f,source);f.store.setMeta('paused',true);
+      const args={operationId:source.operationId,resumeNative:true,scopeToken:preview.scopeToken,requestId:randomUUID()};
+      const admitted=await f.call('runs.reconcile',args);assert.equal(admitted.error,null);
+      if(changed==='receipt'||changed==='candidate') {const file=join(f.path,'.git',changed==='receipt'?'fixture-receipt':'fixture-candidate'),value=JSON.parse(readFileSync(file));value.detail='concurrent edit';writeFileSync(file,JSON.stringify(value));}
+      if(changed==='primary')git(f.path,'commit','--allow-empty','-m','New primary commit');
+      if(changed==='policy')writeFileSync(join(f.path,'scripts/ios-development.mjs'),'// changed policy');
+      f.store.setMeta('paused',false);f.engine.kick();const op=await f.wait(admitted.operationId);
+      assert.equal(op.state,'waiting',JSON.stringify(op));assert.equal(op.effectDispatched,false);assert(!existsSync(join(f.path,'.git/native-worker-count')));
+      assert.equal(f.store.get(source.operationId).state,'outcome_unknown');assert.equal(readFileSync(join(f.path,'.git/worker-count'),'utf8'),'worker\n');
+    }finally{await f.cleanup();}
+  }
+});
+
+test('native repair refuses unvalidated receipts, active original workers, unsupported adapters and unreviewed requests', async () => {
+  const f=await fixture('mathy-v1','reconciliation');try{
+    const source=await failedNativeLanding(f);
+    assert.equal((await f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,requestId:randomUUID(),scopeToken:randomUUID()})).error.code,'STALE_NATIVE_SELECTION');
+    assert.equal((await f.call('runs.reconcile',{operationId:source.operationId,preview:true})).error.code,'INVALID_REQUEST');
+    writeFileSync(join(f.path,'.git/invalid-native-identity'),'invalid');
+    assert.equal((await f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,preview:true})).error.code,'LANDING_RECEIPT_UNCONFIRMED');
+    rmSync(join(f.path,'.git/invalid-native-identity'));
+    f.store.update(source,{result:{...source.result,processes:[{pid:process.pid,start:null}]}});
+    assert.equal((await f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,preview:true})).error.code,'WORKER_STILL_ACTIVE');
+    assert(!existsSync(join(f.path,'.git/native-worker-count')));
+  }finally{await f.cleanup();}
+  const other=await fixture('maincharacter-v1','missing-receipt');try{
+    const source=await failedNativeLanding(other);
+    assert.equal((await other.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,preview:true})).error.code,'NATIVE_RECONCILIATION_UNAVAILABLE');
+  }finally{await other.cleanup();}
+});
+
+test('the native worker checks the selected identity again inside the original lease', async () => {
+  const f=await fixture('mathy-v1','reconciliation');try{
+    const source=await failedNativeLanding(f),preview=await nativePreview(f,source);writeFileSync(join(f.path,'.git/native-race'),'race');
+    const accepted=await f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,scopeToken:preview.scopeToken,requestId:randomUUID()});
+    assert.equal(accepted.error,null);const repair=await f.wait(accepted.operationId);
+    assert.equal(repair.state,'outcome_unknown',JSON.stringify(repair));assert(!existsSync(join(f.path,'.git/native-plan-count')));
+    assert.equal(readFileSync(join(f.path,'.git/worker-count'),'utf8'),'worker\n');
+    assert.equal((await f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,preview:true})).error.code,'NATIVE_RECONCILIATION_PENDING');
+  }finally{await f.cleanup();}
+});
+
+test('native receipt delivery survives exit loss and restart observes it without rerunning the worker', async () => {
+  const f=await fixture('mathy-v1','reconciliation');try{
+    const source=await failedNativeLanding(f),preview=await nativePreview(f,source);writeFileSync(join(f.path,'.git/native-exit-loss'),'exit');
+    const accepted=await f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,scopeToken:preview.scopeToken,requestId:randomUUID()});
+    const repair=await f.wait(accepted.operationId);assert.equal(repair.state,'succeeded',JSON.stringify(repair));assert.equal(repair.result.workerExit,21);
+    // Simulate interruption after native receipt delivery but before the journal completion.
+    f.store.update(repair,{state:'running',stage:'original_native_reconciliation'});f.store.update(f.store.get(source.operationId),{state:'outcome_unknown',stage:'reconciliation_required'});
+    const restarted=new Engine(f.store,f.engine.payload);assert.equal(f.store.get(repair.operationId).state,'outcome_unknown');
+    await restarted.recoverObservedEffects();assert.equal(f.store.get(repair.operationId).state,'succeeded');assert.equal(f.store.get(source.operationId).state,'succeeded');
+    assert.equal(readFileSync(join(f.path,'.git/native-worker-count'),'utf8'),'native\n');assert.equal(readFileSync(join(f.path,'.git/worker-count'),'utf8'),'worker\n');
+  }finally{await f.cleanup();}
+});
+
+test('concurrent native admissions select one attempt and interrupted pre-dispatch recovery keeps that identity', async () => {
+  const f=await fixture('mathy-v1','reconciliation');try{
+    const source=await failedNativeLanding(f),preview=await nativePreview(f,source);f.store.setMeta('paused',true);
+    const replies=await Promise.all([1,2].map(()=>f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,scopeToken:preview.scopeToken,requestId:randomUUID()})));
+    assert.equal(replies.filter(value=>value.operationId).length,1);assert.equal(replies.filter(value=>value.error?.code==='NATIVE_RECONCILIATION_PENDING').length,1);
+    const accepted=replies.find(value=>value.operationId),original=f.store.get(accepted.operationId);f.store.update(original,{state:'running'});
+    const restarted=new Engine(f.store,f.engine.payload);assert.equal(f.store.get(original.operationId).state,'interrupted');
+    const response=await restarted.dispatch({schemaVersion:1,command:'runs.reconcile',args:{operationId:original.operationId},cwd:f.path});
+    assert.equal(response.operationId,original.operationId);assert.equal(response.operationState,'queued');assert.equal(f.store.get(original.operationId).attemptId,original.attemptId);
+    f.store.setMeta('paused',false);restarted.kick();const completed=await f.wait(original.operationId);assert.equal(completed.state,'succeeded',JSON.stringify(completed));
+    restarted.stopping=true;while(restarted.active.size)await new Promise(r=>setTimeout(r,10));
+    assert.equal(readFileSync(join(f.path,'.git/native-worker-count'),'utf8'),'native\n');assert.equal(readFileSync(join(f.path,'.git/worker-count'),'utf8'),'worker\n');
+  }finally{await f.cleanup();}
 });
 
 test('adopted capture interrupted before admission reuses original eligibility after the task advances', async t => {

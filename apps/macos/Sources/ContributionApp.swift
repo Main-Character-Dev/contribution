@@ -371,6 +371,21 @@ private struct OperationDetail: View {
     @Bindable var workspace: Workspace
     @State private var showDiagnostics = false
     @State private var followingLog = true
+    @State private var nativeReview: NativeReconciliationSelection?
+    @State private var nativePreviewLoading = false
+    @State private var nativePreviewGeneration = UUID()
+    private func nativeRepairAvailable(_ selected: String) -> Bool {
+        guard let op = workspace.operations.first(where: { $0.object["operationId"]?.text == selected }), op.object["kind"]?.text == "submit", op.object["state"]?.text == "outcome_unknown",
+              let repo = workspace.repositories.first(where: { $0.object["id"] == op.object["repositoryId"] }) else { return false }
+        return repo.object["config"]?.object["integration"]?.object["adapter"]?.text == "mathy-v1" && op.object["result"]?.object["remoteOperationId"] == nil
+    }
+    private func reviewNative(_ selected: String) async {
+        let generation = UUID(); nativePreviewGeneration = generation; nativePreviewLoading = true
+        defer { if nativePreviewGeneration == generation { nativePreviewLoading = false } }
+        let response = await workspace.call("runs.reconcile", ["operationId": .string(selected), "resumeNative": .bool(true), "preview": .bool(true)], accepting: { nativePreviewGeneration == generation && workspace.selectedOperation == selected })
+        guard !Task.isCancelled, nativePreviewGeneration == generation, workspace.selectedOperation == selected, let preview = response?.fields["result"] else { return }
+        nativeReview = NativeReconciliationSelection(operationID: selected, preview: preview)
+    }
     var body: some View {
         if let selected = workspace.selectedOperation {
             VStack(alignment: .leading, spacing: 12) {
@@ -378,6 +393,10 @@ private struct OperationDetail: View {
                     Text(workspace.detail.object["operationState"]?.text.replacingOccurrences(of: "_", with: " ").capitalized ?? "Loading…").font(.title2)
                     Spacer()
                     Menu("Actions") {
+                        Button("Refresh recovery evidence") { Task { await workspace.operationAction("runs.reconcile") } }
+                        if nativeRepairAvailable(selected) {
+                            Button("Review native setup…") { Task { await reviewNative(selected) } }.disabled(nativePreviewLoading || workspace.sending || workspace.pendingRequest != nil)
+                        }
                         Button("Cancel operation") { Task { await workspace.operationAction("runs.cancel") } }
                         Button("Pin evidence") { Task { await workspace.operationAction("runs.pin") } }
                         Button("Unpin evidence") { Task { await workspace.operationAction("runs.unpin") } }
@@ -401,6 +420,8 @@ private struct OperationDetail: View {
                 Text("Showing up to 2,000 retained lines. Closing this window leaves accepted work running.").font(.caption).foregroundStyle(.secondary)
             }.padding()
             .sheet(isPresented: $showDiagnostics) { DiagnosticsSheet(client: workspace.client, operationID: selected, localDetails: workspace.detail) }
+            .sheet(item: $nativeReview) { selection in NativeReconciliationReview(workspace: workspace, selection: selection) }
+            .onChange(of: workspace.selectedOperation) { _, _ in nativePreviewGeneration = UUID(); nativePreviewLoading = false; nativeReview = nil }
         } else { ContentUnavailableView("Select an operation", systemImage: "list.bullet.rectangle", description: Text("Inspect its progress, delivery evidence, and retained output.")) }
     }
     private func exportLog() {

@@ -14,6 +14,54 @@ Mathy's explicit combined message goes through its existing `--message-file` rou
 
 Completion requires the original candidate-specific receipt validator, reachable landed Git identity, clean primary and original source-worktree completion guard against the executed source. An exit code alone cannot establish integration. A nonzero exit after promotion may still be reconciled from that complete proof. Missing receipt, unsuccessful native reconciliation or a failed completion guard retains uncertainty and blocks replay. `runs reconcile` observes the original receipt/guard without rerunning a dispatched worker. A stopped request that never registered a candidate or dispatched its original worker can explicitly resume its unchanged selection after its processes stop. Original project repair remains authoritative.
 
+## Resume a failed Mathy native follow-up
+
+When the original canonical validator confirms landing and validation but its
+native receipt is failed, Contribution retains `integration:
+landed_reconciliation_failed`, the confirmed landed commit and the separate
+native failure. Overall completion still needs the original native receipt and
+source guard. Run detail offers **Review native setup…**, showing the selected
+landed/current primary commits and the original project's possible dependency
+rebuild and Xcode workspace effects.
+
+```sh
+contribution runs reconcile OPERATION --resume-native --preview --json
+contribution runs reconcile OPERATION --resume-native --scope-token TOKEN --request-id UUID --json
+```
+
+The preview fixes the original operation, candidate, landed identity, current
+primary, failed receipt, candidate generations, selectors and adopted policy.
+Confirmation admits a new immutable `native_reconciliation` operation with its
+own attempt log. Reusing its request ID returns that same operation. Concurrent
+requests cannot create two repair attempts. The original failed landing/log is
+retained. No ordinary observation implicitly authorizes this action.
+
+Execution rechecks the selection and calls the original
+`scripts/worktree-reconcile` export with the recorded candidate. The project
+acquires its own primary/candidate/simulator leases, plans native work, restores
+its workspace and owns receipt/candidate cleanup. Contribution's injected plan
+boundary rechecks policy, receipt, candidate generations and the selected
+primary **inside the acquired original primary lease**, before planning. It
+does not invoke a landing worker, reset primary or remove a native task.
+
+Success needs the original passed receipt, exact reviewed landed commit and
+source guard, even if the repair process exited unsuccessfully. A stopped or
+ambiguous effect stays unknown and blocks another repair; `runs reconcile
+REPAIR_OPERATION` only observes a dispatched attempt. An interrupted attempt
+that never dispatched can resume its retained selection. Known unfinished
+original cleanup remains the project's repair responsibility; a missing
+process alone cannot confirm it. Live native planning/build/workspace
+qualification is still pending.
+
+The disposable orchestration fixtures cover stale primary/receipt/candidate/
+policy, lost replies, concurrent admission, inner-lease drift, independent logs
+and restart without repeated integration. The read-only source parity runner
+`scripts/check-native-reconciliation-parity.mjs /absolute/mathy` calls the
+actual original repair export only against generated Git histories with inert
+planning/build/workspace callbacks. Its four scenarios verify successful
+receipt/queue cleanup, planning failure with lease release, contention and
+changed receipt refusal. It does not qualify actual native dependencies.
+
 Current boundary: adopted two-Mac owner transitions and cross-host imported-source admission remain blocked until all cooperating legacy writers, including older task checkouts, are fenced and the sender's source-policy attestation is transferred and verified. Local committed capture does not imply that remote trust boundary is complete. Shallow, submodule and LFS histories retain their explicit unsupported/blocker states.
 
 `tests/adopted-landing.test.mjs` exercises the service against synthetic project entry points for all four policy families using disposable Git histories. It covers unchanged native ownership, dirty/advanced task preservation, exact captured commits, original metadata, explicit Mathy messages/selectors, flight contention, separate lease ownership, post-promotion failure, normal queue removal, retained receipts and completion-guard repair without duplicate integration. These tests verify adapter orchestration; they do not replace real-project worker parity, expensive project suites or live cutover qualification.

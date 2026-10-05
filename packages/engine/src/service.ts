@@ -56,7 +56,7 @@ const allowed: Record<string, string[]> = {
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata', 'resume'],
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
   'runs.list': ['repo'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
-  'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
+  'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId', 'resumeNative', 'preview', 'scopeToken', 'requestId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
   'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'hosts.sync': ['host'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
   'hook.borrow': ['repo', 'operationId', 'hookToken', 'caller'], 'hook.release-borrow': ['repo', 'operationId', 'hookToken', 'caller', 'borrowToken'],
@@ -176,7 +176,9 @@ export class Engine {
       if (this.store.getMeta<boolean>('paused') && op.kind !== 'settings.apply') continue;
       if (this.storageHold && op.kind !== 'settings.apply') continue;
       if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId) || this.adoptions.isBusy(op.repositoryId)) continue;
-      const blocked = isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
+      const blocked = isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId &&
+        !(op.kind === 'native_reconciliation' && other.kind === 'submit' && other.operationId === op.input['sourceOperationId'] && other.state === 'outcome_unknown') &&
+        !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
       if (blocked) continue;
       const controller = new AbortController(); this.active.set(op.operationId, controller); this.activeRepositories.add(op.repositoryId);
       void this.execute(op, controller.signal).finally(() => { this.active.delete(op.operationId); this.activeRepositories.delete(op.repositoryId); this.kick(); });
@@ -192,11 +194,12 @@ export class Engine {
       if (op.kind === 'settings.apply') result = this.applySettings(op);
       else {
         const repo = await this.repos.get(op.repositoryId);
-        if (isGitJob(op.kind) && !(op.kind === 'submit' && repo.config.integration.adapter !== 'generic-v1'))
+        if (isGitJob(op.kind) && op.kind !== 'native_reconciliation' && !(op.kind === 'submit' && repo.config.integration.adapter !== 'generic-v1'))
           lease = op.kind === 'checks' || repo.config.integration.adapter === 'generic-v1' ? new Lease(repo.commonDir, op.attemptId) : new LegacyPrimaryLease(repo.commonDir, op.attemptId);
-        if (['initialize', 'submit', 'push', 'seed'].includes(op.kind)) this.peers.assertWriter(repo);
+        if (['initialize', 'submit', 'push', 'seed', 'native_reconciliation'].includes(op.kind)) this.peers.assertWriter(repo);
         if (op.kind === 'initialize') result = await this.workflows.initialize(op, repo);
         else if (op.kind === 'submit') result = await this.workflows.landing(op, repo, signal);
+        else if (op.kind === 'native_reconciliation') result = await this.workflows.adoptedLanding.resumeNative(op, repo, this.workflows.options(op, signal));
         else if (op.kind === 'push') result = await this.workflows.push(op, repo, signal, lease!);
         else if (op.kind === 'device') result = await this.devices.execute(op, repo, signal);
         else if (op.kind === 'artifact_transfer') result = await this.artifacts.execute(op, signal);
@@ -473,8 +476,20 @@ export class Engine {
       if (['runs.get', 'runs.cancel', 'runs.pin', 'runs.unpin', 'runs.reconcile', 'logs', 'repair-context'].includes(command)) {
         let op = this.store.get(string(args['operationId'], 'operationId'));
         if (command === 'runs.reconcile') {
+          if (args['resumeNative'] === true) {
+            const repo = await this.repos.get(op.repositoryId); this.store.assertRepositoryAvailable(repo.id); this.peers.assertWriter(repo);
+            requireValue(!this.adoptions.isBusy(repo.id), 'REPOSITORY_BUSY', 'Wait for the reviewed adoption transaction before native reconciliation.', 3);
+            if (args['preview'] === true) {
+              requireValue(args['requestId'] === undefined && args['scopeToken'] === undefined, 'INVALID_REQUEST', 'Preview native reconciliation separately from admitting it.', 2);
+              return completed(await this.workflows.adoptedLanding.previewNative(op, repo));
+            }
+            const requestId = string(args['requestId'], 'requestId'), input = await this.workflows.adoptedLanding.selectNative(op, repo, string(args['scopeToken'], 'scopeToken'), requestId);
+            if (!this.store.byRequest(requestId)) this.workflows.adoptedLanding.assertNativeAdmission(op);
+            return this.admit(requestId, 'native_reconciliation', repo.id, input);
+          }
+          requireValue(Object.keys(args).every(key => key === 'operationId'), 'INVALID_REQUEST', 'Native repair options require --resume-native and an explicit preview or reviewed request.', 2);
           if (['artifact_transfer', 'device_transfer'].includes(op.kind) && ['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'resuming_retained_transfer', error: null });
-          else if (op.kind === 'submit' && ['waiting', 'interrupted'].includes(op.state) && !op.effectDispatched && (await this.repos.get(op.repositoryId)).config.integration.adapter !== 'generic-v1') {
+          else if ((op.kind === 'native_reconciliation' || op.kind === 'submit' && (await this.repos.get(op.repositoryId)).config.integration.adapter !== 'generic-v1') && ['waiting', 'interrupted'].includes(op.state) && !op.effectDispatched) {
             const processes = op.result['processes'] as { pid: number; start: string | null }[] | undefined;
             requireValue(!this.active.has(op.operationId) && !processes?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start)),
               'WORKER_STILL_ACTIVE', 'The retained worker must stop before resuming its original selection.', 3);
@@ -833,11 +848,23 @@ export class Engine {
           if (gateObserved) this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null, result });
           else this.store.update(op, { stage: 'gate_reconciliation_required', result });
         }
+      } else if (op.kind === 'native_reconciliation') {
+        try {
+          const result = await this.workflows.adoptedLanding.observeNative(op, repo);
+          this.store.update(this.store.get(op.operationId), { state: 'succeeded', stage: 'reconciled', error: null, result: { ...this.store.get(op.operationId).result, ...result, completedAt: now() } });
+        } catch (error) { this.store.put('nativeRepairReconciliation', op.operationId, { code: error instanceof Fault ? error.code : 'RECONCILIATION_FAILED', observedAt: now() }); }
       } else if (op.kind === 'submit' && repo.config.integration.adapter !== 'generic-v1') {
         try {
           const result = await this.workflows.adoptedLanding.reconcile(op, repo, { output: text => this.store.log(op, text) });
           this.store.update(this.store.get(op.operationId), { state: 'succeeded', stage: 'reconciled', error: null, result: { ...this.store.get(op.operationId).result, ...result, completedAt: now() } });
-        } catch (error) { this.store.put('adoptedLandingReconciliation', op.operationId, { code: error instanceof Fault ? error.code : 'RECONCILIATION_FAILED', observedAt: now() }); }
+        } catch (error) {
+          this.store.put('adoptedLandingReconciliation', op.operationId, { code: error instanceof Fault ? error.code : 'RECONCILIATION_FAILED', observedAt: now() });
+          if (error instanceof Fault && error.code === 'LANDED_RECONCILIATION_FAILED') {
+            const latest = this.store.get(op.operationId);
+            this.store.update(latest, { result: { ...latest.result, ...error.details }, error: { code: error.code, message: error.message, retryable: false,
+              nextActions: [{ id: 'review-native', label: 'Review the landed native follow-up', argv: ['contribution', 'runs', 'reconcile', op.operationId, '--resume-native', '--preview', '--json'] }] } });
+          }
+        }
       } else if (op.kind === 'submit' && typeof op.result['landedTip'] === 'string') {
         const current = await identity(repo.path);
         if (current.tip === op.result['landedTip']) {

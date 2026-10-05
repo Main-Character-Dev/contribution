@@ -22,6 +22,7 @@ flags['--prepare-existing-adoption'] = 'prepareExistingAdoption';
 flags['--list-adoptions'] = 'listAdoptions';
 flags['--worktrees'] = 'worktrees';
 flags['--resume'] = 'resume';
+flags['--resume-native'] = 'resumeNative';
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
 export function exitCode(response: Response): number {
@@ -55,6 +56,8 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
       response.result = { commands: ['version', 'doctor', 'repos list|discover|add|create|initialize|inspect|configure|relocate|remove', 'status [--refresh]',
         'submit --repo ID --source-path PATH --source-tip OID --base OID --request-id ID [--metadata-file PATH]',
         'submit --repo ID --request-id ID --resume',
+        'runs reconcile OPID', 'runs reconcile OPID --resume-native --preview',
+        'runs reconcile OPID --resume-native --scope-token TOKEN --request-id UUID',
         'repos configure --repo ID --file PATH --expected-revision REV --request-id UUID', 'repos configure --repo ID --resume --request-id UUID',
         'push --repo ID --preview', 'push --repo ID --expected-tip OID --scope-token TOKEN --request-id ID [--wait]',
         'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',

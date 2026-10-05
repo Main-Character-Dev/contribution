@@ -29,6 +29,7 @@ public struct ActivityItem: Identifiable, Sendable {
     public var title: String {
         switch value.object["kind"]?.text {
         case "submit": "Land committed work"
+        case "native_reconciliation": "Resume native setup"
         case "push", "remote.push": "Publish selected work"
         case "checks": "Run local checks"
         case "initialize": "Initialize project history"

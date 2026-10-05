@@ -2,6 +2,40 @@ import AppKit
 import SwiftUI
 import ContributionPlatform
 
+struct NativeReconciliationSelection: Identifiable {
+    let id = UUID()
+    let operationID: String
+    let preview: JSONValue
+}
+
+struct NativeReconciliationReview: View {
+    @Bindable var workspace: Workspace
+    let selection: NativeReconciliationSelection
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        let scope = selection.preview.object["scope"]?.object ?? [:]
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Resume native setup").font(.title2)
+            Text(selection.preview.object["action"]?.text ?? "Resume this project's native follow-up.")
+            Text("Landed commit: \(scope["landedTip"]?.text ?? "Unknown")").font(.caption.monospaced()).textSelection(.enabled)
+            Text("Current primary: \(scope["primaryTip"]?.text ?? "Unknown")").font(.caption.monospaced()).textSelection(.enabled)
+            Text(selection.preview.object["workspaceEffects"]?.text ?? "").fixedSize(horizontal: false, vertical: true)
+            Text("This creates a separate attempt with its own retained output.").foregroundStyle(.secondary)
+            if let error = workspace.error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
+            HStack {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Resume native setup") {
+                    Task {
+                        let response = await workspace.submit("runs.reconcile", args: ["operationId": .string(selection.operationID), "resumeNative": .bool(true), "scopeToken": selection.preview.object["scopeToken"] ?? .null])
+                        if response?.operationID != nil { dismiss() }
+                    }
+                }.disabled(workspace.sending || workspace.pendingRequest != nil || workspace.selectedOperation != selection.operationID)
+            }
+        }.padding(24).frame(width: 570)
+    }
+}
+
 struct ActivityList: View {
     @Bindable var workspace: Workspace
     @State private var query = ""
@@ -138,6 +172,9 @@ struct RunSummary: View {
         let result = detail.object["result"]?.object ?? [:], input = operation?.object["input"]?.object ?? [:]
         let tip = input["tip"]?.text ?? input["sourceTip"]?.text ?? input["expectedTip"]?.text ?? result["sourceTip"]?.text
         VStack(alignment: .leading, spacing: 7) {
+            if let native = result["nativeReconciliation"]?.object, native["state"]?.text == "failed" {
+                Label("Committed work landed. Native setup needs attention.", systemImage: "exclamationmark.circle")
+            }
             if let tip, !tip.isEmpty {
                 let base = input["base"]?.text
                 Text("Source: " + (base.map { String($0.prefix(12)) + "…" } ?? "") + String(tip.prefix(12))).font(.caption.monospaced()).textSelection(.enabled)
