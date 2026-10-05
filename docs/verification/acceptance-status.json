@@ -688,6 +688,11 @@
           "level": "fixture",
           "source": "tests/retention.test.mjs",
           "scope": "Central raw-log quota and aging preserve pinned, active, unresolved and unacknowledged evidence plus immutable receipts. Summary/cache/artifact lifecycle completion remains open."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/owned-worktrees.test.mjs",
+          "scope": "Reviewed non-force Git removal of positively owned checkouts preserves native tasks, local files, retained refs, pins and unresolved work. Interrupted cleanup retains identity and fences new clone jobs."
         }
       ],
       "nextStep": "Summary/cache/artifact lifecycle completion remains open."

@@ -18,6 +18,7 @@ values['--apply-adoption'] = 'applyAdoption'; values['--activate-adoption'] = 'a
 values['--original-tip'] = 'originalTip'; values['--migration-tip'] = 'migrationTip';
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle', '--launch': 'launch', '--prepare-reporting': 'prepareReporting', '--prepare-adoption': 'prepareAdoption' };
 flags['--prepare-existing-adoption'] = 'prepareExistingAdoption';
+flags['--worktrees'] = 'worktrees';
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
 export function exitCode(response: Response): number {
@@ -52,7 +53,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'submit --repo ID --source-path PATH --source-tip OID --base OID --request-id ID [--metadata-file PATH]',
         'push --repo ID --preview', 'push --repo ID --expected-tip OID --scope-token TOKEN --request-id ID [--wait]',
         'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',
-        'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'service storage --preview', 'service storage --scope-token TOKEN --request-id UUID', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',
+        'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'service storage [--worktrees] --preview', 'service storage [--worktrees] --scope-token TOKEN --request-id UUID', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',
         'repos pair --repo ID --host HOST --request-id UUID', 'repos seed|mirror --repo ID --request-id UUID',
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID] [--prepare-reporting|--prepare-adoption --request-id UUID]',
         'repos migration --repo ID --adoption-plan ID', 'repos migration --repo ID --apply-adoption|--activate-adoption|--rollback-adoption ID --expected-revision REV --request-id UUID',

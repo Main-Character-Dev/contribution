@@ -30,11 +30,12 @@ import { Milestones } from './notifications.js';
 import type { Notice } from './notifications.js';
 import { Maintenance } from './maintenance.js';
 import { StorageRetention } from './storage.js';
+import { OwnedWorktrees } from './owned-worktrees.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
-  'service.storage': ['preview', 'scopeToken', 'requestId'],
+  'service.storage': ['preview', 'scopeToken', 'requestId', 'worktrees'],
   'maintenance.begin': ['requestId'], 'maintenance.status': [], 'maintenance.stop': ['windowId'],
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
@@ -289,13 +290,14 @@ export class Engine {
         maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
       if (command === 'service.storage') {
-        const storage = new StorageRetention(this.store);
+        requireValue(args['worktrees'] === undefined || args['worktrees'] === true, 'INVALID_USAGE', 'Use --worktrees to select owned checkout cleanup.', 2);
+        const storage = args['worktrees'] === true ? new OwnedWorktrees(this.store) : new StorageRetention(this.store);
         if (args['preview'] === true) {
           requireValue(args['scopeToken'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Preview and cleanup are separate requests.', 2);
-          return completed(storage.preview());
+          return completed(await storage.preview());
         }
         requireValue(args['preview'] === undefined, 'INVALID_USAGE', 'Use --preview or select its scope token and a request UUID.', 2);
-        return completed(storage.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId')));
+        return completed(await storage.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId')));
       }
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
         database: { version: 1, journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),

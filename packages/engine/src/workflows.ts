@@ -15,6 +15,7 @@ import { AdoptedHooks } from './adopted-hooks.js';
 import { LegacyPrimaryLease } from './legacy-lease.js';
 import { AdoptedLanding } from './adopted-landing.js';
 import { AdoptedChecks } from './adopted-checks.js';
+import { OwnedWorktrees } from './owned-worktrees.js';
 
 interface PushScope { repositoryId: string; branch: string; tip: string; remote: string; destination: string; ref: string; policy: string }
 const quote = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'";
@@ -123,8 +124,7 @@ export class Workflows {
     const prior = this.store.record<ObjectValue>('landing', sourceKey); if (prior) return { ...prior, reused: true };
     const target = (await identity(repo.path)).tip; requireValue(target, 'SEED_RECEIPT_REQUIRED', 'Establish canonical bootstrap history before landing.', 3);
     requireValue((await git(repo.path, ['merge-base', '--is-ancestor', base, target])).code === 0, 'DIVERGENT_HISTORY', 'The task base is not part of canonical history. Reconcile both histories.');
-    const candidate = join(this.store.directory, 'candidates', op.attemptId); mkdirSync(join(candidate, '..'), { recursive: true, mode: 0o700 });
-    await gitText(repo.path, ['worktree', 'add', '--detach', candidate, target]);
+    const candidate = await new OwnedWorktrees(this.store).create(op, repo, 'candidate', target);
     this.store.update(this.store.get(op.operationId), { stage: 'preparing_candidate', result: { candidate, target, sourceTip: tip } });
     const commits = (await gitText(repo.path, ['rev-list', '--reverse', `${base}..${tip}`])).split('\n');
     const applied = await git(candidate, ['cherry-pick', '--no-commit', ...commits], { timeoutMs: 60000, output: text => this.store.log(op, text) });
@@ -134,6 +134,10 @@ export class Workflows {
     const message = typeof metadata['integrationMessage'] === 'string' ? metadata['integrationMessage'] : await gitText(repo.path, ['show', '-s', '--format=%B', tip]);
     const landedTip = await gitText(candidate, ['commit-tree', tree, '-p', target], { input: message + '\n', env: { GIT_AUTHOR_NAME: authorName, GIT_AUTHOR_EMAIL: authorEmail, GIT_AUTHOR_DATE: authorDate } });
     await gitText(repo.path, ['update-ref', `refs/contribution/candidates/${op.attemptId}`, landedTip]);
+    // The index already holds this exact generated tree. Advancing only the
+    // detached HEAD leaves any concurrent working edits intact and observable.
+    await gitText(candidate, ['update-ref', 'HEAD', landedTip, target]);
+    await clean(candidate);
     const receipt = { sourceTip: tip, sourceBase: base, sourceCommits: commits, provisionalTip: landedTip, landedTip, target, candidate, validation: 'not_run', publication: 'not_requested' };
     this.store.update(this.store.get(op.operationId), { stage: 'promoting', effectDispatched: true, result: receipt });
     await this.repos.current(repo); await clean(repo.path);

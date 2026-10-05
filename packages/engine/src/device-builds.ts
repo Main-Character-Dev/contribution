@@ -14,6 +14,7 @@ import type { RunOptions } from './process.js';
 import { privateDirectory } from './private-files.js';
 import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
 import { artifactRetention, requireArtifactAvailable } from './storage.js';
+import { OwnedWorktrees } from './owned-worktrees.js';
 
 type Build = DeviceProfileConfiguration['builds'][number];
 type Host = DeviceContext['host'];
@@ -117,8 +118,7 @@ export class DeviceBuilds {
       const latest = this.store.get(op.operationId); this.store.update(latest, { result: { ...latest.result, processes: [...(latest.result['processes'] as ObjectValue[] ?? []), { pid, start }] } });
     } };
     await ordinaryHistory(repo.path, source.tip!);
-    const buildSource = join(directory, 'source');
-    await gitText(repo.path, ['worktree', 'add', '--detach', buildSource, source.tip!], options);
+    const buildSource = await new OwnedWorktrees(this.store).create(op, repo, 'build', source.tip!, options);
     const snapshotDigest = await inputFingerprint(buildSource);
     const prepared = await this.driver.build({ ...repo, path: buildSource }, registration.config, build, directory, receipt.deviceId, options);
     await clean(buildSource);

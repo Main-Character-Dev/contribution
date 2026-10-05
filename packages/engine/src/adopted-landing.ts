@@ -12,6 +12,7 @@ import { ProjectRuntimes } from './project-runtime.js';
 import type { AdoptedHooks } from './adopted-hooks.js';
 import { privateDirectory } from './private-files.js';
 import { LegacyLandingFlight } from './legacy-flight.js';
+import { OwnedWorktrees } from './owned-worktrees.js';
 
 // Execute reviewed project exports with the project's registered runtime. No
 // repository source is copied into Contribution or replaced by generic policy.
@@ -118,7 +119,7 @@ export class AdoptedLanding {
     const capture = this.store.record<{ retention: string; tip: string; base: string }>('capture', op.requestId);
     requireValue(capture && capture.tip === selected.sourceTip && capture.base === selected.base && await gitText(repo.path, ['rev-parse', capture.retention]) === selected.sourceTip,
       'CAPTURE_RECOVERY_REQUIRED', 'The admitted source retention ref is missing or changed. Preserve the bundle for recovery.', 3);
-    if (!existsSync(directory)) await gitText(repo.path, ['worktree', 'add', '--detach', directory, selected.sourceTip], { ...options, timeoutMs: 60000 });
+    if (!existsSync(directory)) await new OwnedWorktrees(this.store).create(op, repo, 'adopted', selected.sourceTip, { ...options, timeoutMs: 60000 });
     const info = lstatSync(directory); requireValue(info.isDirectory() && !info.isSymbolicLink() && info.uid === process.getuid?.() && realpathSync(directory) === directory, 'CAPTURE_RECOVERY_REQUIRED', 'The owned snapshot directory was replaced.', 3);
     const identityNow = await identity(directory);
     requireValue(identityNow.commonDir === repo.commonDir && identityNow.tip === selected.sourceTip && !identityNow.branch, 'CAPTURE_RECOVERY_REQUIRED', 'The owned snapshot no longer identifies the retained commit.', 3);
