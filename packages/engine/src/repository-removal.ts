@@ -5,16 +5,18 @@ import type { Enrolled, Repositories } from './repositories.js';
 import { digest, id, now, requireValue } from './core.js';
 import type { ObjectValue } from './core.js';
 import { git, gitText, identity } from './git.js';
-import { Lease, alive, processIdentity } from './process.js';
+import { Lease } from './process.js';
 import type { LeaseOwner } from './process.js';
 import { readStableFile } from './bounded-file.js';
+import type { Authority, MirrorRelease } from './peers.js';
+import { assertRepositorySettled } from './repository-idle.js';
 
 interface FileIdentity { path: string; dev: number; ino: number; mode: number }
 interface Hook { path: string; digest: string }
 interface Removal {
   id: string; repository: Enrolled; identities: FileIdentity[]; hook: Hook | null;
   hookIdentity: FileIdentity | null; state: 'prepared' | 'unlinking' | 'completed';
-  lease?: LeaseOwner; result?: ObjectValue;
+  lease?: LeaseOwner; result?: ObjectValue; peerRelease?: MirrorRelease;
 }
 const busy = new WeakMap<Journal, Set<string>>();
 function present(path: string): boolean { try { lstatSync(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; } }
@@ -22,7 +24,7 @@ function present(path: string): boolean { try { lstatSync(path); return true; } 
 /** Unenrollment never infers ownership from a script marker or deletes source.
  * The saved hook digest and exact clone identities authorize the only file removal. */
 export class RepositoryRemoval {
-  constructor(readonly store: Journal, readonly repos: Repositories) {}
+  constructor(readonly store: Journal, readonly repos: Repositories, readonly releaseMirror?: (repo: Enrolled, removalId: string) => Promise<MirrorRelease>) {}
   pending(): ObjectValue[] { return this.store.records<Removal>('repositoryRemoval').filter(row => row.state !== 'completed').map(row => ({ repositoryId: row.repository.id, state: row.state, action: 'repos remove', sourcePreserved: true })); }
   completed(selector: string): ObjectValue | undefined {
     return this.store.records<Removal>('repositoryRemoval').find(row => row.state === 'completed' && (row.repository.id === selector || row.repository.path === selector))?.result;
@@ -34,20 +36,22 @@ export class RepositoryRemoval {
     return { path, dev: info.dev, ino: info.ino, mode: info.mode };
   }
   private idle(repo: Enrolled): void {
-    requireValue(repo.availability === 'this-mac' && repo.canonicalHostId === this.store.hostId && !this.store.record('authority', repo.id),
-      'AUTHORITY_RELEASE_REQUIRED', 'Paired writer authority must be explicitly released on both hosts before unenrollment. The existing fence remains in place.', 3);
+    requireValue(!this.store.record('authorityReservation', repo.id), 'AUTHORITY_TRANSITION_PENDING', 'The canonical host has reserved an owner transfer. Resume that exact transition before removing either enrollment.', 3);
+    const authority = this.store.record<Authority>('authority', repo.id);
+    const local = repo.availability === 'this-mac' && repo.canonicalHostId === this.store.hostId && (!authority || authority.phase === 'released' && authority.ownerHostId === this.store.hostId);
+    const mirror = repo.config.integration.adapter === 'generic-v1' && repo.availability === 'both-macs' && repo.canonicalHostId !== this.store.hostId &&
+      authority?.ownerHostId === repo.canonicalHostId && authority.peerHostId === repo.canonicalHostId && ['active', 'released'].includes(authority.phase);
+    requireValue(local || mirror && Boolean(this.releaseMirror), 'AUTHORITY_RELEASE_REQUIRED',
+      'Remove a generic companion through its canonical release. To remove the canonical host, explicitly transfer ownership first; adopted writer authority still requires migration.', 3);
+    if (mirror && authority?.phase === 'released') requireValue(this.store.records<MirrorRelease>('authorityRelease').some(row => row.repositoryId === repo.id &&
+      row.transitionId === authority.transitionId && row.epoch === authority.epoch && row.removedHostId === this.store.hostId && row.ownerHostId === repo.canonicalHostId),
+      'AUTHORITY_RELEASE_REQUIRED', 'The released companion has no matching retained release receipt.', 3);
     requireValue(!this.store.record('adoptedHooks', repo.id) && !this.store.records<{ repositoryId: string; phase: string }>('adoptionPlan')
       .some(plan => plan.repositoryId === repo.id && ['applying', 'applied', 'active', 'rolling_back'].includes(plan.phase)),
       'INTEGRATION_REMOVAL_REQUIRED', 'Complete the reviewed rollback of adopted integration before unenrollment.', 3);
     requireValue(!this.store.records<{ previous: { id: string }; state: string }>('configurationIntent').some(row => row.previous.id === repo.id && row.state === 'prepared'),
       'CONFIGURATION_RECONCILIATION_REQUIRED', 'Reconcile the retained configuration change before unenrollment.', 3);
-    const rows = this.store.db.prepare('SELECT body FROM operations WHERE repository_id=?').all(repo.id);
-    for (const row of rows) {
-      const op = JSON.parse(String(row['body'])) as { state: string; result: { processes?: { pid: number; start: string | null }[] } };
-      requireValue(['succeeded', 'failed', 'cancelled'].includes(op.state), 'REPOSITORY_BUSY', 'Retain enrollment while queued, interrupted or uncertain work needs reconciliation.', 3);
-      requireValue(!op.result.processes?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start)),
-        'REPOSITORY_BUSY', 'A retained worker may still be using this repository.', 3);
-    }
+    assertRepositorySettled(this.store, repo.id);
     requireValue(!['primary-checkout-mutation.lock', 'primary-checkout-mutation.lock.recovery'].some(name => present(join(repo.commonDir, name))),
       'REPOSITORY_BUSY', 'A legacy writer or unknown recovery directory still needs reconciliation.', 3);
   }
@@ -88,7 +92,13 @@ export class RepositoryRemoval {
       if (oldLease && intent.lease && digest(oldLease) === digest(intent.lease)) Lease.reclaim(repo.commonDir, oldLease);
       lease = new Lease(repo.commonDir, intent.id);
       intent.lease = lease.owner; this.store.put('repositoryRemoval', repo.id, intent);
+      const authority = this.store.record<Authority>('authority', repo.id);
+      if (repo.canonicalHostId !== this.store.hostId && authority?.phase !== 'released' && !intent.peerRelease) {
+        intent.peerRelease = await this.releaseMirror!(repo, intent.id);
+        this.store.put('repositoryRemoval', repo.id, intent);
+      }
       const current = await this.inspect(repo); this.idle(repo);
+      requireValue(digest(this.repos.all().find(row => row.id === repo.id)) === digest(intent.repository), 'REMOVAL_IDENTITY_CHANGED', 'Enrollment changed while the retained removal was being reconciled.', 3);
       requireValue(digest(current.identities) === digest(intent.identities) && digest(current.hook) === digest(intent.hook) &&
         (digest(current.hookIdentity) === digest(intent.hookIdentity) || (intent.state === 'unlinking' && current.hookIdentity === null)),
         'REMOVAL_IDENTITY_CHANGED', 'The retained clone or hook changed during removal. Preserve it for inspection.', 3);
@@ -101,8 +111,12 @@ export class RepositoryRemoval {
         unlinkSync(current.hook.path);
         const fd = openSync(dirname(current.hook.path), 'r'); try { fsyncSync(fd); } finally { closeSync(fd); }
       }
-      const result = { removed: repo.id, removalId: intent.id, sourcePreserved: true, historyPreserved: true, recordsPreserved: true, ownedHookRemoved: Boolean(intent.hookIdentity) };
+      const result = { removed: repo.id, removalId: intent.id, sourcePreserved: true, historyPreserved: true, recordsPreserved: true, ownedHookRemoved: Boolean(intent.hookIdentity), ...(intent.peerRelease ? { peerRelease: intent.peerRelease } : {}) };
       this.store.transaction(() => {
+        if (intent.peerRelease) {
+          this.store.put('authorityRelease', intent.id, intent.peerRelease);
+          this.store.put('authority', repo.id, { ...authority, phase: 'released' });
+        }
         this.store.put('hook', repo.id, null);
         this.store.db.prepare('DELETE FROM repositories WHERE id=?').run(repo.id);
         this.store.put('repositoryRemoval', repo.id, { ...intent, state: 'completed', completedAt: now(), result });

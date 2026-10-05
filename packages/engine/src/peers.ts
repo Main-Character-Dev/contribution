@@ -18,6 +18,7 @@ import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './i
 import type { IncomingFileIdentity } from './incoming-file.js';
 import { completionReceipt } from './peer-receipts.js';
 import type { CompletionReceipt, CompletionOutbox } from './peer-receipts.js';
+import { assertRepositorySettled } from './repository-idle.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
 export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
@@ -31,7 +32,11 @@ interface HistoryCapture {
   manifest: Omit<TransferManifest, 'bundleDigest' | 'bytes'>; path: string; commonDir: string;
   destinationHostId: string; authority: string; bundle?: { bytes: number; sha256: string };
 }
-interface Authority { transitionId: string; epoch: number; previousTransitionId: string | null; ownerHostId: string; previousOwnerHostId: string; phase: 'frozen' | 'active'; peerHostId: string; tip: string | null; policy: string }
+export interface Authority { transitionId: string; epoch: number; previousTransitionId: string | null; ownerHostId: string; previousOwnerHostId: string; phase: 'frozen' | 'active' | 'released'; peerHostId: string; tip: string | null; policy: string }
+export interface MirrorRelease {
+  removalId: string; repositoryId: string; removedHostId: string; ownerHostId: string;
+  transitionId: string; epoch: number; policy: string; releasedAt: string;
+}
 const CHUNK = 256 * 1024, MAX_BUNDLE = MAX_GIT_BUNDLE;
 export const remoteDeviceCommands = new Set(['devices.connect', 'devices.prepare', 'devices.install', 'devices.launch', 'devices.logs', 'devices.test', 'devices.ui', 'devices.debug', 'devices.capture', 'devices.disconnect', 'devices.qualify', 'devices.artifacts.transfer']);
 export const remoteDeviceReads = new Set(['devices.list', 'devices.apps', 'devices.status', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get']);
@@ -111,7 +116,8 @@ export class Peers {
   }
   assertWriter(repo: Enrolled): void {
     const authority = this.store.record<Authority>('authority', repo.id);
-    requireValue(!authority || authority.phase === 'active', 'AUTHORITY_TRANSITION_PENDING', 'Both writers remain fenced until the retained authority transition is reconciled.', 3);
+    requireValue(!this.store.record('authorityReservation', repo.id) && (!authority || authority.phase === 'active' || authority.phase === 'released' && authority.ownerHostId === this.store.hostId && repo.availability === 'this-mac'),
+      'AUTHORITY_TRANSITION_PENDING', 'This writer remains fenced until the retained authority transition or released companion is reconciled.', 3);
     requireValue(repo.canonicalHostId === this.store.hostId, 'CANONICAL_OWNER_REQUIRED', 'This host is a mirror; submit or publish through the canonical owner.');
   }
   private receiptPending(repo: Enrolled): boolean {
@@ -119,8 +125,7 @@ export class Peers {
     return receipts.length > 10000 || receipts.some(op => this.store.peerEvidenceProtected(op));
   }
   private idle(repo: Enrolled): void {
-    requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Reconcile all retained work before transferring repository authority.');
-    requireValue(!this.receiptPending(repo), 'PEER_RECEIPT_PENDING', 'Complete the retained peer receipt exchange before changing canonical authority.', 3);
+    assertRepositorySettled(this.store, repo.id);
     requireValue(!['contribution-writer.lock', 'primary-checkout-mutation.lock', 'primary-checkout-mutation.lock.recovery'].some(path => existsSync(join(repo.commonDir, path))),
       'REPOSITORY_BUSY', 'A writer or unconfirmed recovery boundary remains retained. Reconcile it before transferring authority.');
   }
@@ -140,7 +145,7 @@ export class Peers {
       const previous = this.store.record<Authority>('authority', repo.id);
       if (previous?.transitionId === requestId) {
         requireValue(previous.ownerHostId === hostId, 'REQUEST_ID_CONFLICT', 'The transition identity has a different owner.');
-        if (previous.phase === 'active') return { hostId, transitionId: requestId, canonicalHostId: hostId };
+        if (previous.phase === 'active' || previous.phase === 'released') return { hostId, transitionId: requestId, canonicalHostId: hostId, ...(previous.phase === 'released' ? { historical: true, pairingReleased: true } : {}) };
       } else {
         this.assertWriter(repo); this.idle(repo); await this.repos.current(repo); await clean(repo.path);
         const remote = await this.call(hostId, 'repository.inspect', { repositoryId: repo.id });
@@ -151,15 +156,73 @@ export class Peers {
         this.idle(repo);
         await this.prepareFence?.(repo); this.idle(repo);
         const transition: Authority = { transitionId: requestId, epoch: (previous?.epoch ?? 0) + 1, previousTransitionId: previous?.transitionId ?? null, previousOwnerHostId: this.store.hostId, ownerHostId: hostId, peerHostId: hostId, phase: 'frozen', tip, policy: repo.revision };
+        const proposal = this.store.record<Authority>('authorityProposal', requestId);
+        requireValue(!proposal || digest(proposal) === digest(transition), 'AUTHORITY_SELECTION_CHANGED', 'The retained owner-transfer proposal has different history, policy or authority. Preserve it for reconciliation.', 3);
+        this.store.put('authorityProposal', requestId, transition);
+        const prepared = await this.call(hostId, 'authority.prepare', { repositoryId: repo.id, transition });
+        requireValue(prepared['transitionDigest'] === digest(transition), 'AUTHORITY_RECEIPT_INVALID', 'The destination did not reserve this exact owner transition.', 3);
+        this.store.assertRepositoryAvailable(repo.id); this.idle(repo);
+        requireValue(digest(this.store.record('authority', repo.id)) === digest(previous) && digest(this.repos.all().find(row => row.id === repo.id)) === digest(repo),
+          'AUTHORITY_CONFLICT', 'Local authority or enrollment changed during preparation. Retry only the retained transition.', 3);
         // Durable local fence precedes any message that could enable the remote owner.
         this.store.transaction(() => { this.store.put('authority', repo.id, transition); this.repos.save({ ...repo, availability: 'both-macs', canonicalHostId: hostId }); });
       }
       const frozen = this.store.record<Authority>('authority', repo.id)!;
+      if (previous?.transitionId === requestId && previous.phase === 'frozen') {
+        // An older payload may already have retained the source fence before
+        // this protocol gained destination reservations. Recover that same
+        // selection rather than abandoning an in-flight owner transition.
+        const prepared = await this.call(hostId, 'authority.prepare', { repositoryId: repo.id, transition: frozen });
+        requireValue(prepared['transitionDigest'] === digest(frozen) || prepared['transitionId'] === requestId && prepared['canonicalHostId'] === hostId,
+          'AUTHORITY_RECEIPT_INVALID', 'The destination did not reconcile the retained owner transition.', 3);
+      }
       const result = await this.call(hostId, 'authority.activate', { repositoryId: repo.id, transition: frozen });
       requireValue(result['transitionId'] === requestId && result['canonicalHostId'] === hostId, 'AUTHORITY_RECEIPT_INVALID', 'The new owner did not confirm the exact transition.', 3);
       this.store.put('authority', repo.id, { ...frozen, phase: 'active' });
       return { ...result, previousWriterDisabled: true };
     });
+  }
+  async releaseMirror(repo: Enrolled, removalId: string): Promise<MirrorRelease> {
+    const removal = this.store.record<{ id: string; repository: Enrolled; state: string }>('repositoryRemoval', repo.id);
+    const authority = this.store.record<Authority>('authority', repo.id);
+    requireValue(removal?.id === removalId && removal.state === 'prepared' && digest(removal.repository) === digest(repo),
+      'REMOVAL_FENCE_REQUIRED', 'A retained removal must fence this exact companion before releasing its pairing.', 3);
+    requireValue(repo.config.integration.adapter === 'generic-v1' && authority?.phase === 'active' && authority.ownerHostId === repo.canonicalHostId &&
+      authority.peerHostId === repo.canonicalHostId && repo.canonicalHostId !== this.store.hostId && repo.availability === 'both-macs',
+      'AUTHORITY_RELEASE_REQUIRED', 'Only the retained generic companion may release this pairing. Transfer canonical ownership explicitly before removing its owner.', 3);
+    const result = await this.call(authority.ownerHostId, 'authority.release-mirror', { repositoryId: repo.id, removalId,
+      transitionId: authority.transitionId, epoch: authority.epoch, policy: repo.revision });
+    const receipt = object(result['release']) as unknown as MirrorRelease;
+    requireValue(receipt.removalId === removalId && receipt.repositoryId === repo.id && receipt.removedHostId === this.store.hostId &&
+      receipt.ownerHostId === authority.ownerHostId && receipt.transitionId === authority.transitionId && receipt.epoch === authority.epoch && receipt.policy === repo.revision &&
+      typeof receipt.releasedAt === 'string' && Number.isFinite(Date.parse(receipt.releasedAt)), 'AUTHORITY_RECEIPT_INVALID', 'The canonical host did not confirm this exact companion release.', 3);
+    requireValue(digest(this.store.record('authority', repo.id)) === digest(authority), 'AUTHORITY_CONFLICT', 'Authority changed while companion release was in flight. Preserve the removal for reconciliation.', 3);
+    return receipt;
+  }
+  private acceptMirrorRelease(repo: Enrolled, from: string, body: ObjectValue): ObjectValue {
+    requireValue(Object.keys(body).sort().join() === ['repositoryId', 'removalId', 'transitionId', 'epoch', 'policy'].sort().join(), 'INVALID_PEER_REQUEST', 'Companion release accepts only the exact retained authority selection.', 2);
+    const removalId = uuid(body['removalId'], 'removalId'), retained = this.store.record<MirrorRelease>('authorityRelease', removalId);
+    if (retained) {
+      requireValue(retained.repositoryId === repo.id && retained.removedHostId === from && retained.ownerHostId === this.store.hostId &&
+        retained.transitionId === body['transitionId'] && retained.epoch === body['epoch'] && retained.policy === body['policy'],
+        'REQUEST_ID_CONFLICT', 'This release identity already belongs to different authority.', 3);
+      return { release: retained }; // Historical reply never changes current authority.
+    }
+    this.store.assertRepositoryAvailable(repo.id);
+    const authority = this.store.record<Authority>('authority', repo.id);
+    requireValue(repo.config.integration.adapter === 'generic-v1' && repo.availability === 'both-macs' && repo.canonicalHostId === this.store.hostId &&
+      authority?.phase === 'active' && authority.ownerHostId === this.store.hostId && authority.peerHostId === from &&
+      authority.transitionId === body['transitionId'] && authority.epoch === body['epoch'] && repo.revision === body['policy'],
+      'AUTHORITY_RELEASE_REQUIRED', 'This sender does not identify the current generic companion and canonical authority.', 3);
+    this.idle(repo);
+    const release: MirrorRelease = { removalId, repositoryId: repo.id, removedHostId: from, ownerHostId: this.store.hostId,
+      transitionId: authority.transitionId, epoch: authority.epoch, policy: repo.revision, releasedAt: now() };
+    this.store.transaction(() => {
+      this.store.put('authorityRelease', removalId, release);
+      this.store.put('authority', repo.id, { ...authority, phase: 'released' });
+      this.repos.save({ ...repo, availability: 'this-mac' });
+    });
+    return { release };
   }
   async receive(envelope: ObjectValue): Promise<ObjectValue> {
     requireValue(Object.keys(envelope).every(key => ['fromHostId', 'expectedHostId', 'compatibility', 'action', 'body'].includes(key)), 'INVALID_PEER_REQUEST', 'Unexpected peer fields.', 2);
@@ -181,7 +244,9 @@ export class Peers {
     const repositoryId = uuid(body['repositoryId'], 'repositoryId'), repo = await this.repos.get(repositoryId);
     const result = await this.serial(repositoryId, async (): Promise<ObjectValue> => {
       if (action === 'repository.inspect') return { repositoryId, branch: repo.config.integration.branch, policy: repo.revision, tip: (await identity(repo.path)).tip, canonicalHostId: repo.canonicalHostId, completionPending: this.receiptPending(repo) };
-      if (action === 'authority.activate') {
+      if (action === 'authority.release-mirror') return this.acceptMirrorRelease(repo, from, body);
+      if (action === 'authority.prepare' || action === 'authority.activate') {
+        this.store.assertRepositoryAvailable(repo.id);
         requireValue(repo.config.integration.adapter === 'generic-v1', 'ADOPTED_AUTHORITY_MIGRATION_REQUIRED',
           'The adopted project needs its complete cooperating-writer cutover before it can accept canonical ownership.', 3);
         const transition = object(body['transition']);
@@ -189,14 +254,24 @@ export class Peers {
         const transitionId = uuid(transition['transitionId'], 'transitionId'), prior = this.store.record<Authority>('authority', repositoryId);
         if (prior?.transitionId === transitionId && prior.phase === 'active') return { transitionId, canonicalHostId: this.store.hostId };
         requireValue(transition['epoch'] === (prior?.epoch ?? 0) + 1 && transition['previousTransitionId'] === (prior?.transitionId ?? null), 'STALE_AUTHORITY_TRANSITION', 'An old ownership message cannot reactivate a previous writer.');
-        requireValue(!prior || (prior.phase === 'active' && prior.ownerHostId === from), 'AUTHORITY_CONFLICT', 'This host has a different retained authority transition.');
+        requireValue(!prior || (['active', 'released'].includes(prior.phase) && prior.ownerHostId === from), 'AUTHORITY_CONFLICT', 'This host has a different retained authority transition.');
+        const reservation = this.store.record<{ from: string; transitionDigest: string }>('authorityReservation', repo.id);
+        requireValue(!reservation || reservation.from === from && reservation.transitionDigest === digest(transition), 'AUTHORITY_TRANSITION_PENDING', 'Another exact authority transition already reserved this clone.', 3);
+        if (action === 'authority.activate') requireValue(reservation, 'AUTHORITY_PREPARE_REQUIRED', 'Reserve this owner transition before activating it.', 3);
         this.idle(repo); await this.repos.current(repo); await clean(repo.path);
         requireValue(repo.canonicalHostId === this.store.hostId || repo.canonicalHostId === from, 'AUTHORITY_CONFLICT', 'A third host owns this repository.');
         requireValue(transition['policy'] === repo.revision, 'PEER_POLICY_MISMATCH', 'The remote policy changed.');
         const tip = (await identity(repo.path)).tip;
         requireValue(!tip || !transition['tip'] || tip === transition['tip'], 'DIVERGENT_HISTORY', 'Canonical history changed during ownership transfer.');
         await this.prepareFence?.(repo); this.idle(repo);
+        this.store.assertRepositoryAvailable(repo.id);
+        requireValue(digest(this.repos.all().find(row => row.id === repo.id)) === digest(repo), 'AUTHORITY_CONFLICT', 'Enrollment changed during authority inspection.', 3);
+        if (action === 'authority.prepare') {
+          const prepared = { from, transitionId, transitionDigest: digest(transition) };
+          this.store.put('authorityReservation', repo.id, prepared); return prepared;
+        }
         this.store.transaction(() => {
+          this.store.db.prepare("DELETE FROM records WHERE namespace='authorityReservation' AND key=?").run(repo.id);
           this.store.put('authority', repositoryId, { transitionId, epoch: transition['epoch'], previousTransitionId: transition['previousTransitionId'], ownerHostId: this.store.hostId, previousOwnerHostId: from, peerHostId: from, phase: 'active', tip, policy: repo.revision });
           this.repos.save({ ...repo, availability: 'both-macs', canonicalHostId: this.store.hostId });
         });
@@ -205,6 +280,7 @@ export class Peers {
       // An old authenticated sender can finish a receipt exchange while owner
       // activation is frozen. This grants no repository mutation authority.
       if (action === 'operation.acknowledge') return this.acceptCompletion(repo, from, body);
+      this.store.assertRepositoryAvailable(repo.id);
       const authority = this.store.record<Authority>('authority', repositoryId);
       requireValue(repo.availability === 'both-macs' && authority?.phase === 'active' && authority.peerHostId === from, 'REPOSITORY_PEER_UNAUTHORIZED', 'This peer is not associated with the repository authority.');
       if (action === 'device.ownership.accept') {

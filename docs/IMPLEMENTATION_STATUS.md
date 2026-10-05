@@ -294,3 +294,32 @@ was added and included in the full run. Five new retention groups cover shared
 quota, UTF-8 bounds, unavailable/expired sources, protected records and immutable
 completion replay. No actual remote host or live output was accessed. SQLite
 page allocation remains separately accounted for by the managed-data cap.
+
+## Paired companion removal and authority reservation
+
+Generic companions can now unenroll through a durable local removal fence and
+an exact release receipt from the canonical host. The owner keeps its writer
+authority and becomes local-only; the departing clone preserves dirty/staged
+work, history and the prior authority epoch. Lost replies and changed hooks
+retain the same removal continuation. Reenrollment cannot promote the removed
+companion: it stays fenced until a newer explicit owner transition. Canonical
+removal requires an explicit ownership transfer first; adopted paired removal
+still depends on its unfinished writer migration.
+
+Owner transfer now reserves the destination before disabling the source. That
+reservation excludes a competing removal, while an already retained removal
+refuses reservation before the old owner is disabled. Old in-flight source
+fences can establish the new reservation during same-request recovery. Lifecycle
+checks also preserve interrupted work, unfinished captures, incoming transfers,
+potentially live workers and unacknowledged completion evidence.
+
+The full 336-test suite passed with generated/strict/type and foundation checks
+(`.build/check-paired-removal.log`). After the final upgrade-recovery addition,
+the strict build and 25 focused paired-lifecycle/peer tests passed
+(`.build/paired-removal-final-tests.log`); foundation preservation passed with
+261 local links. Nine new fixture groups cover peer release, journal reopening,
+fenced reenrollment, authorization, dependency preservation and both concurrent
+lifecycle orderings. An initial fixture attempted to fetch into its checked-out
+unborn branch; its setup now fetches to FETCH_HEAD before selecting the fixture
+branch. All repository and network activity used disposable clones and injected
+local transport. No real project was removed or paired.

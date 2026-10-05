@@ -329,6 +329,15 @@ export class Engine {
           response.error.nextActions = [{ id: 'resume-creation', label: 'Resolve the reported condition and resume this project creation', argv: ['contribution', 'repos', 'create', intent.requestedPath, '--request-id', requestId, '--json'] }];
         }
       }
+      if (command === 'repos.remove' && response.error && typeof args?.['repo'] === 'string') {
+        const removal = this.store.records<{ id: string; repository: Enrolled; state: string }>('repositoryRemoval')
+          .find(row => row.state !== 'completed' && [row.repository.id, row.repository.path].includes(String(args['repo'])));
+        if (removal) {
+          response.result = { ...response.result, requestRetained: true, removalId: removal.id, repositoryId: removal.repository.id };
+          response.error.nextActions = [{ id: 'resume-removal', label: 'Resolve the reported condition and resume this retained repository removal',
+            argv: ['contribution', 'repos', 'remove', '--repo', removal.repository.id, '--json'] }];
+        }
+      }
       if (command === 'service.storage' && response.error && typeof args?.['requestId'] === 'string') {
         const worktrees = args['worktrees'] === true, requestId = args['requestId'];
         const retained = this.store.record<{ state: string; token?: string; preview?: { token: string } }>(worktrees ? 'worktreeCleanup' : 'storageCleanup', requestId);
@@ -634,10 +643,11 @@ export class Engine {
       if (command === 'github.logs') return completed(await this.github.logs(repo, Number(args['runId']), Number(args['attempt']), Number(args['jobId'])));
       if (command === 'repos.pair') return completed(await this.peers.bind(repo, string(args['host'], 'host'), string(args['requestId'], 'requestId')));
       if (command === 'repos.seed' || command === 'repos.mirror') return this.store.response(await this.peers.captureHistory(repo, command === 'repos.seed' ? 'seed' : 'mirror', string(args['requestId'], 'requestId')));
-      if (command === 'repos.inspect') return completed({ repository: repo.config, revision: repo.revision, path: repo.path, commonDirectory: repo.commonDir, availability: repo.availability, canonicalHostId: repo.canonicalHostId });
+      if (command === 'repos.inspect') return completed({ repository: repo.config, revision: repo.revision, path: repo.path, commonDirectory: repo.commonDir, availability: repo.availability, canonicalHostId: repo.canonicalHostId,
+        authority: this.store.record('authority', repo.id) ?? null, authorityReservation: this.store.record('authorityReservation', repo.id) ?? null });
       if (command === 'repos.relocate') return completed({ repository: await this.repos.relocate(repo, string(args['path'], 'path')) });
       if (command === 'repos.remove') {
-        return completed(await new RepositoryRemoval(this.store, this.repos).remove(repo));
+        return completed(await new RepositoryRemoval(this.store, this.repos, (selected, removalId) => this.peers.releaseMirror(selected, removalId)).remove(repo));
       }
       if (command === 'repos.configure') {
         requireValue(args['resume'] === undefined || args['resume'] === true, 'INVALID_USAGE', 'Use --resume with only the repository and retained request ID.', 2);

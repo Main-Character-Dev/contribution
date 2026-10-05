@@ -7,6 +7,7 @@ import { Journal } from './journal.js';
 import { digest, id, now, requireValue } from './core.js';
 import type { ObjectValue } from './core.js';
 import type { AdoptedHookRegistration } from './adopted-hooks.js';
+import type { Authority } from './peers.js';
 import { git, gitText, identity } from './git.js';
 
 export interface Enrolled {
@@ -58,8 +59,13 @@ export class Repositories {
     requireValue(!expected || (config.repositoryId === expected.repositoryId && digest(config) === expected.revision), 'REGISTRY_MAPPING_CONFLICT', 'Select a clone with the matching reviewed contribution.json identity and configuration. No project was enrolled.');
     requireValue(!expected || info.branch === config.integration.branch, 'ACTIVE_BRANCH_CHANGED', 'Select the local checkout on the project’s configured integration branch.');
     requireValue(!this.all().some(repo => repo.id === config.repositoryId), 'CLONE_IDENTITY_CONFLICT', 'This logical repository already has a different local clone. Reconcile its mapping explicitly.');
+    const authority = this.store.record<Authority>('authority', config.repositoryId);
+    requireValue(!authority || authority.phase === 'released', 'AUTHORITY_RECONCILIATION_REQUIRED', 'A retained pairing still owns this repository identity. Reconcile it before reenrollment.', 3);
+    // Removing a companion does not erase its authority epoch. Reenrollment is
+    // a fenced mapping until the retained owner explicitly pairs it again.
+    const owner = authority?.ownerHostId ?? this.store.hostId;
     const repo: Enrolled = { id: config.repositoryId, path: info.path, commonDir: info.commonDir, config, revision: digest(config),
-      canonicalHostId: this.store.hostId, availability, policySource: existsSync(file) ? 'tracked' : 'generated', hookPath };
+      canonicalHostId: owner, availability: owner === this.store.hostId ? availability : 'both-macs', policySource: existsSync(file) ? 'tracked' : 'generated', hookPath };
     this.save(repo, true); return repo;
   }
   async create(inputPath: string, requestId: string): Promise<Enrolled> {

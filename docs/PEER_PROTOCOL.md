@@ -6,6 +6,20 @@ The generic two-host implementation uses the installed `contribution peer --stdi
 
 `repos pair --repo ID --host OWNER --request-id UUID` transfers a generic repository's canonical authority. It requires idle, clean, compatible enrollments and identical committed history or an unborn side. Contribution installs its matching publication guard while preserving any existing hook owner. The initiating writer is durably fenced before the receiver can activate. Monotonic authority epochs and predecessor identities reject replayed old activations. Retrying the same request after a lost acknowledgment reconciles the same transition. Unavailability never elects another owner. Existing projects remain blocked until their hook and writer adapters are adopted.
 
+Before the initiating writer is disabled, `authority.prepare` retains the exact
+destination reservation. The proposal and reservation survive lost replies and
+prevent concurrent companion removal from stranding an ownership transition.
+Activation consumes only its matching reservation. Older peers that do not
+support preparation must be updated; there is no unreserved fallback. A retained
+proposal cannot select different history or policy under the same request.
+
+Generic companion removal uses `authority.release-mirror` after its local
+removal fence is durable. The canonical host retains the exact release and its
+owner epoch while switching to local-only availability. Historical release
+replies never mutate newer authority. The companion preserves that epoch after
+unenrollment, and reenrollment cannot independently grant itself writer rights.
+See [repository removal](REPOSITORY_REMOVAL.md) for recovery and exclusions.
+
 `repos seed` retains the initial history for an unborn canonical target. Ordinary `submit` retains the exact completed source, declared base, attribution and policy. Each outbox has a retained ref, bundle and digest. A transfer uses an immutable manifest, bounded 256 KiB chunks, fsynced offsets and an exact receipt. A logical submission identity is independent of its transport identity; replacing a bundle to supply prerequisites cannot create another landing. Total Git bundle size is currently bounded to 256 MiB. Larger repositories need an explicit bounded transfer extension rather than silent truncation.
 
 The receiver verifies size, SHA-256, object format, the sole declared ref, prerequisites, complete ordinary Git history, attribution and policy before admission. It imports only into a dedicated incoming namespace. It never executes an incoming tree to inspect it. Shallow history, submodules and Git LFS remain explicit generic-adapter limitations. The canonical journal and source ref precede acknowledgment; duplicate receipt delivery returns the original operation.
