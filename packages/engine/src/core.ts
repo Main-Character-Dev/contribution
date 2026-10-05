@@ -24,7 +24,7 @@ export function canonical(value: unknown): string {
   if (value && typeof value === 'object') return '{' + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => JSON.stringify(k) + ':' + canonical(v)).join(',') + '}';
   return JSON.stringify(value) ?? 'null';
 }
-export const digest = (value: unknown): string => createHash('sha256').update(canonical(value)).digest('hex');
+export const digest = (value: unknown): string => createHash('sha256').update(value instanceof Uint8Array ? value : canonical(value)).digest('hex');
 export const now = (): string => new Date().toISOString();
 export const id = (): string => randomUUID();
 export function completed(result: ObjectValue = {}): Response {

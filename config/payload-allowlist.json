@@ -1,10 +1,12 @@
 {
-  "status": "development-only; M0 must define and verify immutable installed payloads",
+  "status": "unsigned development app and immutable engine payload; signed release qualification pending",
   "developmentAppInputs": [
     "apps/macos/Sources/ContributionApp.swift",
     "apps/macos/Packages/ContributionPlatform/Sources/ContributionPlatform/*.swift",
     "apps/macos/Config/Info.plist",
-    "apps/macos/Config/Version.xcconfig"
+    "apps/macos/Config/Version.xcconfig",
+    "apps/macos/ServiceLauncher.swift",
+    "apps/macos/Config/dev.contribution.service.plist"
   ],
   "developmentCLIInputs": [
     "packages/cli/dist/*.js",
@@ -14,5 +16,23 @@
     "packages/contracts/schemas/*.json"
   ],
   "releasePackaging": "unavailable",
-  "releaseInputs": []
+  "releaseInputs": [],
+  "developmentEngine": {
+    "workspacePackages": [
+      "contracts",
+      "adapters",
+      "engine",
+      "cli"
+    ],
+    "runtimeBinary": ".tools/node/bin/node",
+    "runtimeDependencies": [
+      "ajv",
+      "ajv-formats"
+    ],
+    "rootFiles": [
+      "LICENSE",
+      "version.json"
+    ],
+    "manifestVersion": 1
+  }
 }

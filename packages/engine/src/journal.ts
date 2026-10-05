@@ -112,7 +112,8 @@ export class Journal {
   response(op: Operation): Response {
     return { schemaVersion: 1, requestStatus: terminal.has(op.state) || op.error ? 'completed' : 'accepted', operationId: op.operationId,
       operationState: op.state, result: { ...op.result, kind: op.kind, stage: op.stage, attemptId: op.attemptId, payload: op.payload,
-        acceptance: { localDurable: true, canonicalHostAccepted: op.state !== 'queued_local', canonicalHostId: this.hostId, acceptedAt: op.createdAt } }, error: op.error };
+        acceptance: { localDurable: true, canonicalHostAccepted: op.result['canonicalHostAccepted'] ?? (op.state !== 'queued_local' && !op.kind.startsWith('transfer.')),
+          canonicalHostId: op.result['canonicalHostId'] ?? this.hostId, acceptedAt: op.createdAt } }, error: op.error };
   }
   async backup(path: string): Promise<void> { await backup(this.db, path); chmodSync(path, 0o600); }
   close(): void { this.db.close(); }

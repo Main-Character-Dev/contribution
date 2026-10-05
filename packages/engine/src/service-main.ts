@@ -18,11 +18,12 @@ try {
   process.stdout.write(JSON.stringify({ state: 'ready', hostId: journal.hostId, payload: payload.identity }) + '\n');
   let closing = false;
   const monitor = setInterval(() => { if (!engine.stopping) void engine.github.tick(engine.repos.all()); }, 30000);
+  const peerMonitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('paused') && !journal.getMeta('maintenance')) void engine.peers.tick(); }, 1500);
   const close = (): void => {
-    if (closing) return; closing = true; engine.stopping = true; clearInterval(monitor);
+    if (closing) return; closing = true; engine.stopping = true; clearInterval(monitor); clearInterval(peerMonitor);
     // A maintenance stop drains instead of killing owned effects.
     const drain = setInterval(() => {
-      if (engine.active.size) return;
+      if (engine.active.size || engine.peers.busy) return;
       clearInterval(drain); server.close(() => {
         try { unlinkSync(socketPath(directory)); } catch { /* server may remove it */ }
         journal.close(); lock.release(); process.exitCode = 0;

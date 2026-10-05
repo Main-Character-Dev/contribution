@@ -12,30 +12,38 @@ import { discover, identity, git, gitText, inputFingerprint } from './git.js';
 import { Lease, alive, processIdentity } from './process.js';
 import type { Payload } from './payload.js';
 import { GitHubMonitor } from './github.js';
+import { Peers } from './peers.js';
+import type { PeerTransport } from './peers.js';
 
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
-  'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability'], 'repos.create': ['path', 'requestId'],
+  'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
+  'repos.pair': ['repo', 'host', 'requestId'], 'repos.seed': ['repo', 'requestId'], 'repos.mirror': ['repo', 'requestId'],
   'repos.initialize': ['repo', 'requestId'], 'repos.inspect': ['repo'], 'repos.configure': ['repo', 'config', 'expectedRevision', 'requestId'],
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata'],
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
   'runs.list': ['repo'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
-  'runs.events': ['operationId', 'after'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
-  'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [],
+  'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
+  'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin'], 'update.check': [], 'update.apply': ['whenIdle'],
 };
 export class Engine {
   readonly repos: Repositories;
   readonly workflows: Workflows;
   readonly github: GitHubMonitor;
+  readonly peers: Peers;
   readonly active = new Map<string, AbortController>();
   readonly activeRepositories = new Set<string>();
   stopping = false;
   private scheduled = false;
-  constructor(readonly store: Journal, readonly payload: Payload) {
+  constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport) {
     this.repos = new Repositories(store); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
+    this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
+    this.peers.cancelLocal = op => this.cancel(op);
+    this.peers.prepareFence = repo => this.workflows.ensureHook(repo);
+    this.peers.dispatchLocal = (command, args) => this.dispatch({ schemaVersion: 1, command, args, cwd: this.store.directory });
     if (!store.getMeta('settings')) {
       const settings: Machine = { schemaVersion: 1, hostId: store.hostId, label: 'This Mac', role: 'standalone', primaryHostId: store.hostId,
         primarySshAlias: null, projectRoots: [], repositories: [], notifications: { preferredHostId: store.hostId, success: true, failure: true },
@@ -57,7 +65,7 @@ export class Engine {
     if (this.stopping || this.store.getMeta<boolean>('paused') || this.store.getMeta<boolean>('maintenance')) return;
     for (const op of this.store.queue()) {
       if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId)) continue;
-      const blocked = this.store.unsettled().some(other => other.repositoryId === op.repositoryId && other.operationId !== op.operationId && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
+      const blocked = this.store.unsettled().some(other => other.repositoryId === op.repositoryId && other.operationId !== op.operationId && !other.result['remoteOperationId'] && ['outcome_unknown', 'needs_attention', 'waiting'].includes(other.state));
       if (blocked) continue;
       const controller = new AbortController(); this.active.set(op.operationId, controller); this.activeRepositories.add(op.repositoryId);
       void this.execute(op, controller.signal).finally(() => { this.active.delete(op.operationId); this.activeRepositories.delete(op.repositoryId); this.kick(); });
@@ -74,9 +82,11 @@ export class Engine {
       else {
         const repo = await this.repos.get(op.repositoryId);
         lease = new Lease(repo.commonDir, op.attemptId);
+        if (['initialize', 'submit', 'push', 'seed'].includes(op.kind)) this.peers.assertWriter(repo);
         if (op.kind === 'initialize') result = await this.workflows.initialize(op, repo);
         else if (op.kind === 'submit') result = await this.workflows.landing(op, repo);
         else if (op.kind === 'push') result = await this.workflows.push(op, repo, signal, lease);
+        else if (op.kind === 'seed' || op.kind === 'mirror') result = await this.peers.applyHistory(op, repo);
         else if (op.kind === 'checks') {
           requireValue(op.input['policy'] === repo.revision, 'POLICY_CHANGED', 'Check policy changed after admission.');
           const source = string(op.input['sourcePath'], 'sourcePath');
@@ -86,6 +96,13 @@ export class Engine {
       }
       const latest = this.store.get(op.operationId);
       this.store.update(latest, { state: 'succeeded', stage: 'completed', result: { ...latest.result, ...result, completedAt: now() }, error: null }, 'operation.succeeded');
+      if (op.kind === 'submit') {
+        const repo = await this.repos.get(op.repositoryId);
+        if (repo.availability === 'both-macs') {
+          try { await this.peers.captureHistory(repo, 'mirror', crypto.randomUUID()); }
+          catch (error) { this.store.put('mirrorPending', repo.id, { operationId: op.operationId, reason: error instanceof Fault ? error.code : 'MIRROR_CAPTURE_FAILED' }); }
+        }
+      }
     } catch (error) {
       const fault = error instanceof Fault ? error : new Fault('INTERNAL_ERROR', 'The worker stopped unexpectedly. Retained effect evidence needs inspection.', 5);
       const latest = this.store.get(op.operationId);
@@ -103,6 +120,13 @@ export class Engine {
     const logBytes = readdirSync(join(this.store.directory, 'logs')).reduce((total, name) => total + statSync(join(this.store.directory, 'logs', name)).size, 0);
     requireValue(logBytes < settings.retention.maxLogBytes, 'STORAGE_PRESSURE', 'Retained logs reached the configured quota. Free or export eligible evidence before more work.', 3);
     const op = this.store.admit(string(requestId, 'requestId'), kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
+  }
+  private cancel(op: Operation): Response {
+    if (terminal.has(op.state)) return this.store.response(op);
+    const controller = this.active.get(op.operationId);
+    if (controller) { controller.abort(); return this.store.response(this.store.get(op.operationId)); }
+    if (op.state === 'queued_local' && op.result['transferAttempted']) return this.store.response(this.store.update(op, { result: { ...op.result, cancelRequested: true, nextPeerAttempt: 0 } }));
+    return this.store.response(this.store.update(op, { state: 'cancelled', stage: 'cancelled_before_dispatch' }));
   }
   private applySettings(op: Operation): ObjectValue {
     const config = op.input['config'] as unknown as Machine; assertContract('machine', config);
@@ -136,7 +160,9 @@ export class Engine {
         this.store.setMeta('maintenance', true); this.stopping = true; return completed({ state: 'restart_ready', queuedPreserved: this.store.queue().length });
       }
       if (command === 'update.check') return completed({ status: 'not_configured', reason: 'SIGNED_FEED_REQUIRED', automaticInstallation: false });
-      if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }] });
+      if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list()] });
+      if (command === 'hosts.pair') return completed(await this.peers.pair(string(args['sshAlias'], 'sshAlias')));
+      if (command === 'peer.exchange') { const result = await this.peers.receive(object(args['envelope'])); this.kick(); return completed(result); }
       if (command === 'settings.get') return completed({ settings: this.settings(), revision: digest(this.settings()) });
       if (command === 'settings.apply') { assertContract('machine', args['config']); return this.admit(args['requestId'], command, this.store.hostId, { config: args['config'], expectedRevision: string(args['expectedRevision'], 'expectedRevision') }); }
       if (command === 'repos.list') return completed({ repositories: this.repos.all() });
@@ -144,26 +170,27 @@ export class Engine {
       if (command === 'repos.add') {
         requireValue(args['profile'] === undefined || ['local-development', 'standard'].includes(String(args['profile'])), 'INVALID_PROFILE', 'Unknown profile.', 2);
         requireValue(args['availability'] === undefined || ['this-mac', 'both-macs'].includes(String(args['availability'])), 'INVALID_AVAILABILITY', 'Unknown availability.', 2);
-        return completed({ repository: await this.repos.add(string(args['path'], 'path'), args['profile'] as 'local-development' | 'standard' | undefined, args['availability'] as 'this-mac' | 'both-macs' | undefined) });
+        return completed({ repository: await this.repos.add(string(args['path'], 'path'), args['profile'] as 'local-development' | 'standard' | undefined, args['availability'] as 'this-mac' | 'both-macs' | undefined, args['config'] as Repository | undefined) });
       }
       if (command === 'repos.create') {
         const repo = await this.repos.create(string(args['path'], 'path')); return this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
       }
       if (command === 'runs.list') return completed({ operations: this.store.list().filter(op => !args['repo'] || op.repositoryId === args['repo']) });
       if (command === 'runs.events') return completed({ events: this.store.events(Math.max(0, Number(args['after'] ?? 0)), typeof args['operationId'] === 'string' ? args['operationId'] : undefined) });
-      if (['runs.get', 'runs.cancel', 'runs.pin', 'runs.unpin', 'logs', 'repair-context'].includes(command)) {
-        const op = this.store.get(string(args['operationId'], 'operationId'));
+      if (['runs.get', 'runs.cancel', 'runs.pin', 'runs.unpin', 'runs.reconcile', 'logs', 'repair-context'].includes(command)) {
+        let op = this.store.get(string(args['operationId'], 'operationId'));
+        if (command === 'runs.reconcile') { await this.recoverObservedEffects(op.operationId); this.kick(); op = this.store.get(op.operationId); }
         if (command === 'logs') return completed({ operationId: op.operationId, attemptId: op.attemptId, text: this.store.logs(op, Number(args['tail'] ?? 200)) });
         if (command === 'repair-context') return completed({ operation: op, log: this.store.logs(op, 100), boundaries: ['Repair only the recorded failure.', 'Preserve unrelated work.', 'Publication needs a new explicit preview when scope changes.'] });
         if (command === 'runs.pin' || command === 'runs.unpin') return this.store.response(this.store.update(op, { pinned: command === 'runs.pin' }));
         if (command === 'runs.cancel' && !terminal.has(op.state)) {
-          const controller = this.active.get(op.operationId);
-          if (controller) { controller.abort(); return completed({ operationId: op.operationId, cancellation: 'requested' }); }
-          return this.store.response(this.store.update(op, { state: 'cancelled', stage: 'cancelled_before_dispatch' }));
+          return this.cancel(op);
         }
         return this.store.response(op);
       }
       const repo = await this.repos.get(typeof args['repo'] === 'string' ? args['repo'] : cwd);
+      if (command === 'repos.pair') return completed(await this.peers.bind(repo, string(args['host'], 'host'), string(args['requestId'], 'requestId')));
+      if (command === 'repos.seed' || command === 'repos.mirror') return this.store.response(await this.peers.captureHistory(repo, command === 'repos.seed' ? 'seed' : 'mirror', string(args['requestId'], 'requestId')));
       if (command === 'repos.inspect') return completed({ repository: repo.config, revision: repo.revision, path: repo.path, commonDirectory: repo.commonDir, availability: repo.availability, canonicalHostId: repo.canonicalHostId });
       if (command === 'repos.relocate') return completed({ repository: await this.repos.relocate(repo, string(args['path'], 'path')) });
       if (command === 'repos.remove') {
@@ -181,10 +208,33 @@ export class Engine {
       }
       if (command === 'repos.initialize') return this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
       if (command === 'status') {
+        if (repo.canonicalHostId !== this.store.hostId) {
+          if (args['refresh'] === true) {
+            try {
+              const observed = await this.peers.call(repo.canonicalHostId, 'repository.status', { repositoryId: repo.id });
+              const response = observed['response'] as Response;
+              if (response.error) return response;
+              this.store.put('canonicalStatus', repo.id, { ...response.result, canonicalObservedAt: now() });
+              return completed({ ...response.result, canonicalObservedAt: now(), ownerFreshness: 'fresh', localMirrorTip: (await identity(repo.path)).tip });
+            } catch (error) {
+              return completed({ canonicalHostId: repo.canonicalHostId, canonicalTip: null, ownerFreshness: 'unavailable', lastKnown: this.store.record('canonicalStatus', repo.id) ?? null,
+                reason: error instanceof Fault ? error.code : 'PEER_UNAVAILABLE', localMirrorTip: (await identity(repo.path)).tip });
+            }
+          }
+          return completed({ canonicalHostId: repo.canonicalHostId, canonicalTip: null, ownerFreshness: 'stale', lastKnown: this.store.record('canonicalStatus', repo.id) ?? null, localMirrorTip: (await identity(repo.path)).tip });
+        }
         const github = args['refresh'] === true ? await this.github.refresh(repo) : this.store.record('github', repo.id) ?? null;
         return completed({ ...await this.repos.status(repo, args['refresh'] === true), github });
       }
       if (command === 'push') {
+        if (repo.canonicalHostId !== this.store.hostId) {
+          if (args['preview'] === true) {
+            const result = await this.peers.call(repo.canonicalHostId, 'publication.preview', { repositoryId: repo.id });
+            return result['response'] as Response;
+          }
+          const requestId = string(args['requestId'], 'requestId'), input = { expectedTip: string(args['expectedTip'], 'expectedTip'), scopeToken: string(args['scopeToken'], 'scopeToken'), destinationHostId: repo.canonicalHostId };
+          return this.store.response(this.store.admit(requestId, 'remote.push', repo.id, input, this.payload.identity, 'queued_local'));
+        }
         if (args['preview'] === true) return completed(await this.workflows.preview(repo));
         const requestId = string(args['requestId'], 'requestId');
         const input = await this.workflows.pushInput(repo, string(args['expectedTip'], 'expectedTip'), string(args['scopeToken'], 'scopeToken'), requestId);
@@ -211,6 +261,7 @@ export class Engine {
         return this.admit(requestId, 'checks', repo.id, { ...selection, selection, sourceTip: source.tip, fingerprint: await inputFingerprint(sourcePath), policy: repo.revision });
       }
       if (command === 'hook.pre-push') {
+        this.peers.assertWriter(repo);
         if (!args['operationId']) {
           const op = this.store.admit(crypto.randomUUID(), 'external_gate', repo.id, args, this.payload.identity, 'running');
           const controller = new AbortController(); let lease: Lease | undefined;
@@ -237,8 +288,8 @@ export class Engine {
       throw new Fault('OPERATION_UNSUPPORTED', 'This command is not implemented.', 3);
     } catch (error) { return rejected(error); }
   }
-  async recoverObservedEffects(): Promise<void> {
-    for (const op of this.store.unsettled().filter(item => item.state === 'outcome_unknown')) {
+  async recoverObservedEffects(operationId?: string): Promise<void> {
+    for (const op of this.store.unsettled().filter(item => item.state === 'outcome_unknown' && (!operationId || item.operationId === operationId))) {
       const processes = op.result['processes'] as { pid: number; start: string | null }[] | undefined;
       if (processes?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start))) continue;
       const repo = await this.repos.get(op.repositoryId);
@@ -254,9 +305,22 @@ export class Engine {
           this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null });
         }
       } else if (op.kind === 'initialize' && op.result['bootstrapTip'] === (await identity(repo.path)).tip) {
+        const cleanGenerated = await git(repo.path, ['diff', '--quiet', String(op.result['bootstrapTip']), '--', 'contribution.json', 'CONTRIBUTION.md']);
+        if (cleanGenerated.code !== 0) continue;
         await gitText(repo.path, ['add', '--', 'contribution.json', 'CONTRIBUTION.md']);
         this.repos.save({ ...repo, policySource: 'tracked' }); this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null });
+      } else if (['seed', 'mirror'].includes(op.kind) && op.result['historyTip'] === (await identity(repo.path)).tip && !(await gitText(repo.path, ['status', '--porcelain=v1']))) {
+        this.store.put('historyReceipt', op.requestId, op.result);
+        this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null });
       }
+    }
+    for (const repo of this.repos.all()) {
+      const lease = Lease.inspect(repo.commonDir); if (!lease) continue;
+      const owner = this.store.list(100000).find(op => op.attemptId === lease.attemptId);
+      if (!owner || !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(owner.state)) continue;
+      const children = owner.result['processes'] as { pid: number; start: string | null }[] | undefined;
+      if (children?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start))) continue;
+      if (Lease.reclaim(repo.commonDir, lease)) this.store.put('leaseRecovery', lease.attemptId, { recoveredAt: now(), operationId: owner.operationId });
     }
   }
 }

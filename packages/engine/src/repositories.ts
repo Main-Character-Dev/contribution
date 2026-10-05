@@ -22,7 +22,7 @@ export class Repositories {
     const matching = this.all().filter(repo => repo.commonDir === common);
     requireValue(matching.length === 1, 'REPOSITORY_NOT_ENROLLED', 'Supply one enrolled repository ID or checkout path.', 2); return matching[0]!;
   }
-  async add(path: string, profile: 'local-development' | 'standard' = 'local-development', availability: 'this-mac' | 'both-macs' = 'this-mac'): Promise<Enrolled> {
+  async add(path: string, profile: 'local-development' | 'standard' = 'local-development', availability: 'this-mac' | 'both-macs' = 'this-mac', supplied?: Repository): Promise<Enrolled> {
     const info = await identity(path); const existing = this.all().find(repo => repo.commonDir === info.commonDir);
     if (existing) {
       requireValue(existing.availability === availability, 'AUTHORITY_TRANSITION_REQUIRED', 'Re-enrollment cannot change canonical ownership.'); return existing;
@@ -32,7 +32,9 @@ export class Repositories {
     const hook = await gitText(path, ['rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-push']);
     const hooksConfig = await git(path, ['config', '--get', 'core.hooksPath']);
     const hookPath = hooksConfig.code === 0 ? hooksConfig.stdout.trim() : existsSync(hook) ? hook : null;
-    if (existsSync(file)) { config = JSON.parse(readFileSync(file, 'utf8')) as Repository; assertContract('repository', config); }
+    if (supplied) { assertContract('repository', supplied); config = supplied;
+      requireValue(!existsSync(file) || digest(JSON.parse(readFileSync(file, 'utf8'))) === digest(config), 'POLICY_CHANGED', 'The supplied enrollment policy conflicts with the existing file.'); }
+    else if (existsSync(file)) { config = JSON.parse(readFileSync(file, 'utf8')) as Repository; assertContract('repository', config); }
     else {
       requireValue(info.branch, 'DETACHED_PRIMARY', 'Enrollment needs a configured primary branch. Task worktrees may remain detached.', 2);
       config = { schemaVersion: 1, repositoryId: id(), name: basename(info.path), integration: { branch: info.branch, adapter: hookPath ? 'migration-required' : 'generic-v1' },

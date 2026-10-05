@@ -5,15 +5,19 @@ import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 
 const root = resolve(import.meta.dirname, '..');
+const allowlist = JSON.parse(readFileSync(join(root, 'config/payload-allowlist.json'), 'utf8')).developmentEngine;
+assert.deepEqual(allowlist.workspacePackages, ['contracts', 'adapters', 'engine', 'cli']);
+assert.deepEqual(allowlist.runtimeDependencies, ['ajv', 'ajv-formats']);
+assert.equal(allowlist.runtimeBinary, '.tools/node/bin/node');
+assert.deepEqual(allowlist.rootFiles, ['LICENSE', 'version.json']);
 const output = resolve(process.argv[2] ?? join(root, '.build', 'payload'));
 // Never merge a release with stale files. The caller selects a fresh directory.
 mkdirSync(output, { recursive: false, mode: 0o700 });
 const require = createRequire(join(root, 'packages/contracts/package.json'));
 const copy = (from, to) => { mkdirSync(dirname(to), { recursive: true }); cpSync(from, to, { recursive: true, dereference: true }); };
-copy(join(root, '.tools/node/bin/node'), join(output, 'runtime/node'));
-copy(join(root, 'LICENSE'), join(output, 'LICENSE'));
-copy(join(root, 'version.json'), join(output, 'version.json'));
-for (const name of ['contracts', 'adapters', 'engine', 'cli']) {
+copy(join(root, allowlist.runtimeBinary), join(output, 'runtime/node'));
+for (const file of allowlist.rootFiles) copy(join(root, file), join(output, file));
+for (const name of allowlist.workspacePackages) {
   const source = join(root, 'packages', name), dest = join(output, 'node_modules/@contribution', name);
   copy(join(source, 'package.json'), join(dest, 'package.json'));
   const visit = (directory) => { for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -32,7 +36,7 @@ function dependency(name, resolver) {
   const nested = createRequire(packagePath);
   for (const child of Object.keys(metadata.dependencies ?? {})) dependency(child, nested);
 }
-dependency('ajv', require); dependency('ajv-formats', require);
+for (const name of allowlist.runtimeDependencies) dependency(name, require);
 const files = {};
 function inventory(directory) { for (const entry of readdirSync(directory, { withFileTypes: true })) {
   const path = join(directory, entry.name);

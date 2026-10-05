@@ -1,23 +1,23 @@
 # Roadmap
 
-S0 now supplies the development foundation described in [SETUP_STATUS.md](SETUP_STATUS.md). All application and hardware acceptance remains unrun. This roadmap adds S0 before the supplied implementation milestones; it removes none of them.
+S0 now supplies the development foundation described in [SETUP_STATUS.md](SETUP_STATUS.md). Application fixtures are being implemented and verified; full acceptance and hardware qualification remain incomplete. This roadmap adds S0 before the supplied implementation milestones; it removes none of them.
 
 ## Immediate next step
 
-**S0 — Repository foundation implemented.** The reproducible build, native shell, shared packages, schema validation, focused checks, privacy exclusions, short agent guidance and toolchain records are present. Visual window/menu inspection remains explicitly pending with available GUI access. See [SETUP_STATUS.md](SETUP_STATUS.md) for proof. S0 is a subset of M0 preparation, not completion of M0 or authorization to continue through M6.
+**S0 — Repository foundation implemented.** The reproducible build, native shell, shared packages, schema validation, focused checks, privacy exclusions, short agent guidance and toolchain records are present. Visual window/menu inspection remains explicitly pending with available GUI access. See [SETUP_STATUS.md](SETUP_STATUS.md) for proof. S0 is a subset of M0 preparation. The owner separately authorized all phases on 2026-10-05.
 
-The next bounded implementation task is the remaining **M0 installed-payload boundary**: immutable app/helper/engine/CLI/runtime packaging and discovery identity. Then qualify M1 storage, migrations and durable admission. This setup stops before either task.
+Implementation continues across the remaining milestones. [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) records verified behavior and outstanding work without treating partial fixtures as complete acceptance.
 
 ## Core product
 
 | Milestone | Outcome | Depends on | Status |
 |---|---|---|---|
-| M0 | Buildable app/CLI/engine with one identity, installed-payload boundary, initial storage migration and maintained instructions | S0 | Foundation subset only; installed payload/storage pending |
-| M1 | Durable service, admission, journal, events, logs, cancellation and recovery foundation | M0 | Planned |
-| M2 | First useful explicit push workflow, exact preview scope, one gate, observed delivery | M1 | Planned |
-| M3 | GitHub/PR observation, information design, logs and notifications | M2 | Planned |
+| M0 | Buildable app/CLI/engine with one identity, installed-payload boundary, initial storage migration and maintained instructions | S0 | Unsigned immutable payload implemented; release qualification pending |
+| M1 | Durable service, admission, journal, events, logs, cancellation and recovery foundation | M0 | Implemented foundation with fixtures; hardening ongoing |
+| M2 | First useful explicit push workflow, exact preview scope, one gate, observed delivery | M1 | Generic real Git fixtures passing |
+| M3 | GitHub/PR observation, information design, logs and notifications | M2 | Observation and native client implemented; qualification ongoing |
 | M4 | Shared mechanics extracted with repository-specific policy and migration parity | M1–M3 foundations | Planned |
-| M5 | Durable two-Mac enrollment, bootstrap, handoff, authority cutover and safe mirrors | M4 and real host access | Planned |
+| M5 | Durable two-Mac enrollment, bootstrap, handoff, authority cutover and safe mirrors | M4 and real host access | Generic protocol fixtures passing; adopted/live proof pending |
 | M6 | Signed packaging, safe updates, lifecycle and complete core qualification | Core behavior and release credentials | Planned |
 
 M2 should use a generic disposable fixture before migrating real repositories. M4 begins with reporting parity, then extraction, then one-repository-at-a-time adoption. Neither these milestones nor repository setup authorizes GitHub publication or changing unrelated live project configuration.

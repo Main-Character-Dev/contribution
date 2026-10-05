@@ -1,5 +1,5 @@
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, rmdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, rmdirSync, openSync, closeSync } from 'node:fs';
 import { join, resolve, delimiter } from 'node:path';
 import { Fault, id, requireValue } from './core.js';
 
@@ -24,10 +24,15 @@ export async function run(executable: string, argv: readonly string[], options: 
     const pending = { stdout: '', stderr: '' };
     const maxBytes = options.maxBytes ?? 4 * 1024 * 1024;
     const stop = (): void => {
-      if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+      if (!child.pid) return;
+      const members = groupMembers(child.pid);
       // A still-unreaped child belongs to this process; its PID cannot be reused.
       try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already exited */ }
-      killTimer ??= setTimeout(() => { if (child.exitCode === null && child.signalCode === null) try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* exited */ } }, 1500);
+      killTimer ??= setTimeout(() => {
+        const current = groupMembers(child.pid!);
+        if (current.some(member => members.some(prior => prior.pid === member.pid && prior.start === member.start)))
+          try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* group exited */ }
+      }, 1500);
     };
     const cancel = (): void => { cancelled = true; stop(); };
     options.signal?.addEventListener('abort', cancel, { once: true });
@@ -49,6 +54,14 @@ export async function run(executable: string, argv: readonly string[], options: 
     child.once('close', (code, signal) => { cleanup(); for (const text of Object.values(pending)) if (text) options.output?.(text); resolveResult({ code: bytes > maxBytes ? 5 : code ?? 5, signal, stdout, stderr,
       timedOut, cancelled }); });
   });
+}
+function groupMembers(group: number): { pid: number; start: string }[] {
+  try {
+    return execFileSync('/bin/ps', ['-axo', 'pid=,pgid=,lstart='], { encoding: 'utf8', timeout: 2000 }).split('\n').flatMap(line => {
+      const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+      return match && Number(match[2]) === group ? [{ pid: Number(match[1]), start: match[3]!.trim() }] : [];
+    });
+  } catch { return []; }
 }
 export function executable(name: string): string {
   if (name.startsWith('/')) { requireValue(existsSync(name), 'EXECUTABLE_UNAVAILABLE', `Missing executable ${name}.`, 3); return name; }
@@ -74,6 +87,17 @@ export class Lease {
   }
   static inspect(commonDirectory: string): LeaseOwner | null {
     try { return JSON.parse(readFileSync(join(commonDirectory, 'contribution-writer.lock', 'owner.json'), 'utf8')) as LeaseOwner; } catch { return null; }
+  }
+  static reclaim(commonDirectory: string, expected: LeaseOwner): boolean {
+    const directory = join(commonDirectory, 'contribution-writer.lock'), marker = join(directory, 'reclaim');
+    if (!existsSync(directory) || lstatSync(directory).isSymbolicLink() || lstatSync(directory).uid !== process.getuid?.()) return false;
+    let fd: number;
+    try { fd = openSync(marker, 'wx', 0o600); closeSync(fd); } catch { return false; }
+    try {
+      const owner = Lease.inspect(commonDirectory);
+      if (!owner || owner.token !== expected.token || owner.attemptId !== expected.attemptId || (alive(owner.pid) && (!processIdentity(owner.pid) || processIdentity(owner.pid) === owner.start))) return false;
+      unlinkSync(join(directory, 'owner.json')); unlinkSync(marker); rmdirSync(directory); return true;
+    } finally { if (existsSync(marker)) unlinkSync(marker); }
   }
   release(): void {
     const current = Lease.inspect(resolve(this.directory, '..'));

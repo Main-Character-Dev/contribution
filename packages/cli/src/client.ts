@@ -8,7 +8,7 @@ import type { Response } from '@contribution/contracts';
 
 const values: Record<string, string> = { '--repo': 'repo', '--root': 'root', '--profile': 'profile', '--availability': 'availability', '--request-id': 'requestId',
   '--expected-revision': 'expectedRevision', '--source-path': 'sourcePath', '--source-tip': 'sourceTip', '--base': 'base', '--expected-tip': 'expectedTip', '--scope-token': 'scopeToken',
-  '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId' };
+  '--check': 'checkId', '--tail': 'tail', '--after': 'after', '--remote': 'remote', '--url': 'url', '--run': 'operationId', '--ssh-alias': 'sshAlias', '--host': 'host' };
 const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'preview', '--canonical': 'canonical', '--fresh': 'fresh', '--when-idle': 'whenIdle' };
 const single = new Set(['status', 'submit', 'push', 'doctor', 'version', 'logs', 'repair-context']);
 const groups = new Set(['repos', 'runs', 'checks', 'settings', 'service', 'hosts', 'update', 'codex', 'hook', 'devices']);
@@ -31,6 +31,12 @@ function render(response: Response, json: boolean): string {
 export async function runCommand(argv: readonly string[], write: (text: string) => void = text => process.stdout.write(text)): Promise<number> {
   let json = argv.includes('--json'), jsonl = argv.includes('--jsonl'), directory = defaultStateDirectory(), wait = false, follow = false;
   try {
+    if (argv[0] === 'peer' && argv[1] === '--stdio' && argv.length === 2) {
+      const chunks: Buffer[] = []; let bytes = 0;
+      for await (const chunk of process.stdin) { const data = Buffer.from(chunk); bytes += data.length; if (bytes > 1024 * 1024) throw new Fault('FRAME_TOO_LARGE', 'Peer request exceeds one MiB.', 2); chunks.push(data); }
+      const response = await request(directory, { schemaVersion: 1, command: 'peer.exchange', args: { envelope: object(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }, cwd: process.cwd() }, 45000);
+      write(render(response, true)); return exitCode(response);
+    }
     if (argv.length === 0 || argv[0] === 'help' || argv.includes('--help')) {
       const response = helpResponse();
       response.result = { commands: ['version', 'doctor', 'repos list|discover|add|create|initialize|inspect|configure|relocate|remove', 'status [--refresh]',

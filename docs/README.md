@@ -1,6 +1,6 @@
 # Contribution documentation
 
-The S0 development foundation is recorded in [SETUP_STATUS.md](SETUP_STATUS.md). Use [BUILD.md](BUILD.md) for setup and verification commands. [REPOSITORY_SETUP.md](REPOSITORY_SETUP.md) and [SETUP_PROMPT.md](SETUP_PROMPT.md) retain the scope of that assignment. The next bounded implementation task is the remaining M0 installed-payload boundary; later milestones require authorization.
+The S0 development foundation is recorded in [SETUP_STATUS.md](SETUP_STATUS.md). Use [BUILD.md](BUILD.md) for setup and verification commands. [REPOSITORY_SETUP.md](REPOSITORY_SETUP.md) and [SETUP_PROMPT.md](SETUP_PROMPT.md) retain the scope of that assignment. All M0–M6 and D0–D4 phases are now authorized and under implementation. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the current code and proof, and [PEER_PROTOCOL.md](PEER_PROTOCOL.md) for the two-host boundary. Live installation, project enrollment and hardware setup are deferred to the final handoff.
 
 ## Reading order
 
@@ -31,7 +31,7 @@ The S0 development foundation is recorded in [SETUP_STATUS.md](SETUP_STATUS.md).
 
 ## Authority and maintenance
 
-Current user instructions and applicable repository policies govern the task. S0 limits the next task's scope. The dated [review amendments](REQUIREMENTS_REVIEW.md) clarify the detailed requirements; everything else in the baseline remains in force. Overview documents summarize the detailed documents and do not redefine their commands or wire states.
+Current user instructions and applicable repository policies govern the task. The S0-only boundary describes the completed historical setup assignment. The dated [review amendments](REQUIREMENTS_REVIEW.md) clarify the detailed requirements; everything else in the baseline remains in force. Overview documents summarize the detailed documents and do not redefine their commands or wire states.
 
 Schema validity proves data shape, not authorization, cross-record consistency, or device support. Keep semantics, schemas, examples, tests, and affected docs aligned when changing a contract. Record intentional behavioral departures with their reason and acceptance impact. Do not silently delete requirements to match a partial implementation.
 
