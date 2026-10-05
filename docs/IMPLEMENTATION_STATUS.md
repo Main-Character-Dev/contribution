@@ -373,3 +373,21 @@ The full 352-test Node suite, strict/generated contracts, type regressions and
 foundation preservation passed (`.build/check-payload-bounds-unrestricted.log`).
 The sandboxed attempt could not establish fixture process identity; the rerun
 used the process/socket access required by the existing integration harness.
+
+## Rollback after second-clone registration
+
+An activated second-clone adoption can now use the existing explicit rollback
+route. Rollback derives the prior configuration from the reviewed original
+snapshot instead of the already-adopted enrollment. A source that originally
+had no configuration file returns to generated migration-required policy.
+Restored source remains uncommitted; HEAD, index, unrelated drafts and retained
+request identities are preserved. Paired authority keeps its publication guard.
+The native review exposes this action and explains its source-file effects.
+
+All 14 adoption test groups passed, including four adapter families, restoration
+of generated policy, tracked-policy rollback interrupted after a file write,
+concurrent edits and same-request continuation. Twenty Swift tests and the
+unsigned native build passed. Evidence is in
+`.build/adoption-rollback-final-tests.log`,
+`.build/adoption-rollback-swift-tests.log` and
+`.build/adoption-rollback-native-build.log`. No live clone was changed.

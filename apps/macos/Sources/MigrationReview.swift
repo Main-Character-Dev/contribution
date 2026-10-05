@@ -45,7 +45,7 @@ struct MigrationReviewSheet: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(plan.status).font(.headline)
                         Text("Gate: \(plan.fields.object["gate"]?.text == "inactive" ? "Inactive" : "Enabled") · \(plan.registrationOnly ? "Local registration only" : "Reviewed source changes")").font(.caption)
-                        if plan.registrationOnly { Text("The committed files will be verified without rewriting this clone.").font(.caption).foregroundStyle(.secondary) }
+                        if plan.registrationOnly { Text("Activation verifies the committed files. Rollback restores the reviewed original files as uncommitted changes; it preserves history.").font(.caption).foregroundStyle(.secondary) }
                         MigrationFileReview(workspace: workspace, plan: plan).id(plan.id)
                         HStack {
                             ForEach(plan.actions) { action in

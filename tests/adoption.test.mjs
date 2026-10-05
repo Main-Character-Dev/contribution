@@ -202,7 +202,20 @@ test('second clones reconstruct all four original gates from committed history w
       const registration = await second.engine.workflows.adopted.verify(second.repo);
       assert.equal(registration.originalHookDigest, f.store.record('adoptionPlan', plan.proposalId).originalHookDigest);
       assert.equal(git(second.path, 'rev-parse', 'HEAD'), before); assert.equal(git(second.path, 'status', '--porcelain'), '');
-      assert.equal((await second.call({ rollbackAdoption: reviewed.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() })).error.code, 'REGISTRATION_ONLY');
+      const rollbackRequest = { rollbackAdoption: reviewed.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() };
+      const rolled = await second.call(rollbackRequest); assert.equal(rolled.error, null, JSON.stringify(rolled));
+      assert.deepEqual((await second.call(rollbackRequest)).result, rolled.result);
+      const restored = await second.engine.repos.get(second.repo.id);
+      assert.equal(restored.config.integration.adapter, 'migration-required');
+      assert.equal(restored.config.validation.adapter, 'migration-required');
+      assert.equal(restored.policySource, f.repo.policySource);
+      assert.equal(git(second.path, 'rev-parse', 'HEAD'), before);
+      assert.equal(git(second.path, 'diff', '--cached', '--name-only'), '');
+      assert.equal(readFileSync(join(second.path, 'unrelated-after-migration'), 'utf8'), 'Later normal source work\n');
+      assert.equal(second.store.record('adoptedHooks', second.repo.id), null);
+      assert.equal(rolled.result.requiresCommit, true);
+      assert.equal(rolled.result.mutation, 'reviewed_files_only');
+      await second.engine.repos.current(restored);
     } finally { second?.cleanup(); await f.cleanup(); }
   }
 });
@@ -320,4 +333,35 @@ test('adopted configuration recovers its file and registration atomically and pr
       assert.equal((await f.engine.workflows.adopted.verify(recovered.result.repository)).adoptionId, registration.adoptionId);
     } finally { t.mock.restoreAll(); await f.cleanup(); }
   }
+});
+
+test('second-clone rollback restores tracked policy after interruption and preserves concurrent work', async t => {
+  const f = await fixture(); let second;
+  try {
+    writeFileSync(join(f.path, 'contribution.json'), JSON.stringify(f.repo.config, null, 2) + '\n');
+    git(f.path, 'add', 'contribution.json'); git(f.path, 'commit', '-m', 'Tracked original configuration');
+    f.engine.repos.save({ ...f.repo, policySource: 'tracked' });
+    const { plan } = await f.prepare(); assert.equal((await f.change('applyAdoption', plan)).error, null);
+    git(f.path, 'add', '--all'); git(f.path, 'commit', '-m', 'Migrated tracked configuration');
+    second = await secondClone(f);
+    const reviewed = await second.call({ prepareExistingAdoption: true, originalTip: plan.sourceTip, migrationTip: git(f.path, 'rev-parse', 'HEAD'), requestId: randomUUID() });
+    assert.equal(reviewed.error, null, JSON.stringify(reviewed));
+    assert.equal((await second.call({ activateAdoption: reviewed.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() })).error, null);
+    const leasePath = join(second.path, 'scripts/lib/primary-checkout-lease.mjs'), bytes = readFileSync(leasePath);
+    writeFileSync(leasePath, 'owner edit');
+    const request = { rollbackAdoption: reviewed.result.proposalId, expectedRevision: second.repo.revision, requestId: randomUUID() };
+    assert.equal((await second.call(request)).error.code, 'MIGRATION_FILE_CONFLICT');
+    assert.equal(readFileSync(leasePath, 'utf8'), 'owner edit'); writeFileSync(leasePath, bytes);
+    const replace = second.engine.adoptions.replace.bind(second.engine.adoptions); let stopped = false;
+    const mock = t.mock.method(second.engine.adoptions, 'replace', (...args) => { replace(...args); if (!stopped) { stopped = true; throw new Fault('FIXTURE_STOPPED', 'Interrupted rollback'); } });
+    const interrupted = await second.call(request); mock.mock.restore();
+    assert.equal(interrupted.error.code, 'FIXTURE_STOPPED'); assert.equal(interrupted.result.requestRetained, true);
+    writeFileSync(join(second.path, 'owner-draft'), 'preserve me');
+    const resumed = await second.call(request); assert.equal(resumed.error, null, JSON.stringify(resumed));
+    const restored = await second.engine.repos.get(second.repo.id);
+    assert.deepEqual(restored.config, f.repo.config); assert.equal(restored.policySource, 'tracked');
+    assert.deepEqual(JSON.parse(readFileSync(join(second.path, 'contribution.json'), 'utf8')), f.repo.config);
+    assert.equal(readFileSync(join(second.path, 'owner-draft'), 'utf8'), 'preserve me');
+    await second.engine.repos.current(restored);
+  } finally { second?.cleanup(); await f.cleanup(); }
 });

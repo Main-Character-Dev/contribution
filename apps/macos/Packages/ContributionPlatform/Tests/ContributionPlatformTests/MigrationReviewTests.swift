@@ -18,7 +18,7 @@ final class MigrationReviewTests: XCTestCase {
         XCTAssertEqual(applied.arguments(for: .rollback, repository: changed)?["expectedRevision"], .string("after-revision"))
         for phase in ["applying", "rolling_back", "rolled_back"] { XCTAssertEqual(MigrationReview(plan(phase), repositoryID: repoID)?.actions, []) }
         XCTAssertEqual(MigrationReview(plan("prepared", registrationOnly: true), repositoryID: repoID)?.actions, [.activate])
-        XCTAssertEqual(MigrationReview(plan("active", registrationOnly: true), repositoryID: repoID)?.actions, [])
+        XCTAssertEqual(MigrationReview(plan("active", registrationOnly: true), repositoryID: repoID)?.actions, [.rollback])
         XCTAssertNil(MigrationReview(plan("active"), repositoryID: UUID().uuidString)); XCTAssertNil(MigrationReview(plan("unknown"), repositoryID: repoID))
     }
     func testExistingRegistrationRequiresDistinctFullHistorySelectors() {

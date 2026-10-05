@@ -35,7 +35,7 @@ public struct MigrationReview: Identifiable, Equatable, Sendable {
         self.registrationOnly = registrationOnly; self.files = entries.map { $0.object["path"]!.text }
     }
     public var actions: [MigrationAction] {
-        if registrationOnly { return phase == "prepared" ? [.activate] : [] }
+        if registrationOnly && phase == "prepared" { return [.activate] }
         switch phase { case "prepared": return [.apply]; case "applied": return [.activate, .rollback]; case "active": return [.rollback]; default: return [] }
     }
     public var status: String {

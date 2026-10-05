@@ -60,7 +60,7 @@ export class Adoptions {
     return { proposalId: plan.id, repositoryId: plan.repositoryId, adapter: plan.adapter, phase: plan.phase, sourceTip: plan.sourceTip, sourceBranch: plan.sourceBranch,
       expectedRevision: plan.before.revision, configurationRevision: digest(plan.config), gate: plan.config.validation.gate, hookOwner: plan.hooksPath, createdAt: plan.createdAt,
       files: plan.changes.map(change => ({ path: change.path, before: change.before, after: change.after })), privateReviewDirectory: this.directory(plan.id),
-      sourceCommitted: plan.phase === 'active', registrationOnly: Boolean(plan.existingMigrationTip), migrationTip: plan.existingMigrationTip ?? null, landingAdapter: 'not_activated_by_hook_adoption', mutation: plan.existingMigrationTip || plan.phase === 'prepared' ? 'none' : 'reviewed_files_only' };
+      sourceCommitted: plan.phase === 'active', registrationOnly: Boolean(plan.existingMigrationTip), migrationTip: plan.existingMigrationTip ?? null, landingAdapter: 'not_activated_by_hook_adoption', mutation: plan.phase === 'prepared' || (plan.existingMigrationTip && plan.phase === 'active') ? 'none' : 'reviewed_files_only' };
   }
   inspect(repo: Enrolled, planId: string): ObjectValue { return this.view(this.plan(repo, planId)); }
   reviews(repo: Enrolled): ObjectValue {
@@ -195,7 +195,7 @@ export class Adoptions {
     const input = digest({ repositoryId: repo.id, planId, action, expectedRevision }), previous = this.store.record<{ input: string; result?: ObjectValue }>('adoptionCommand', requestId);
     if (previous) { requireValue(previous.input === input, 'REQUEST_ID_CONFLICT', 'This migration request has different immutable inputs.'); if (previous.result) return previous.result; }
     let plan = this.plan(repo, planId);
-    requireValue(!plan.existingMigrationTip || action === 'activate', 'REGISTRATION_ONLY', 'An imported adoption review only registers committed source; it cannot rewrite or roll back the clone.', 3);
+    requireValue(!plan.existingMigrationTip || action !== 'apply', 'REGISTRATION_ONLY', 'Imported migration files are already committed. Activate their registration or explicitly roll back an active registration.', 3);
     requireValue(!this.busy.has(repo.id) && !this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Drain or reconcile retained repository jobs before migration.');
     requireValue(repo.revision === expectedRevision, 'REVISION_CONFLICT', 'The repository configuration changed since review.');
     requireValue(!this.store.records<Plan>('adoptionPlan').some(value => value.repositoryId === repo.id && value.id !== plan.id && !['prepared', 'rolled_back'].includes(value.phase)), 'MIGRATION_PENDING', 'Another adoption owns the current migration.');
@@ -236,6 +236,20 @@ export class Adoptions {
         commit = () => { this.repos.save(updated); this.store.put('adoptedHooks', repo.id, registration); };
       } else {
         requireValue(['applying', 'applied', 'active', 'rolling_back', 'rolled_back'].includes(plan.phase), 'MIGRATION_NOT_APPLIED', 'Only applied migration changes can be rolled back.');
+        // A second clone was enrolled after migration. Its enrollment snapshot
+        // is not the original policy; derive rollback from the reviewed bytes.
+        let rollback = { config: plan.before.config, revision: plan.before.revision, policySource: plan.before.policySource };
+        if (plan.existingMigrationTip) {
+          const change = plan.changes.find(value => value.path === 'contribution.json');
+          requireValue(change, 'MIGRATION_SNAPSHOT_CHANGED', 'The original configuration snapshot is missing.', 3);
+          const bytes = this.snapshot(plan, change, 'before');
+          const config = bytes ? JSON.parse(bytes.toString('utf8')) as Repository : structuredClone(plan.config);
+          if (!bytes) { config.integration.adapter = 'migration-required'; config.validation.adapter = 'migration-required'; }
+          assertContract('repository', config);
+          requireValue(config.repositoryId === repo.id && config.integration.adapter === 'migration-required' && config.validation.adapter === 'migration-required',
+            'MIGRATION_SNAPSHOT_CHANGED', 'The reviewed original configuration does not identify this pending migration.', 3);
+          rollback = { config, revision: digest(config), policySource: bytes ? 'tracked' : 'generated' };
+        }
         const authorityGuard = repo.availability === 'both-macs' || Boolean(this.store.record('authority', repo.id));
         this.validateFiles(plan, repo);
         requireValue(!(await gitText(repo.path, ['diff', '--cached', '--name-only', '--', ...plan.changes.map(change => change.path)])), 'MIGRATION_INDEX_CHANGED', 'Preserve staged migration-file edits before rollback.');
@@ -243,7 +257,7 @@ export class Adoptions {
         this.store.put('adoptedHooks', repo.id, null);
         for (const change of plan.changes) if (!authorityGuard || change.path !== plan.guard) this.replace(plan, repo, change, 'before');
         plan = { ...plan, phase: 'rolled_back' };
-        commit = () => this.repos.save({ ...repo, config: plan.before.config, revision: plan.before.revision, policySource: plan.before.policySource });
+        commit = () => this.repos.save({ ...repo, ...rollback });
       }
       const result = { ...this.view(plan), sourceCommitted: action === 'activate', indexChanged: false, historyChanged: false, requiresCommit: action !== 'activate',
         authorityGuardRetained: action === 'rollback' && (repo.availability === 'both-macs' || Boolean(this.store.record('authority', repo.id))) };
