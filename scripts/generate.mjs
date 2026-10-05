@@ -13,7 +13,7 @@ assert.equal(version.channel, 'development');
 assert.equal(version.schemaVersion, 1);
 const schemaDir = new URL('packages/contracts/schemas/', root);
 const names = (await readdir(schemaDir)).filter(n => n.endsWith('.schema.json')).sort();
-assert.equal(names.length, 12, 'Reconcile the contract census before adding schemas');
+assert.equal(names.length, 13, 'Reconcile the contract census before adding schemas');
 const local = new Map();
 for (const name of names) {
   const schema = JSON.parse(await readFile(new URL(name, schemaDir), 'utf8'));

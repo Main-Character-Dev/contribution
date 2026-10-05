@@ -4,6 +4,7 @@ These are JSON Schema draft 2020-12 definitions for the proposed version-one int
 
 | Schema | Validates |
 |---|---|
+| [device-profile.schema.json](device-profile.schema.json) | Private project app identity and explicit offline Xcode build configurations |
 | [repository.schema.json](repository.schema.json) | Tracked repository configuration |
 | [machine.schema.json](machine.schema.json) | Private host configuration |
 | [response.schema.json](response.schema.json) | Nonstreaming CLI and service response envelope |
@@ -25,7 +26,7 @@ Check command arguments are arrays. The engine executes them directly and never 
 
 Version one includes the generic built-in IDs `clean-primary`, `source-ownership`, `safe-ref-update`, and `outgoing-secrets`. Their exact selected phase and enforcement are defined by the adapter, with applicability reported separately from pass/fail. `outgoing-secrets` requires a configured scanner and current input/rule identity. Selecting it without an available implementation is unavailable or a configuration error, never an implicit pass. An unrecognized built-in or adapter fails configuration. Existing repository adapters preserve their more specific policies and scan semantics.
 
-Resolve all twelve schemas in one local registry. `device-capability.schema.json` also defines the shared context and network shapes referenced by the other device schemas. Validate the JSON examples through these definitions and test the behavioral contracts through the public service and CLI. [original package checks](../../../docs/SOURCE_PACKAGE.md) records validation performed while assembling this handoff and is not an application test result.
+Resolve all thirteen schemas in one local registry. `device-capability.schema.json` also defines the shared context and network shapes referenced by the other device schemas. Validate the JSON examples through these definitions and test the behavioral contracts through the public service and CLI. [original package checks](../../../docs/SOURCE_PACKAGE.md) records validation performed while assembling this handoff and is not an application test result.
 
 The original Git envelope, repository status, event, tracked repository, and submission-metadata schemas retain their existing meanings. Machine configuration adds only the optional `remoteDevices` object, whose two settings default to false. Existing configuration examples remain valid. Device details are additional contracts and do not add a new Git operation state or change canonical host ownership.
 
@@ -36,3 +37,5 @@ Semantic checks must also establish identity agreement across references, curren
 Routine and qualification intents are explicit in device receipts. A routine request cannot carry qualification metadata. A qualification request requires a registered plan, original AT case, approved fixture, expected-context digest, permitted operations, and bounded attempt/duration budget. This permits first physical proof on an unverified context without a general bypass flag. It retains all independent trust, identity, signing, ownership, and recovery guards.
 
 Artifact SHA-256 records verify prepared/transferred bytes. Device readback contains only observed phone values and deliberately has no artifact-hash field. Paired-device secrets, signing private keys, bearer tokens, or raw diagnostic contents do not belong in these records. Detailed evidence references resolve only through the private retained store.
+
+The thirteen-schema census adds the private project device profile to the twelve unchanged source-package schemas. This registration describes host build inputs and eligible opaque devices; it grants no phone operation, signing-key access, ownership or physical capability.

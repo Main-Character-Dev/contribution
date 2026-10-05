@@ -779,9 +779,15 @@
       "id": "AT-04",
       "track": "remote-device",
       "source": "requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": [],
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/device-builds.test.mjs",
+          "scope": "Offline preparation, exact committed snapshot, artifact identity and local crash reconciliation only; no real signing, device operation or physical acceptance."
+        }
+      ],
       "nextStep": "Implement the owning milestone, then run the original case in its required environment."
     },
     {
@@ -861,6 +867,11 @@
           "level": "fixture",
           "source": "tests/devices.test.mjs",
           "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/device-builds.test.mjs",
+          "scope": "Offline preparation, exact committed snapshot, artifact identity and local crash reconciliation only; no real signing, device operation or physical acceptance."
         }
       ],
       "nextStep": "No physical operation or network capability is qualified."
@@ -1038,6 +1049,11 @@
           "level": "fixture",
           "source": "tests/devices.test.mjs",
           "scope": "Fixture-only scoped grants, independent effects, bounded qualification and restart/revocation guards. No physical operation or network capability is qualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/device-builds.test.mjs",
+          "scope": "Offline preparation, exact committed snapshot, artifact identity and local crash reconciliation only; no real signing, device operation or physical acceptance."
         }
       ],
       "nextStep": "No physical operation or network capability is qualified."

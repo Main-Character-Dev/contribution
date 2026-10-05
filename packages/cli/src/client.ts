@@ -48,7 +48,8 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',
         'repos pair --repo ID --host HOST --request-id UUID', 'repos seed|mirror --repo ID --request-id UUID',
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID]',
-        'devices list|status|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile'],
+        'devices list|status|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
+        'devices profile --repo ID', 'devices configure --repo ID --file PATH --expected-revision REVISION --request-id UUID', 'devices artifacts list|get --repo ID [--artifact ID]'],
         waitSeconds: 30, eventPollMilliseconds: 500, json: 'One response envelope; --jsonl for runs follow.',
         unavailable: ['Live host pairing and adopted project migration need qualification.', 'Device operations require configured identity and evidence.', 'Signed updates need a configured verified feed.'] };
       write(render(response, json)); return 0;
@@ -73,6 +74,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     if (single.has(group)) command = group;
     else if (groups.has(group)) { const action = words.shift(); if (!action) throw new Fault('INVALID_USAGE', `Specify a ${group} action.`, 2); command = `${group}.${action}`; }
     else throw new Fault('INVALID_USAGE', 'Unknown command. Use contribution help.', 2);
+    if (command === 'devices.artifacts') { const action = words.shift(); if (!['list', 'get'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices artifacts list or get.', 2); command += `.${action}`; }
     if (['repos.add', 'repos.create', 'repos.relocate'].includes(command)) args['path'] = words.shift();
     if (command.startsWith('runs.') && !['runs.list', 'runs.events'].includes(command) || ['logs', 'repair-context'].includes(command)) args['operationId'] = words.shift();
     if (command === 'devices.reconcile') args['operationId'] = words.shift();

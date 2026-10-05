@@ -15,6 +15,7 @@ import { Peers } from './peers.js';
 import type { PeerTransport } from './peers.js';
 import { Devices } from './devices.js';
 import type { DeviceBackend } from './devices.js';
+import type { DeviceBuildDriver } from './device-builds.js';
 import { CoreDeviceBackend } from './device-coredevice.js';
 import { ProjectRuntimes } from './project-runtime.js';
 import { policyInventory, identifyAdoption } from '@contribution/adapters';
@@ -45,6 +46,10 @@ const allowed: Record<string, string[]> = {
 };
 for (const name of ['connect', 'prepare', 'install', 'launch', 'logs', 'test', 'ui', 'debug', 'capture', 'disconnect', 'qualify'])
   allowed[`devices.${name}`] = ['repo', 'host', 'device', 'requestId', 'artifact', 'launch', 'sourceTip', 'buildProfile', 'appRef', 'plan', 'sessionProfile', 'durationSeconds', 'maxBytes', 'kind'];
+allowed['devices.configure'] = ['repo', 'host', 'config', 'expectedRevision', 'requestId'];
+allowed['devices.profile'] = ['repo', 'host'];
+allowed['devices.artifacts.list'] = ['repo', 'host'];
+allowed['devices.artifacts.get'] = ['repo', 'host', 'artifact'];
 allowed['devices.list'] = ['repo', 'host']; allowed['devices.status'] = ['repo', 'host', 'device', 'refresh'];
 allowed['devices.authorize'] = ['repo', 'host', 'device', 'operations', 'requestId']; allowed['devices.revoke'] = allowed['devices.authorize']!;
 allowed['devices.reconcile'] = ['host', 'operationId', 'requestId'];
@@ -64,14 +69,14 @@ export class Engine {
   private notificationRefreshAt = 0;
   private requests = 0;
   get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy || this.requests > 0; }
-  constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture' }) {
+  constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture'; buildDriver?: DeviceBuildDriver }) {
     this.maintenance = new Maintenance(store, payload.identity);
     this.repos = new Repositories(store); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
     this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
     this.peers.cancelLocal = op => this.cancel(op);
     this.peers.prepareFence = repo => this.workflows.ensureHook(repo);
     this.peers.dispatchLocal = (command, args) => this.dispatch({ schemaVersion: 1, command, args, cwd: this.store.directory });
-    this.devices = new Devices(store, deviceRuntime?.backend ?? new CoreDeviceBackend(store), payload.identity, deviceRuntime?.mode ?? 'observed');
+    this.devices = new Devices(store, deviceRuntime?.backend ?? new CoreDeviceBackend(store), payload.identity, deviceRuntime?.mode ?? 'observed', deviceRuntime?.buildDriver);
     if (!store.getMeta('settings')) {
       const settings: Machine = { schemaVersion: 1, hostId: store.hostId, label: 'This Mac', role: 'standalone', primaryHostId: store.hostId,
         primarySshAlias: null, projectRoots: [], repositories: [], notifications: { preferredHostId: store.hostId, success: true, failure: true },
@@ -84,6 +89,9 @@ export class Engine {
         const receipt = structuredClone(op.result['deviceOperation']) as DeviceOperation;
         if (receipt) {
           receipt.operationState = op.effectDispatched ? 'outcome_unknown' : 'interrupted';
+          if (!op.effectDispatched) for (const effect of receipt.effects) if (effect.state === 'running') {
+            effect.state = 'needs_attention'; effect.reasonCodes = ['WORKER_INTERRUPTED']; effect.missingProof = ['Inspect retained local output; no physical effect was dispatched.'];
+          }
           if (op.effectDispatched) {
             receipt.resultCertainty = 'uncertain'; receipt.reconciliation.status = 'required'; receipt.missingProof = ['The service stopped before device effects were reconciled.'];
             for (const effect of receipt.effects) if (effect.state === 'running') { effect.state = 'outcome_unknown'; effect.certainty = 'uncertain'; effect.missingProof = [...receipt.missingProof]; }
@@ -225,7 +233,7 @@ export class Engine {
       requireValue(!this.maintenance.busy || ['version', 'service.status', 'maintenance.status'].includes(command), 'MAINTENANCE_BUSY', 'The final update checkpoint is being saved. Wait for it to finish.', 4);
       requireValue(!this.stopping || ['version', 'service.status', 'maintenance.status'].includes(command), 'SERVICE_STOPPING', 'The service is stopping. Reconnect after the maintenance window is reconciled.', 3);
       if (this.store.getMeta('maintenance') && !command.startsWith('maintenance.')) {
-        const reads = ['version', 'doctor', 'service.status', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list'];
+        const reads = ['version', 'doctor', 'service.status', 'repos.list', 'repos.inspect', 'runs.list', 'runs.get', 'runs.events', 'logs', 'repair-context', 'settings.get', 'hosts.list', 'devices.profile', 'devices.artifacts.list', 'devices.artifacts.get'];
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
         requireValue(reads.includes(command) || (command === 'hook.pre-push' && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
@@ -317,6 +325,9 @@ export class Engine {
         return completed({ inventory, sourceTip: (await identity(repo.path)).tip, branch: repo.config.integration.branch, hookOwner: repo.hookPath,
           mutation: 'none', cutover: 'pending_parity_and_compatible_writer_adoption' });
       }
+      if (command === 'devices.configure') return completed(this.devices.builds.configure(repo, args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
+      if (command === 'devices.profile') return completed(this.devices.builds.inspect(repo));
+      if (command === 'devices.artifacts.list' || command === 'devices.artifacts.get') return completed(this.devices.builds.artifacts(repo, command === 'devices.artifacts.get' ? string(args['artifact'], 'artifact') : undefined));
       if (command === 'devices.status') return this.devices.status(repo, string(args['device'], 'device'), args['refresh'] === true);
       if (command === 'devices.authorize' || command === 'devices.revoke') {
         requireValue(Array.isArray(args['operations']) && args['operations'].every(value => typeof value === 'string'), 'INVALID_DEVICE_SCOPE', 'Supply named operations.', 2);

@@ -6,6 +6,8 @@ import type { ObjectValue } from './core.js';
 import type { Journal, Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import { identity, clean } from './git.js';
+import { DeviceBuilds } from './device-builds.js';
+import type { DeviceBuildDriver } from './device-builds.js';
 
 type DeviceAction = DeviceCapability['operation'];
 type Effect = DeviceOperation['effects'][number];
@@ -37,7 +39,9 @@ export interface RetainedDeviceArtifact { provenance: ArtifactProvenance; path: 
 
 /** Devices use the same journal and scheduler. No backend is authority by itself. */
 export class Devices {
-  constructor(readonly store: Journal, readonly backend: DeviceBackend, readonly payload: string, readonly mode: Mode = 'observed') {
+  readonly builds: DeviceBuilds;
+  constructor(readonly store: Journal, readonly backend: DeviceBackend, readonly payload: string, readonly mode: Mode = 'observed', buildDriver?: DeviceBuildDriver) {
+    this.builds = new DeviceBuilds(store, mode, buildDriver);
     requireValue(backend.recordMode === mode, 'FIXTURE_AUTHORITY_REJECTED', 'Fixture backends cannot run in the installed production service.', 3);
   }
   profile(repo: Enrolled): DeviceProfile {
@@ -99,7 +103,7 @@ export class Devices {
     const scope = { repositoryId: repo.id, deviceId, operations: [...new Set(operations)].sort(), revoke, profile: profile.revision };
     const prior = this.store.record<{ digest: string; grant: Grant }>('deviceGrantRequest', requestId);
     if (prior) { requireValue(prior.digest === digest(scope), 'REQUEST_ID_CONFLICT', 'Authorization request identity has different scope.'); return { grant: prior.grant }; }
-    requireValue(this.store.record<DeviceObservation>('deviceObservation', key), 'DEVICE_IDENTITY_REQUIRED', 'Observe and enroll the selected physical device before granting operations.', 3);
+    requireValue(this.store.record<DeviceObservation>('deviceObservation', key) || (operations.every(action => action === 'prepare') && this.builds.permitsPreparation(repo, deviceId)), 'DEVICE_IDENTITY_REQUIRED', 'Observe and enroll the selected physical device before granting operations.', 3);
     const existing = this.store.record<Grant>('deviceGrant', key);
     const allowed = new Set(existing?.appIdentity === this.appIdentity(profile) && existing.policyRevision === profile.revision ? existing.operations : []);
     for (const action of scope.operations) if (revoke) allowed.delete(action); else allowed.add(action);
@@ -127,8 +131,8 @@ export class Devices {
         observation.developerService === 'unlock_required' ? 'UNLOCK_REQUIRED' : observation.developerService === 'developer_mode_required' ? 'DEVELOPER_MODE_REQUIRED' : 'DEVELOPER_SERVICE_UNAVAILABLE',
         'The required Apple developer session is unavailable in this observed context.', 3);
     }
-    if (actions.some(action => ['prepare', 'install', 'test', 'ui'].includes(action))) requireValue(observation.signingReady, 'SIGNING_UNAVAILABLE', 'The selected host has not verified this app signing configuration.', 3);
-    for (const action of actions.filter(action => action !== 'disconnect')) {
+    if (actions.some(action => ['test', 'ui'].includes(action))) requireValue(observation.signingReady, 'SIGNING_UNAVAILABLE', 'The selected host has not verified this app signing configuration.', 3);
+    for (const action of actions.filter(action => !['disconnect', 'prepare'].includes(action))) {
       const capability = this.capability(action as DeviceAction, observation.context);
       requireValue(capability.support !== 'unsupported', 'CAPABILITY_UNSUPPORTED', 'The operation is known to be incompatible with this exact context.', 3);
       if (qualification) requireValue(qualification.authorizedOperations.includes(action) && digest(observation.context) === qualification.expectedContextDigest && capability.support !== 'requires_action', 'QUALIFICATION_CONTEXT_CHANGED', 'Qualification scope or prerequisites changed.', 3);
@@ -141,7 +145,7 @@ export class Devices {
     requireValue(observation, 'DEVICE_OBSERVATION_REQUIRED', 'Refresh this device to observe current readiness.', 3);
     const capabilities = deviceActions.map(action => this.capability(action, observation.context)), ownership = this.ownership(deviceId);
     const availability = capabilities.map(capability => {
-      try { this.guard(repo, observation, [capability.operation], null); return { operation: capability.operation, callable: refresh, capabilityId: capability.capabilityId, reasonCodes: refresh ? [] : ['STATUS_STALE'] }; }
+      try { requireValue(capability.operation !== 'prepare', 'BUILD_PROFILE_SELECTION_REQUIRED', 'Select an offline host build profile first.', 3); this.guard(repo, observation, [capability.operation], null); return { operation: capability.operation, callable: refresh, capabilityId: capability.capabilityId, reasonCodes: refresh ? [] : ['STATUS_STALE'] }; }
       catch (error) { return { operation: capability.operation, callable: false, capabilityId: capability.capabilityId, reasonCodes: [error instanceof Fault ? error.code : 'READINESS_UNKNOWN'] }; }
     });
     const response = completed({ recordMode: this.mode, repositoryId: repo.id, executionHostId: this.store.hostId, canonicalHostId: repo.canonicalHostId, deviceId,
@@ -156,8 +160,8 @@ export class Devices {
     const deviceId = string(args['device'], 'device'), requestId = string(args['requestId'], 'requestId'), profile = this.profile(repo);
     const selection = { action, args, profile: profile.revision, appIdentity: this.appIdentity(profile) };
     const existing = this.store.list(100000).find(op => op.requestId === requestId);
-    if (existing) { requireValue(existing.kind === 'device' && existing.repositoryId === repo.id && digest(existing.input['selection']) === digest(selection), 'REQUEST_ID_CONFLICT', 'Device request ID already names a different immutable intent.'); return existing; }
-    const observation = await this.observe(repo, deviceId);
+    if (existing) { requireValue(existing.kind === 'device' && existing.repositoryId === repo.id && digest({ action: object(existing.input['selection'])['action'], args: object(existing.input['selection'])['args'] }) === digest({ action, args }), 'REQUEST_ID_CONFLICT', 'Device request ID already names a different immutable intent.'); return existing; }
+    const observation = action === 'prepare' ? await this.builds.observe(repo, deviceId, string(args['buildProfile'], 'build profile')) : await this.observe(repo, deviceId);
     const actions = action === 'install_and_launch' ? ['install', 'launch'] : [action];
     let qualification: DeviceOperation['intent']['qualification'] = null;
     if (args['qualificationPlan']) {
@@ -185,6 +189,7 @@ export class Devices {
         'INSTALLED_APP_REFERENCE_INVALID', 'Select the retained app identity approved for this device, project and host.', 3);
     }
     if (action === 'prepare') {
+      this.builds.assertNoPriorBuildProcess(repo);
       requireValue(profile.buildProfiles.includes(string(args['buildProfile'], 'buildProfile')), 'BUILD_PROFILE_UNCONFIGURED', 'Select a registered project build profile.', 3);
       await clean(repo.path); requireValue((await identity(repo.path)).tip === args['sourceTip'], 'SOURCE_CHANGED', 'Preparation requires the exact clean project-selected source tip.');
     }
@@ -199,7 +204,7 @@ export class Devices {
         installedAppRef: typeof args['appRef'] === 'string' ? args['appRef'] : null, sourceCommit: typeof args['sourceTip'] === 'string' ? args['sourceTip'] : artifact?.provenance.source.commit ?? null,
         configurationId: typeof args['buildProfile'] === 'string' ? args['buildProfile'] : null, adapterId: profile.adapterId, policyRevision: profile.revision,
         authorizedOperations: actions as [string, ...string[]], mode: qualification ? 'qualification' : 'routine', qualification },
-      context: observation.context, capabilityIds: actions.filter(action => action !== 'disconnect').map(action => this.capability(action as DeviceAction, observation.context).capabilityId),
+      context: observation.context, capabilityIds: actions.filter(action => !['disconnect', 'prepare'].includes(action)).map(action => this.capability(action as DeviceAction, observation.context).capabilityId),
       ownershipId: owner.ownershipId, requestedAt: op.createdAt, startedAt: null, completedAt: null, operationState: 'queued', stage: 'accepted', resultCertainty: 'not_observed',
       effects: actions.map(operation => ({ effectId: id(), operation, state: 'queued', certainty: 'not_observed', startedAt: null, completedAt: null, installReadback: null, launchReadback: null, evidenceRefs: [], reasonCodes: [], missingProof: [] })) as unknown as DeviceOperation['effects'],
       reconciliation: { status: 'not_required', attempts: 0, lastObservedAt: null, nextObservation: null }, logRefs: [op.attemptId], reasonCodes: [], missingProof: [] };
@@ -218,7 +223,7 @@ export class Devices {
     if (receipt.intent.operation === 'prepare') {
       await clean(repo.path); requireValue((await identity(repo.path)).tip === receipt.intent.sourceCommit, 'SOURCE_CHANGED', 'The selected build source changed before preparation.');
     }
-    const observation = await this.observe(repo, receipt.deviceId);
+    const observation = receipt.intent.operation === 'prepare' ? await this.builds.observe(repo, receipt.deviceId, string(receipt.intent.configurationId, 'build profile')) : await this.observe(repo, receipt.deviceId);
     requireValue(digest(observation.context) === digest(receipt.context), 'CAPABILITY_CONTEXT_CHANGED', 'Device, network or backend context changed after admission.', 3);
     const owner = this.guard(repo, observation, receipt.intent.authorizedOperations, receipt.intent.qualification);
     const ownsDevice = receipt.intent.operation !== 'prepare';
@@ -245,10 +250,18 @@ export class Devices {
         if (['launch', 'logs', 'debug', 'screenshot', 'screen_capture'].includes(effect.operation)) await this.backend.verifyInstalledApp(receipt);
         if (bounded.signal.aborted) { effect.state = 'cancelled'; effect.completedAt = now(); throw new Fault('CANCELLED', 'Device work was cancelled before the next effect.', 130); }
         effect.state = 'running'; effect.startedAt = now(); receipt.stage = effect.operation === 'install' ? 'installing' : effect.operation === 'launch' ? 'launching' : effect.operation;
-        this.save(op, receipt); this.store.update(this.store.get(op.operationId), { effectDispatched: true });
+        this.save(op, receipt); this.store.update(this.store.get(op.operationId), { effectDispatched: effect.operation !== 'prepare' });
         let result: Partial<Effect>;
-        try { result = await this.backend.perform(effect.operation, receipt, object(op.input['parameters']), bounded.signal); }
-        catch { result = { state: 'outcome_unknown', certainty: 'uncertain', reasonCodes: ['OUTCOME_UNCERTAIN'], missingProof: ['The backend did not confirm whether the intended effect occurred.'] }; }
+        try {
+          if (effect.operation === 'prepare') {
+            const prepared = await this.builds.perform(op, repo, receipt, bounded.signal);
+            const latest = this.store.get(op.operationId); this.store.update(latest, { result: { ...latest.result, ...prepared } });
+            result = { state: 'succeeded', certainty: 'confirmed', evidenceRefs: prepared['evidenceRefs'] as string[] };
+          } else result = await this.backend.perform(effect.operation, receipt, object(op.input['parameters']), bounded.signal);
+        }
+        catch (error) {
+          if (effect.operation === 'prepare') { effect.state = error instanceof Fault && error.exit === 130 ? 'cancelled' : 'failed'; effect.certainty = 'confirmed'; effect.completedAt = now(); throw error; }
+          result = { state: 'outcome_unknown', certainty: 'uncertain', reasonCodes: ['OUTCOME_UNCERTAIN'], missingProof: ['The backend did not confirm whether the intended effect occurred.'] }; }
         effect.state = result.state ?? 'outcome_unknown';
         Object.assign(effect, result, { completedAt: now(), effectId: effect.effectId, operation: effect.operation });
         if (!['succeeded', 'failed', 'cancelled', 'outcome_unknown'].includes(effect.state)) { effect.state = 'outcome_unknown'; effect.certainty = 'uncertain'; }
@@ -298,6 +311,15 @@ export class Devices {
   }
   async reconcile(op: Operation): Promise<ObjectValue> {
     const receipt = structuredClone(op.result['deviceOperation']) as DeviceOperation;
+    if (receipt?.intent.operation === 'prepare' && receipt.operationState === 'interrupted') {
+      const result = this.builds.reconcile(op, receipt);
+      receipt.operationState = 'succeeded'; receipt.stage = 'reconciled'; receipt.resultCertainty = 'confirmed'; receipt.completedAt = now();
+      for (const effect of receipt.effects) { effect.state = 'succeeded'; effect.certainty = 'confirmed'; effect.completedAt = now(); effect.evidenceRefs = result['evidenceRefs'] as string[]; effect.reasonCodes = []; effect.missingProof = []; }
+      receipt.missingProof = []; receipt.reasonCodes = []; receipt.reconciliation.status = 'resolved'; receipt.reconciliation.lastObservedAt = now();
+      assertContract('device-operation', receipt);
+      this.store.update(op, { state: 'succeeded', stage: 'reconciled', error: null, result: { ...op.result, ...result, deviceOperation: receipt } });
+      return { ...result, deviceOperation: receipt };
+    }
     requireValue(receipt?.operationState === 'outcome_unknown', 'RECONCILIATION_NOT_REQUIRED', 'This operation has no uncertain device effect.', 2);
     receipt.reconciliation.attempts++; receipt.reconciliation.status = 'in_progress'; this.save(op, receipt);
     for (const effect of receipt.effects.filter(effect => effect.state === 'outcome_unknown' || effect.state === 'running')) {

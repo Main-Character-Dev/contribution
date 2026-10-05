@@ -10,6 +10,7 @@ export type { DeviceCapability, Context as DeviceContext } from './generated/dev
 export type { DeviceOwnership } from './generated/device-ownership.js';
 export type { DeviceOperation } from './generated/device-operation.js';
 export type { DeviceTestEvidence } from './generated/device-test-evidence.js';
+export type { DeviceProfile as DeviceProfileConfiguration } from './generated/device-profile.js';
 export type { ArtifactProvenance } from './generated/artifact-provenance.js';
 export { buildIdentity } from './generated/version.js';
 

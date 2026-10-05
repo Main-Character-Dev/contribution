@@ -4,8 +4,8 @@ import { readdirSync } from 'node:fs';
 import { schemaNames, validateContract, validateContractFormat } from '../packages/contracts/dist/index.js';
 import { example, exampleSchemas, negativeCases } from './fixtures/contracts.mjs';
 
-test('all twelve schemas compile with local references', () => {
-  assert.equal(schemaNames.length, 12);
+test('all thirteen schemas compile with local references', () => {
+  assert.equal(schemaNames.length, 13);
 });
 test('all fourteen examples are covered by schema validation', () => {
   const files = readdirSync(new URL('../packages/contracts/examples/', import.meta.url)).filter(n => n.endsWith('.json'));
