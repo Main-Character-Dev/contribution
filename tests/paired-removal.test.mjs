@@ -85,6 +85,7 @@ test('offline owner and lost release reply preserve the local fence and resume t
       assert.equal(f.hosts.mini.store.record('authority', f.repo).phase, mode === 'offline' ? 'active' : 'released');
       f.offline(false); reopened = new Journal(f.hosts.laptop.store.directory);
       const repos = new Repositories(reopened), peers = new Peers(reopened, repos, 'fixture', f.transport);
+      peers.connectivity.invalidate(f.hosts.mini.store.hostId, 'mini', true);
       const result = await new RepositoryRemoval(reopened, repos, (repo, id) => peers.releaseMirror(repo, id)).remove(await repos.get(f.repo));
       assert.equal(result.removalId, intent.id); assert.equal(repos.all().length, 0); assert(!existsSync(f.hook('laptop')));
       assert.equal(f.hosts.mini.store.records('authorityRelease').length, 1);
@@ -194,6 +195,7 @@ test('lost preparation reply retains the exact reservation across reopening with
     assert.equal(f.hosts.mini.store.record('authority', f.repo).phase, 'active');
     assert.equal((await f.call('laptop', 'repos.remove', { repo: f.repo })).error.code, 'AUTHORITY_TRANSITION_PENDING');
     recovered = new Journal(f.hosts.mini.store.directory); const repos = new Repositories(recovered), peers = new Peers(recovered, repos, 'fixture', f.transport);
+    peers.connectivity.invalidate(f.hosts.laptop.store.hostId, 'laptop', true);
     peers.prepareFence = repo => f.hosts.mini.workflows.ensureHook(repo);
     const result = await peers.bind(await repos.get(f.repo), request.host, request.requestId); assert.equal(result.transitionId, request.requestId);
     assert.equal(f.hosts.laptop.store.record('authorityReservation', f.repo), undefined);
@@ -208,6 +210,7 @@ test('an older in-flight owner fence gains the new destination reservation witho
     const frozen = f.hosts.mini.store.record('authority', f.repo); assert.equal(frozen.phase, 'frozen');
     // Model the pre-reservation release's persisted journal boundary.
     f.hosts.laptop.store.db.prepare("DELETE FROM records WHERE namespace='authorityReservation' AND key=?").run(f.repo);
+    await f.call('mini', 'hosts.retry', {host:f.hosts.laptop.store.hostId}); await f.hosts.mini.peers.settledChecks();
     assert.equal((await f.call('mini', 'repos.pair', request)).error, null);
     assert.deepEqual(f.hosts.mini.store.record('authority', f.repo), { ...frozen, phase: 'active' });
     assert.equal(git(f.paths.laptop, 'rev-parse', 'HEAD'), f.tip); assert.equal(git(f.paths.mini, 'rev-parse', 'HEAD'), f.tip);

@@ -1,5 +1,26 @@
 import Foundation
 import Darwin
+import AppKit
+import SystemConfiguration
+
+// Mutable debounce state is confined to the main dispatch queue. Notification
+// callbacks only enqueue categories; the pipe is inherited by this one child.
+private final class ConnectivityHints: @unchecked Sendable {
+    private let output: FileHandle
+    private var pending: DispatchWorkItem?
+    init(_ output: FileHandle) { self.output = output }
+    func stop() { pending?.cancel(); pending = nil }
+    func send(_ category: String) {
+        DispatchQueue.main.async { [self] in
+            pending?.cancel()
+            let item = DispatchWorkItem { [self] in
+                try? output.write(contentsOf: Data(("{\"event\":\"" + category + "\"}\n").utf8))
+            }
+            pending = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500), execute: item)
+        }
+    }
+}
 
 @main
 enum ContributionLauncher {
@@ -23,6 +44,38 @@ enum ContributionLauncher {
             let node = payload.root.appendingPathComponent("runtime/node").path
             let entry = payload.manifest.entrypoints[cli ? "cli" : "service"]!
             let arguments = [node, payload.root.appendingPathComponent(entry).path] + (cli ? forwarded : ["--payload", payload.root.path])
+            if !cli {
+                // This is the existing launchd helper, supervising one verified
+                // engine child. The inherited private pipe carries categories
+                // only; no second service, network transport or queue is added.
+                let worker = Process(), hints = Pipe()
+                worker.executableURL = URL(fileURLWithPath: node)
+                worker.arguments = Array(arguments.dropFirst())
+                worker.standardInput = hints
+                worker.standardOutput = FileHandle.standardOutput
+                worker.standardError = FileHandle.standardError
+                let relay = ConnectivityHints(hints.fileHandleForWriting)
+                signal(SIGTERM, SIG_IGN); signal(SIGINT, SIG_IGN); signal(SIGPIPE, SIG_IGN)
+                let termination = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+                let interruption = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+                termination.setEventHandler { relay.stop(); if worker.isRunning { worker.terminate() } }
+                interruption.setEventHandler { relay.stop(); if worker.isRunning { worker.interrupt() } }
+                termination.resume(); interruption.resume()
+                worker.terminationHandler = { child in exit(child.terminationStatus) }
+                try worker.run()
+                let wake = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in relay.send("wake") }
+                let network = SCDynamicStoreCreate(nil, "Contribution connectivity hints" as CFString, { _, _, _ in
+                    NotificationCenter.default.post(name: Notification.Name("ContributionNetworkHint"), object: nil)
+                }, nil)
+                let observer = NotificationCenter.default.addObserver(forName: Notification.Name("ContributionNetworkHint"), object: nil, queue: .main) { _ in relay.send("network") }
+                if let network {
+                    SCDynamicStoreSetNotificationKeys(network, nil, ["State:/Network/Global/IPv4", "State:/Network/Global/IPv6", "State:/Network/Global/DNS", "State:/Network/Interface/.*/.*"] as CFArray)
+                    SCDynamicStoreSetDispatchQueue(network, .main)
+                }
+                relay.send("launch")
+                withExtendedLifetime((network, wake, observer, termination, interruption)) { RunLoop.main.run() }
+                return
+            }
             var pointers = arguments.map { strdup($0) }; pointers.append(nil)
             defer { for pointer in pointers { free(pointer) } }
             execv(node, &pointers)

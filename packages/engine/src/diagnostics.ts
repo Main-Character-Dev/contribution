@@ -3,6 +3,7 @@ import type { Journal, Operation } from './journal.js';
 import type { Repositories } from './repositories.js';
 import { now } from './core.js';
 import type { ObjectValue } from './core.js';
+import { connectionReasons } from './peer-connectivity.js';
 import { ManagedStorage } from './managed-storage.js';
 
 const states = ['queued', 'queued_local', 'running', 'waiting', 'needs_attention', 'outcome_unknown', 'failed', 'interrupted', 'cancelled', 'succeeded'];
@@ -59,6 +60,7 @@ export class Diagnostics {
         availability: choice(repo.availability, ['this-mac', 'both-macs']), owner: repo.canonicalHostId === this.store.hostId ? 'local' : 'peer',
         gate: choice(repo.config.validation.gate, ['enabled', 'inactive']) })),
       history: { retainedOperations: count(total), includedOperations: operations.length, truncated: !selected && total > operations.length, order: 'newest_first' },
+      connectivity: [...this.store.records<ObjectValue>('connectivity'), ...this.store.records<ObjectValue>('gitConnectivity')].slice(0, 100).map(value => ({ state: choice(value['state'], ['unknown', 'checking', 'ready', 'unavailable', 'requires_action']), freshness: choice(value['freshness'], ['fresh', 'stale', 'unknown']), reasonCode: choice(value['reasonCode'], [...connectionReasons, 'GIT_REMOTE_UNAVAILABLE']), stage: choice(value['stage'], ['configuration', 'resolution', 'connection', 'trust', 'authentication', 'helper', 'protocol', 'identity', 'operation', 'none']), retryable: value['retryable'] === true, observedAt: date(value['observedAt']), lastSuccessAt: date(value['lastSuccessAt']), nextRetryAt: date(value['nextRetryAt']), provider: { status: choice(object(value['provider'])['status'], ['unknown', 'unavailable', 'skipped', 'not_applicable', 'observed']), path: choice(object(value['provider'])['path'], ['unknown', 'direct', 'relay']) } })),
       resourceOwnership: this.store.db.prepare(`SELECT json_extract(body,'$.kind') kind, json_extract(body,'$.state') state, json_extract(body,'$.lifetime') lifetime, COUNT(*) count FROM records WHERE namespace='resource' AND (? IS NULL OR json_extract(body,'$.operationId')=?) GROUP BY kind,state,lifetime LIMIT 101`).all(operationId ?? null, operationId ?? null).slice(0, 100).map(row => ({ kind: choice(row['kind'], ['process', 'server', 'provider', 'simulator', 'service']), state: choice(row['state'], ['intent', 'allocated', 'active', 'stopping', 'stopped', 'retained', 'unresolved']), lifetime: choice(row['lifetime'], ['ephemeral', 'borrowed', 'interactive', 'persistent']), count: count(row['count']) })),
       operations: operations.map(summarize),
       omissions: ['project and device names', 'absolute paths', 'host and device identifiers', 'network endpoints', 'source and commit contents', 'command arguments', 'raw logs and screenshots', 'error messages', 'pairing and signing assets', 'app data', 'free-form evidence'],

@@ -137,7 +137,7 @@ test('acknowledged incoming bytes expire while duplicate transfer receipts and i
     assert(fs.existsSync(foreign));
     const receive = (action, body) => f.engine.peers.receive({ fromHostId: senderHostId, expectedHostId: f.store.hostId, compatibility: { version: '0.1.0' }, action, body: { repositoryId: f.repo.id, ...body } });
     assert.deepEqual((await receive('transfer.begin', { manifest })).accepted, accepted);
-    assert.deepEqual(await receive('transfer.finish', { transferId }), { ...accepted, hostId: f.store.hostId, version: '0.1.0', protocolVersion: 1, requestSchemaVersion: 1 });
+    assert.deepEqual(await receive('transfer.finish', { transferId }), { ...accepted, hostId: f.store.hostId, version: '0.1.0', protocolVersion: 1, requestSchemaVersion: 1, capabilities: ['health-v1', 'lookup-request-v1'] });
     assert.equal(f.store.peerEvidenceProtected(f.store.get(op.operationId)), false);
   } finally { f.close(); }
 });

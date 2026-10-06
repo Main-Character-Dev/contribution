@@ -18,6 +18,21 @@ try {
   if (!engine.maintenance.current()) { await engine.resources.reconcile(); await engine.recoverObservedEffects(); engine.kick(); }
   process.stdout.write(JSON.stringify({ state: 'ready', hostId: journal.hostId, payload: payload.identity }) + '\n');
   let closing = false;
+  // Only the verified native supervisor owns this inherited pipe. Public IPC
+  // cannot submit network hints. Drop malformed/oversized lines without storing
+  // interface names, addresses, DNS values or arbitrary native payloads.
+  let hintBuffer = '', discardHint = false;
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk: string) => {
+    for (const character of chunk) {
+      if (character === '\n') {
+        if (!discardHint && !closing && !journal.getMeta('paused') && !journal.getMeta('maintenance')) {
+          try { const hint = JSON.parse(hintBuffer) as { event?: unknown }; if (['launch', 'wake', 'network'].includes(String(hint.event))) { engine.peers.networkHint(); void engine.peers.tick(); } } catch { /* categorical hints are optional */ }
+        }
+        hintBuffer = ''; discardHint = false;
+      } else if (!discardHint) { hintBuffer += character; if (hintBuffer.length > 128) { hintBuffer = ''; discardHint = true; } }
+    }
+  });
   const monitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('maintenance')) void engine.github.tick(engine.repos.all()); }, 30000);
   const peerMonitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('paused') && !journal.getMeta('maintenance')) void engine.peers.tick(); }, 1500);
   const storageMonitor = setInterval(() => { if (engine.storageHold && !engine.stopping && !journal.getMeta('maintenance')) engine.kick(); }, 30000);
@@ -29,7 +44,7 @@ try {
       clearInterval(drain); server.close(async () => {
         await engine.power.close();
         try { unlinkSync(socketPath(directory)); } catch { /* server may remove it */ }
-        engine.maintenance.stopped(); journal.close(); lock.release();
+        process.stdin.destroy(); engine.maintenance.stopped(); journal.close(); lock.release();
         if (engine.restartRequested) {
           // Replace this launchd-owned process only after every worker and peer
           // transfer drained and the database/socket/lock were closed.

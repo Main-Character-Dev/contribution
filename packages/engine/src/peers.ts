@@ -7,7 +7,9 @@ import type { ObjectValue } from './core.js';
 import type { Journal, Operation } from './journal.js';
 import type { Repositories, Enrolled } from './repositories.js';
 import { identity, git, gitText, ordinaryHistory, oid, clean } from './git.js';
-import { run } from './process.js';
+import { PeerConnectivity, invokeSSH, transportFailure, sshDestination, retryDelay, failureFacts } from './peer-connectivity.js';
+import type { ConnectivityClock } from './peer-connectivity.js';
+import { diagnoseTailscale } from './tailscale-diagnostics.js';
 import { privateDirectory } from './private-files.js';
 import { Milestones } from './notifications.js';
 import { ProjectRegistry } from './project-registry.js';
@@ -20,8 +22,8 @@ import { completionReceipt } from './peer-receipts.js';
 import type { CompletionReceipt, CompletionOutbox } from './peer-receipts.js';
 import { assertRepositorySettled } from './repository-idle.js';
 
-export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string }
-export type PeerTransport = (alias: string, envelope: ObjectValue) => Promise<ObjectValue>;
+export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string; capabilities?: string[] }
+export type PeerTransport = (alias: string, envelope: ObjectValue, options?: { signal?: AbortSignal; health?: boolean }) => Promise<ObjectValue>;
 export interface TransferManifest {
   schemaVersion: 1; transferId: string; requestId: string; repositoryId: string; senderHostId: string;
   kind: 'submit' | 'seed' | 'mirror'; branch: string; tip: string; base: string | null; metadata: ObjectValue;
@@ -45,33 +47,34 @@ export function compatiblePeer(hello: ObjectValue): boolean {
   if (hello['protocolVersion'] === undefined) return hello['version'] === buildIdentity.version;
   return hello['protocolVersion'] === 1 && hello['requestSchemaVersion'] === 1 && Boolean(local && remote && local[1] === remote[1] && local[2] === remote[2] && Math.abs(Number(local[3]) - Number(remote[3])) <= 1);
 }
-const peerHello = (): ObjectValue => ({ version: buildIdentity.version, protocolVersion: 1, requestSchemaVersion: 1 });
+const peerHello = (): ObjectValue => ({ version: buildIdentity.version, protocolVersion: 1, requestSchemaVersion: 1, capabilities: ['health-v1', 'lookup-request-v1'] });
 function uuid(value: unknown, field: string): string { const result = string(value, field); requireValue(validateContractFormat('uuid', result), 'INVALID_ID', `${field} must be a UUID.`, 2); return result; }
 function sync(path: string): void { const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); } }
-export async function sshTransport(alias: string, envelope: ObjectValue): Promise<ObjectValue> {
-  requireValue(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(alias), 'INVALID_SSH_ALIAS', 'Use a configured SSH host alias.', 2);
-  // This fixed command never contains repository paths, source text or caller argv.
-  const result = await run('/usr/bin/ssh', ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=8',
-    '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=2', '--', alias, '"$HOME/.local/bin/contribution" peer --stdio'],
-    { input: JSON.stringify(envelope) + '\n', timeoutMs: 45000, maxBytes: 2 * 1024 * 1024 });
-  if (result.code === 255 || result.timedOut) throw new Fault('PEER_UNAVAILABLE', 'Verified noninteractive SSH or the installed peer service is unavailable. Accepted local work remains retained.', 3, {}, true);
+export async function sshTransport(alias: string, envelope: ObjectValue, options: { signal?: AbortSignal; health?: boolean } = {}): Promise<ObjectValue> {
+  const result = await invokeSSH(alias, envelope, options);
+  if (result.timedOut || result.cancelled || result.outputLimited || result.cleanup && !result.cleanup.released || result.code === 255 || result.code === 126 || result.code === 127) throw transportFailure(result);
   let response: Response;
   try { response = JSON.parse(result.stdout) as Response; assertContract('response', response); }
-  catch { throw new Fault('PEER_PROTOCOL_ERROR', 'The installed peer returned an incompatible response.', 3); }
+  catch { throw result.code !== 0 ? transportFailure(result) : new Fault('PEER_PROTOCOL_ERROR', 'The installed peer returned an incompatible response.', 3); }
   if (response.error) throw new Fault(response.error.code, response.error.message, 3, response.result ?? {}, response.error.retryable);
+  if (result.code !== 0) throw transportFailure(result);
   return object(response.result);
 }
 
 export class Peers {
   readonly registry: ProjectRegistry;
+  readonly connectivity: PeerConnectivity;
+  private checks = new Map<string, Promise<unknown>>();
+  private diagnoses = new Map<string, Promise<unknown>>();
   private chains = new Map<string, Promise<unknown>>();
   busy = false;
+  get observing(): boolean { return this.checks.size > 0 || this.diagnoses.size > 0; }
   cancelLocal?: (operation: Operation) => Response;
   prepareFence?: (repo: Enrolled) => Promise<void>;
   dispatchLocal?: (command: string, args: ObjectValue) => Promise<Response>;
   receiveArtifact?: (repo: Enrolled, from: string, action: string, body: ObjectValue) => Promise<ObjectValue>;
   receiveDeviceOwnership?: (repo: Enrolled, from: string, release: unknown) => Promise<ObjectValue>;
-  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: string, readonly transport: PeerTransport = sshTransport) { this.registry = new ProjectRegistry(store, repos); }
+  constructor(readonly store: Journal, readonly repos: Repositories, readonly payload: string, readonly transport: PeerTransport = sshTransport, clock?: ConnectivityClock) { this.registry = new ProjectRegistry(store, repos); this.connectivity = new PeerConnectivity(store, clock); }
   list(): Peer[] { return this.store.records<Peer>('peer'); }
   private serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const previous = this.chains.get(key) ?? Promise.resolve();
@@ -81,15 +84,52 @@ export class Peers {
   async call(hostId: string, action: string, body: ObjectValue): Promise<ObjectValue> {
     const peer = this.store.record<Peer>('peer', hostId);
     requireValue(peer?.alias, 'PEER_ROUTE_REQUIRED', 'Pair this host through its verified SSH alias before sending work.', 3);
-    const result = await this.transport(peer.alias, { fromHostId: this.store.hostId, expectedHostId: hostId, compatibility: peerHello(), action, body });
-    requireValue(result['hostId'] === hostId, 'PEER_IDENTITY_CHANGED', 'The SSH destination no longer identifies the paired Contribution host.', 3);
-    requireValue(compatiblePeer(result), 'PEER_VERSION_MISMATCH', 'Peer compatibility changed; update the selected hosts before continuing.', 3); return result;
+    const alias = peer.alias;
+    return this.connectivity.execute(hostId, alias, action, async signal => {
+      const result = await this.transport(alias, { fromHostId: this.store.hostId, expectedHostId: hostId, compatibility: peerHello(), action, body }, { signal, health: action === 'health' });
+      requireValue(result['hostId'] === hostId, 'PEER_IDENTITY_CHANGED', 'The SSH destination no longer identifies the paired Contribution host.', 3);
+      requireValue(compatiblePeer(result), 'PEER_VERSION_MISMATCH', 'Peer compatibility changed; update the selected hosts before continuing.', 3); return result;
+    }, result => Array.isArray(result['capabilities']) ? [...new Set(result['capabilities'].filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 16) : []);
   }
+  check(hostId: string, explicit = false): ObjectValue {
+    const peer = this.list().find(p => p.hostId === hostId); requireValue(peer?.alias, 'PEER_ROUTE_REQUIRED', 'Select a paired host with a configured SSH route.', 3);
+    if (explicit && !this.checks.has(hostId) && this.connectivity.invalidate(hostId, peer.alias, true)) this.expedite(hostId);
+    if (!this.checks.has(hostId) && !this.store.getMeta('paused') && !this.store.getMeta('maintenance')) {
+      const pending = this.call(hostId, 'health', {}).catch(() => {}).finally(() => this.checks.delete(hostId)); this.checks.set(hostId, pending);
+    }
+    return { connectivity: this.connectivity.snapshot(hostId, peer.alias), checking: this.checks.has(hostId) };
+  }
+  async settledChecks(): Promise<void> { await Promise.allSettled([...this.checks.values(), ...this.diagnoses.values()]); }
+  diagnose(hostId: string): ObjectValue {
+    const peer = this.list().find(p => p.hostId === hostId); requireValue(peer?.alias, 'PEER_ROUTE_REQUIRED', 'Select a paired host with a configured SSH route.', 3);
+    if (!this.diagnoses.has(hostId) && !this.store.getMeta('paused') && !this.store.getMeta('maintenance')) {
+      const revision = this.connectivity.snapshot(hostId, peer.alias).endpointRevision, generation = this.connectivity.snapshot(hostId, peer.alias).generation;
+      const pending = diagnoseTailscale(peer.alias).then(provider => {
+        this.connectivity.provider(hostId, peer.alias!, provider, revision, generation);
+      }).catch(() => {}).finally(() => this.diagnoses.delete(hostId)); this.diagnoses.set(hostId, pending);
+    }
+    return { connectivity: this.connectivity.snapshot(hostId, peer.alias), diagnosing: this.diagnoses.has(hostId) };
+  }
+  private expedite(hostId: string): void {
+    const registry = this.store.record<ObjectValue>('peerRegistrySync', hostId);
+    if (registry) this.store.put('peerRegistrySync', hostId, { ...registry, nextAttempt: 0 });
+    for (const op of this.store.unsettled()) {
+      if ((op.input['destinationHostId'] ?? op.result['executionHostId'] ?? op.result['canonicalHostId']) !== hostId) continue;
+      if (op.state === 'queued_local') this.store.update(op, { result: { ...op.result, nextPeerAttempt: 0 } });
+      else if (op.state === 'needs_attention' && op.error && ['SSH_AUTH_DENIED', 'SSH_HOST_KEY_CHANGED', 'SSH_HOST_UNAPPROVED', 'SSH_CONFIG_INVALID', 'PEER_HELPER_UNAVAILABLE', 'PEER_PROTOCOL_ERROR', 'PEER_IDENTITY_CHANGED', 'PEER_VERSION_MISMATCH'].includes(op.error.code)) this.store.update(op, { state: 'queued_local', error: null, result: { ...op.result, nextPeerAttempt: 0 } });
+    }
+  }
+  networkHint(): void { for (const peer of this.list()) if (peer.alias && this.connectivity.invalidate(peer.hostId, peer.alias)) this.expedite(peer.hostId); }
+
   async pair(alias: string): Promise<ObjectValue> {
+    sshDestination(alias);
     const result = await this.transport(alias, { fromHostId: this.store.hostId, action: 'hello', body: peerHello() });
     const hostId = uuid(result['hostId'], 'hostId'); requireValue(hostId !== this.store.hostId, 'SELF_PAIRING', 'Choose a different host.');
     requireValue(compatiblePeer(result), 'PEER_VERSION_MISMATCH', 'Update both peers to compatible adjacent patch releases with protocol and request schema version 1.', 3);
-    const peer: Peer = { hostId, alias, version: string(result['version'], 'version'), observedAt: now() }; this.store.put('peer', hostId, peer);
+    const previous = this.store.record<Peer>('peer', hostId);
+    requireValue(!this.list().some(p => p.alias === alias && p.hostId !== hostId), 'PEER_IDENTITY_CHANGED', 'This route is already bound to another Contribution host.', 3);
+    if (previous?.alias && previous.alias !== alias) this.connectivity.changeEndpoint(hostId, alias);
+    const peer: Peer = { hostId, alias, capabilities: Array.isArray(result['capabilities']) ? [...new Set(result['capabilities'].filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 16) : [], version: string(result['version'], 'version'), observedAt: now() }; this.store.put('peer', hostId, peer);
     await this.syncRegistry(hostId, true);
     return { peer, authorityChanged: false, registry: this.store.record('peerRegistrySync', hostId) };
   }
@@ -106,7 +146,7 @@ export class Peers {
       requireValue(result['receivedGeneration'] === catalog.generation && result['receivedDigest'] === catalog.digest, 'REGISTRY_RECEIPT_INVALID', 'The peer did not acknowledge the exact catalog generation.', 3);
       const received = this.registry.receive(hostId, result['catalog']);
       this.store.put('peerRegistrySync', hostId, { state: 'acknowledged', generation: catalog.generation, digest: catalog.digest, receivedGeneration: received.generation,
-        observedAt: now(), failures: 0, nextAttempt: Date.now() + 30000 });
+        observedAt: now(), failures: 0, nextAttempt: Date.now() + 300000 });
     } catch (error) {
       const failures = (previous?.failures ?? 0) + 1;
       this.store.put('peerRegistrySync', hostId, { state: 'pending', generation: catalog?.generation ?? null, digest: catalog?.digest ?? null, failures,
@@ -241,6 +281,10 @@ export class Peers {
       const received = this.registry.receive(from, body['catalog']);
       return { hostId: this.store.hostId, ...peerHello(), catalog: this.registry.local(), receivedGeneration: received.generation, receivedDigest: received.digest };
     }
+    if (action === 'health') {
+      requireValue(Object.keys(body).length === 0, 'INVALID_PEER_REQUEST', 'Health accepts no repository or command input.', 2);
+      return { hostId: this.store.hostId, ...peerHello() };
+    }
     const repositoryId = uuid(body['repositoryId'], 'repositoryId'), repo = await this.repos.get(repositoryId);
     const result = await this.serial(repositoryId, async (): Promise<ObjectValue> => {
       if (action === 'repository.inspect') return { repositoryId, branch: repo.config.integration.branch, policy: repo.revision, tip: (await identity(repo.path)).tip, canonicalHostId: repo.canonicalHostId, completionPending: this.receiptPending(repo) };
@@ -286,6 +330,20 @@ export class Peers {
       if (action === 'device.ownership.accept') {
         requireValue(this.receiveDeviceOwnership, 'PEER_ACTION_UNSUPPORTED', 'This peer has no device ownership receiver.', 3);
         return this.receiveDeviceOwnership(repo, from, body['release']);
+      }
+      if (action === 'operation.lookup-request') {
+        const requestId = uuid(body['requestId'], 'requestId'), request = this.store.record<{ from: string; repositoryId: string; digest: string }>('peerRequest', requestId), op = this.store.byRequest(requestId);
+        const association = op && this.store.record<{ from: string }>('peerOperation', op.operationId);
+        requireValue(!request || request.from === from && request.repositoryId === repo.id, 'PEER_OPERATION_UNAUTHORIZED', 'This request belongs to another caller.');
+        requireValue(!op || op.repositoryId === repo.id && (association?.from === from || op.input['senderHostId'] === from || request?.from === from), 'PEER_OPERATION_UNAUTHORIZED', 'This operation belongs to another caller.');
+        requireValue(!request || typeof body['scopeDigest'] === 'string' && request.digest === body['scopeDigest'], 'REQUEST_ID_CONFLICT', 'The immutable request payload differs.');
+        requireValue(!op || request, 'OUTCOME_UNCERTAIN', 'This historical operation has no retained immutable peer request scope. Reconcile it before dispatch.', 6);
+        if (op) return { acceptance: 'accepted', response: this.store.response(op) };
+        const cancellation = this.store.record<{ repositoryId: string }>('peerCancellation', `${from}:${requestId}`);
+        requireValue(!cancellation || cancellation.repositoryId === repo.id, 'PEER_OPERATION_UNAUTHORIZED', 'The cancellation fence belongs to another repository.');
+        if (cancellation) return { acceptance: 'cancelled', requestId };
+        // A retained request with incomplete admission is not absence.
+        return { acceptance: request ? 'pending' : 'absent', requestId };
       }
       if (action === 'operation.cancel-request') {
         const requestId = string(body['requestId'], 'requestId'), op = this.store.byRequest(requestId);
@@ -523,33 +581,47 @@ export class Peers {
       // Seed admission precedes task handoff. Stable per-repository creation order
       // is retained even when one host is unavailable for hours.
       const pending = this.store.unsettled().filter(op => op.state === 'queued_local');
-      for (const op of pending) {
-        if (Number(op.result['nextPeerAttempt'] ?? 0) > Date.now()) continue;
-        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) break;
-        if (isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && ['needs_attention', 'outcome_unknown'].includes(other.state))) continue;
-        const earlier = pending.find(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) === isGitJob(op.kind) && other.operationId !== op.operationId && other.createdAt < op.createdAt);
-        if (earlier) continue;
+      await Promise.all(pending.map(async op => {
+        if (Number(op.result['nextPeerAttempt'] ?? 0) > Date.now()) return;
+        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) return;
+        if (isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId && ['needs_attention', 'outcome_unknown'].includes(other.state))) return;
+        // Journal order is durable sequence, including equal wall-clock stamps.
+        const first = pending.find(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) === isGitJob(op.kind));
+        if (first?.operationId !== op.operationId) return;
         try {
           const repo = await this.repos.get(op.repositoryId);
           const authority = this.store.record<Authority>('authority', repo.id);
           requireValue(authority?.phase === 'active', 'AUTHORITY_TRANSITION_PENDING', 'Retained work waits for authority reconciliation.', 3);
           const hostId = typeof op.input['destinationHostId'] === 'string' ? op.input['destinationHostId'] : repo.canonicalHostId;
-          if (this.store.get(op.operationId).state !== 'queued_local') continue;
+          if (this.store.get(op.operationId).state !== 'queued_local') return;
           let remoteOperationId = op.result['remoteOperationId'];
           if (!remoteOperationId) {
             const current = this.store.get(op.operationId);
             const device = op.kind === 'remote.device';
+            let reconciledReceipt: ObjectValue | undefined;
+            if (current.result['transferAttempted'] && ['remote.checks', 'remote.push', 'remote.device'].includes(op.kind) && !current.result['cancelRequested']) {
+              const args = op.kind === 'remote.checks' ? { repo: repo.id, requestId: op.requestId, canonical: true, fresh: op.input['fresh'] === true, ...(op.input['checkId'] ? { checkId: op.input['checkId'] } : {}) } : { repo: repo.id, requestId: op.requestId, expectedTip: op.input['expectedTip'], scopeToken: op.input['scopeToken'] };
+              const scope = op.kind === 'remote.device' ? { command: op.input['command'], args: op.input['args'], expectedPolicyRevision: op.result['remotePolicyRevision'] } : { action: op.kind === 'remote.checks' ? 'checks.start' : 'publication.start', args };
+              let lookup: ObjectValue;
+              try { lookup = await this.call(hostId, 'operation.lookup-request', { repositoryId: repo.id, requestId: op.requestId, scopeDigest: digest(scope) }); }
+              catch (error) { if (error instanceof Fault && ['PEER_ACTION_UNSUPPORTED', 'INVALID_ID'].includes(error.code)) throw new Fault('OUTCOME_UNCERTAIN', 'This peer cannot safely query the uncertain request. Update or reconcile its retained state before dispatch.', 6); throw error; }
+              if (lookup['acceptance'] === 'accepted') reconciledReceipt = lookup;
+              else requireValue(lookup['acceptance'] === 'absent', 'OUTCOME_UNCERTAIN', 'Remote admission or cancellation requires authoritative reconciliation before dispatch.', 6);
+            }
             this.store.update(current, { result: { ...current.result, transferAttempted: true, ...(device ? { executionHostId: hostId } : { canonicalHostId: hostId }) } });
             let receipt: ObjectValue;
-            if (current.result['cancelRequested']) {
+            if (reconciledReceipt) { receipt = reconciledReceipt;
+            } else if (current.result['cancelRequested']) {
               receipt = await this.call(hostId, 'operation.cancel-request', { repositoryId: repo.id, requestId: op.requestId });
               if (receipt['requestCancelled'] === true) {
                 const latest = this.store.get(op.operationId);
                 this.store.update(latest, { state: 'cancelled', stage: 'remote_admission_cancelled', error: null, result: { ...latest.result, cancellationReceipt: receipt } });
-                continue;
+                return;
               }
             } else if (device) {
               receipt = await this.call(hostId, 'device.command', { repositoryId: repo.id, command: op.input['command'], args: op.input['args'], expectedPolicyRevision: op.result['remotePolicyRevision'] });
+            } else if (op.kind === 'remote.checks') {
+              receipt = await this.call(hostId, 'checks.start', { repositoryId: repo.id, requestId: op.requestId, ...op.input });
             } else if (op.kind === 'remote.push') {
               receipt = await this.call(hostId, 'publication.start', { repositoryId: repo.id, requestId: op.requestId, expectedTip: op.input['expectedTip'], scopeToken: op.input['scopeToken'] });
             } else {
@@ -578,21 +650,20 @@ export class Peers {
           await this.observeOperation(this.store.get(op.operationId));
         } catch (error) {
           const latest = this.store.get(op.operationId), attempts = Number(latest.result['peerFailures'] ?? 0) + 1;
-          const delay = Math.min(300000, 1000 * 2 ** Math.min(attempts, 8)) * (0.8 + Math.random() * 0.4);
-          const retry = !(error instanceof Fault) || ['PEER_UNAVAILABLE', 'PEER_ROUTE_REQUIRED', 'SERVICE_UNAVAILABLE', 'SERVICE_TIMEOUT', 'AUTHORITY_TRANSITION_PENDING'].includes(error.code);
+          const delay = retryDelay(attempts, this.connectivity.clock.random());
+          const retry = !(error instanceof Fault) || error.retryable || failureFacts(error)?.retryable === true || ['PEER_ROUTE_REQUIRED', 'AUTHORITY_TRANSITION_PENDING'].includes(error.code);
           this.store.update(latest, { state: retry ? 'queued_local' : 'needs_attention', stage: 'waiting_for_peer', error: retry ? null : rejected(error).error, result: { ...latest.result, peerFailures: attempts, nextPeerAttempt: Date.now() + delay,
             peerError: { code: error instanceof Fault ? error.code : 'PEER_UNAVAILABLE', message: error instanceof Fault ? error.message : 'Peer transport is unavailable.' } } });
         }
-      }
-      for (const peer of this.list().filter(peer => peer.alias)) {
-        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) break;
+      }));
+      await Promise.all(this.list().filter(peer => peer.alias).map(async peer => {
+        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) return;
         await this.syncRegistry(peer.hostId);
-      }
+      }));
       const acknowledgments = this.store.db.prepare("SELECT body FROM records WHERE namespace='peerCompletionOutbox' AND json_extract(body,'$.state')='pending' AND COALESCE(json_extract(body,'$.nextAttempt'),0)<=? ORDER BY json_extract(body,'$.retainedAt'),key LIMIT 20").all(Date.now());
-      for (const row of acknowledgments) {
-        if (this.store.getMeta('paused') || this.store.getMeta('maintenance')) break;
-        await this.acknowledgeCompletion(JSON.parse(String(row['body'])) as CompletionOutbox);
-      }
+      await Promise.all(acknowledgments.map(async row => {
+        if (!this.store.getMeta('paused') && !this.store.getMeta('maintenance')) await this.acknowledgeCompletion(JSON.parse(String(row['body'])) as CompletionOutbox);
+      }));
     } finally { this.busy = false; }
   }
   async observeOperation(op: Operation, reconcile = false): Promise<Operation> {

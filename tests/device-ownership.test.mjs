@@ -72,6 +72,7 @@ test('lost destination acknowledgment resumes the exact release without cleanup 
     f.loseReply(); const unknown = await f.transfer(); assert.equal(unknown.operationState, 'outcome_unknown');
     assert.equal(f.engines.source.devices.ownership(f.args.device).mutationsPermitted, false);
     const revision = f.engines.target.devices.ownership(f.args.device).revision;
+    await f.call('source', 'hosts.retry', {host:f.engines.target.store.hostId}); await f.engines.source.peers.settledChecks();
     await f.call('source', 'devices.reconcile', { operationId: unknown.operationId, requestId: randomUUID() });
     const result = await f.wait('source', unknown.operationId); assert.equal(result.operationState, 'succeeded', JSON.stringify(result));
     assert.equal(f.engines.target.devices.ownership(f.args.device).revision, revision); assert.deepEqual(f.releases, ['source']);
@@ -96,7 +97,7 @@ test('an offline destination leaves durable relinquishment; the former host neve
     const owner = f.engines.source.devices.ownership(f.args.device); assert.equal(owner.state, 'unowned'); assert.equal(owner.mutationsPermitted, false);
     f.engines.source.devices.saveOwnership({ ...owner, leaseExpiresAt: '2020-01-01T00:00:00Z' });
     assert.equal((await f.call('source', 'devices.transfer-host', { ...f.args, requestId: randomUUID(), expectedRevision: owner.revision })).error.code, 'OWNERSHIP_REVISION_CONFLICT');
-    f.offline.delete('target'); await f.call('source', 'runs.reconcile', { operationId: unknown.operationId });
+    f.offline.delete('target'); await f.call('source', 'hosts.retry', {host:f.engines.target.store.hostId}); await f.engines.source.peers.settledChecks(); await f.call('source', 'runs.reconcile', { operationId: unknown.operationId });
     assert.equal((await f.wait('source', unknown.operationId)).operationState, 'succeeded'); assert.deepEqual(f.releases, ['source']);
   } finally { await f.cleanup(); }
 });

@@ -6,7 +6,17 @@ import { executable, run } from './process.js';
 import type { RunOptions, ProcessResult } from './process.js';
 
 export async function git(path: string, args: readonly string[], options: RunOptions = {}): Promise<ProcessResult> {
-  return run(executable('git'), ['-C', path, ...args], options);
+  let environment = options.env;
+  if (['push', 'fetch', 'pull', 'ls-remote', 'clone'].includes(args[0] ?? '')) {
+    // Leave explicitly configured transports/wrappers untouched. These calls
+    // still have the real runner's outer deadline and closed stdin.
+    const selected = { ...process.env, ...options.env };
+    if (selected['GIT_SSH_COMMAND'] === undefined && selected['GIT_SSH'] === undefined && selected['GIT_SSH_VARIANT'] === undefined) {
+      const configured = await run(executable('git'), ['-C', path, 'config', '--get-regexp', '^(core[.]sshcommand|ssh[.]variant)$'], { timeoutMs: 3000, maxBytes: 8192, ...(options.signal ? { signal: options.signal } : {}), ...(options.env ? { env: options.env } : {}) });
+      if (configured.code === 1) environment = { ...options.env, GIT_SSH_COMMAND: '/usr/bin/ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 -o ServerAliveInterval=10 -o ServerAliveCountMax=2' };
+    }
+  }
+  return run(executable('git'), ['-C', path, ...args], { ...options, ...(environment ? { env: environment } : {}) });
 }
 export async function gitText(path: string, args: readonly string[], options: RunOptions = {}): Promise<string> {
   const result = await git(path, args, options);

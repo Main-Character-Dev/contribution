@@ -118,7 +118,7 @@ test('AT-LC18 failed durable grant cannot run target code and unique intent stay
 });
 
 test('AT-LC21 newer incompatible journal is rejected read-only without losing resource evidence', () => {
-  const f = fixture(); f.add(); f.store.db.exec('PRAGMA user_version=3'); f.store.close();
+  const f = fixture(); f.add(); f.store.db.exec('PRAGMA user_version=4'); f.store.close();
   try {
     const file = join(f.root, 'state', 'journal.sqlite'), before = readFileSync(file);
     assert.throws(() => new Journal(join(f.root, 'state')), { code: 'DATABASE_TOO_NEW' }); assert.deepEqual(readFileSync(file), before);

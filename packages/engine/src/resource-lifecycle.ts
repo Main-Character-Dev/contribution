@@ -110,7 +110,7 @@ export class ResourceLifecycle {
     this.store.transaction(() => {
       // Transactional compatibility migration, before the first allocation.
       // A v1 reader refuses user_version=2 before any write or worker dispatch.
-      this.store.db.exec('PRAGMA user_version=2'); this.save(record); this.store.put('resourceRequest', input.requestId, { digest: key, resourceId: record.resourceId });
+      if (Number(this.store.db.prepare('PRAGMA user_version').get()?.['user_version']) < 2) this.store.db.exec('PRAGMA user_version=2'); this.save(record); this.store.put('resourceRequest', input.requestId, { digest: key, resourceId: record.resourceId });
     }); return record;
   }
   assertCurrent(expected: Resource): void {

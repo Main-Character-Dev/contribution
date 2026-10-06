@@ -485,6 +485,31 @@ private struct ContributionSettings: View {
                 Button("Open Login Items settings") { ServiceRegistration.openSettings() }
                 Text("Registration needs the packaged app. Signing, background approval, and actual login behavior remain installation checks.").font(.caption).foregroundStyle(.secondary)
             }
+            Section("Remote connections") {
+                ForEach(workspace.hosts.indices.filter { workspace.hosts[$0].object["hostId"]?.text != workspace.localHostID }, id: \.self) { index in
+                    let host = workspace.hosts[index]
+                    let fields = host.object
+                    let connection = fields["connectivity"]?.object ?? [:]
+                    let hostID = fields["hostId"]?.text ?? ""
+                    let presentation = ConnectivityPresentation(connection)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(workspace.hostLabel(hostID)).font(.headline)
+                        Text(presentation.title)
+                        Text(presentation.message).font(.caption)
+                        Text("Observation: \(connection["freshness"]?.text ?? "unknown") · \(connection["observedAt"]?.text ?? "Not checked")").font(.caption).foregroundStyle(.secondary)
+                        Text("Last success: \(connection["lastSuccessAt"]?.text ?? "Not observed") · Retry: \(connection["nextRetryAt"]?.text ?? "On request")").font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            Button("Check connection") { Task { _ = await workspace.call("hosts.check", ["host": .string(hostID)]); await workspace.refresh() } }
+                            Button("Retry") { Task { _ = await workspace.call("hosts.retry", ["host": .string(hostID)]); await workspace.refresh() } }
+                            if connection["reasonCode"]?.text == "PROCESS_RELEASE_UNCONFIRMED" { Button("Observe process release") { Task { _ = await workspace.call("hosts.reconcile", ["host": .string(hostID)]); await workspace.refresh() } } }
+                            Button("Connection settings") { NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")) }
+                            Button("Network diagnostics") { Task { _ = await workspace.call("hosts.diagnose", ["host": .string(hostID)]); await workspace.refresh() } }
+                        }
+                        Text("Provider evidence: \(connection["provider"]?.object["status"]?.text ?? "unknown") · \(connection["provider"]?.object["path"]?.text ?? "unknown")").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("Contribution uses your configured SSH route. Verify changed host identity or credentials in your SSH connection settings. VPN configuration remains under your control.").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Version") { LabeledContent("Contribution", value: BuildIdentity.version); Text("Development build · Remote device capabilities remain unverified").foregroundStyle(.secondary) }
             PowerSettings(workspace: workspace)
             Section("Command line") {

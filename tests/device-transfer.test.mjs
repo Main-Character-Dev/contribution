@@ -71,6 +71,7 @@ test('lost chunk and final replies resume the same retained transfer and receipt
     const f = await fixture(); try {
       f.lose(action); const accepted = await f.call('laptop', 'devices.artifacts.transfer', f.args), stopped = await f.wait('laptop', accepted.operationId);
       assert.equal(stopped.operationState, action === 'artifact.finish' ? 'outcome_unknown' : 'waiting', JSON.stringify(stopped));
+      await f.call('laptop', 'hosts.retry', {host:f.hosts.mini.store.hostId}); await f.hosts.laptop.peers.settledChecks();
       await f.call('laptop', 'runs.reconcile', { operationId: accepted.operationId });
       const recovered = await f.wait('laptop', accepted.operationId); assert.equal(recovered.operationState, 'succeeded', JSON.stringify(recovered));
       assert.equal(f.hosts.mini.store.records('artifactIncoming').length, 1); assert.equal(f.hosts.mini.store.records('deviceArtifact').length, 1);
@@ -114,6 +115,7 @@ test('a lost completion receipt remains observable after later receiver scope re
     assert.equal((await f.wait('laptop', accepted.operationId)).operationState, 'outcome_unknown');
     const receiver = f.hosts.mini, settings = receiver.settings(); settings.remoteDevices.enabled = false; receiver.store.setMeta('settings', settings);
     const profile = receiver.store.record('deviceProfile', f.args.repo); receiver.store.put('deviceProfile', f.args.repo, { ...profile, revision: 'revoked-later' });
+    await f.call('laptop', 'hosts.retry', {host:f.hosts.mini.store.hostId}); await f.hosts.laptop.peers.settledChecks();
     await f.call('laptop', 'runs.reconcile', { operationId: accepted.operationId });
     assert.equal((await f.wait('laptop', accepted.operationId)).operationState, 'succeeded');
     assert.equal(f.calls.filter(call => call.action === 'artifact.finish').length, 1); assert.deepEqual(f.phoneCalls, []);

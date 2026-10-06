@@ -62,7 +62,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'runs reconcile OPID --resume-native --scope-token TOKEN --request-id UUID',
         'repos configure --repo ID --file PATH --expected-revision REV --request-id UUID', 'repos configure --repo ID --resume --request-id UUID',
         'push --repo ID --preview', 'push --repo ID --expected-tip OID --scope-token TOKEN --request-id ID [--wait]',
-        'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',
+        'hosts list|check|retry|diagnose|reconcile --host UUID', 'checks run --repo ID [--source-path PATH|--canonical] [--check ID]', 'runs list|get|wait|follow|cancel|pin|unpin', 'logs OPID [--tail N] [--follow]',
         'repair-context OPID', 'settings get|apply', 'service status|pause|resume|restart --when-idle', 'service storage [--worktrees|--bundles] --preview', 'service storage [--worktrees|--bundles] --scope-token TOKEN --request-id UUID', 'hosts list|pair --ssh-alias ALIAS', 'update check|apply --when-idle', 'codex open --repo ID',
         'repos pair --repo ID --host HOST --request-id UUID', 'repos seed|mirror --repo ID --request-id UUID',
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID] [--prepare-reporting|--prepare-adoption --request-id UUID]',

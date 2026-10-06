@@ -61,7 +61,7 @@ const allowed: Record<string, string[]> = {
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
   'runs.list': ['repo'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
   'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId', 'resumeNative', 'preview', 'scopeToken', 'requestId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
-  'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.pair': ['sshAlias'], 'hosts.sync': ['host'], 'peer.exchange': ['envelope'],
+  'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.reconcile': ['host'], 'hosts.check': ['host'], 'hosts.retry': ['host'], 'hosts.diagnose': ['host'], 'hosts.pair': ['sshAlias'], 'hosts.sync': ['host'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
   'hook.borrow': ['repo', 'operationId', 'hookToken', 'caller'], 'hook.release-borrow': ['repo', 'operationId', 'hookToken', 'caller', 'borrowToken'],
   'hook.adopted.begin': ['repo', 'operationId', 'hookToken', 'caller', 'remote', 'url', 'stdin'], 'hook.adopted.finish': ['repo', 'operationId', 'hookToken', 'caller', 'gateExit', 'gateOutput', 'outputTruncated'],
@@ -110,7 +110,7 @@ export class Engine {
   private notificationRefresh = false;
   private notificationRefreshAt = 0;
   private requests = 0;
-  get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy || this.requests > 0; }
+  get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.peers.observing || this.maintenance.busy || this.requests > 0; }
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture'; buildDriver?: DeviceBuildDriver }) {
     this.resources = processLifecycle(store);
     this.power = new WorkPower(store);
@@ -391,7 +391,7 @@ export class Engine {
       }
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
       if (command === 'maintenance.status') {
-        const blockers = this.maintenance.blockers(this.active.size, this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy, this.requests);
+        const blockers = this.maintenance.blockers(this.active.size, this.notificationRefresh || this.github.busy || this.peers.busy || this.peers.observing || this.maintenance.busy, this.requests);
         return completed({ window: this.maintenance.current() ?? null, ready: this.maintenance.isReady(blockers), blockers, payload: this.payload.identity });
       }
       if (command === 'maintenance.stop') {
@@ -448,7 +448,7 @@ export class Engine {
         const result = this.power.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')); this.refreshPower(); return completed(result);
       }
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
-        resourceHealth: await resourceHealth(this.resources), database: { version: Number(this.store.db.prepare('PRAGMA user_version').get()?.['user_version']), journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
+        resourceHealth: await resourceHealth(this.resources), peerProcessRelease: this.store.records('peerProcessRelease').slice(0, 100), database: { version: Number(this.store.db.prepare('PRAGMA user_version').get()?.['user_version']), journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
         managedStorage: new ManagedStorage(this.store).usage(),
         devices: { enabled: this.settings().remoteDevices?.enabled ?? false, physicalQualification: 'unverified' } });
       if (command === 'service.diagnostics') return completed({ diagnostics: new Diagnostics(this.store, this.repos).snapshot(args['operationId'] === undefined ? undefined : string(args['operationId'], 'operationId')) });
@@ -466,7 +466,12 @@ export class Engine {
         this.store.setMeta('maintenance', true); this.restartRequested = true; this.stopping = true; return completed({ state: 'restart_ready', queuedPreserved: this.store.queue().length });
       }
       if (command === 'update.check') return completed({ status: 'not_configured', reason: 'SIGNED_FEED_REQUIRED', automaticInstallation: false });
-      if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list().map(peer => ({ ...peer, registry: this.store.record('peerRegistrySync', peer.hostId) ?? null }))] });
+      if (command === 'hosts.list') return completed({ hosts: [{ hostId: this.store.hostId, label: this.settings().label, role: this.settings().role, readiness: 'available' }, ...this.peers.list().map(peer => ({ ...peer, connectivity: peer.alias ? this.peers.connectivity.snapshot(peer.hostId, peer.alias) : null, registry: this.store.record('peerRegistrySync', peer.hostId) ?? null }))] });
+      if (command === 'hosts.reconcile') { const host = string(args['host'], 'host'), peer = this.peers.list().find(peer => peer.hostId === host); requireValue(peer?.alias, 'PEER_ROUTE_REQUIRED', 'Select the retained paired host.', 3); return completed(await this.peers.connectivity.reconcile(host, peer.alias)); }
+      if (['hosts.check', 'hosts.retry', 'hosts.diagnose'].includes(command)) {
+        const host = string(args['host'], 'host');
+        return completed(command === 'hosts.diagnose' ? this.peers.diagnose(host) : this.peers.check(host, command === 'hosts.retry'));
+      }
       if (command === 'hosts.pair') return completed(await this.peers.pair(string(args['sshAlias'], 'sshAlias')));
       if (command === 'hosts.sync') {
         const hostId = string(args['host'], 'host'); requireValue(this.peers.list().some(peer => peer.hostId === hostId && peer.alias), 'PEER_ROUTE_REQUIRED', 'Select a paired host with a verified SSH route.', 3);
@@ -768,11 +773,9 @@ export class Engine {
           this.store.assertRepositoryAvailable(repo.id);
           // Canonical source selection is frozen by the owner at admission. An
           // unavailable owner cannot silently substitute the local mirror.
-          const receipt = await this.peers.call(repo.canonicalHostId, 'checks.start', { repositoryId: repo.id, requestId, ...input });
-          const response = receipt['response'] as Response; assertContract('response', response);
-          if (response.error) return response;
-          requireValue(response.operationId, 'PEER_PROTOCOL_ERROR', 'The canonical owner did not retain a check identity.', 3);
-          const op = this.store.admit(requestId, 'remote.checks', repo.id, input, this.payload.identity, 'queued_local', () => ({ remoteOperationId: response.operationId, canonicalHostAccepted: true, canonicalHostId: repo.canonicalHostId, canonicalObservation: response }));
+          this.store.enableConnectivity();
+          const op = this.store.admit(requestId, 'remote.checks', repo.id, input, this.payload.identity, 'queued_local');
+          void this.peers.tick();
           return this.store.response(op);
         }
         const sourcePath = args['canonical'] ? repo.path : typeof args['sourcePath'] === 'string' ? args['sourcePath'] : cwd;

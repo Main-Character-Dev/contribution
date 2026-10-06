@@ -15,7 +15,7 @@ try {
   copyFileSync(process.argv[2], launcher); copyFileSync(process.execPath, join(source, 'runtime/node'));
   const writeVersion = version => {
     writeFileSync(join(source, 'cli.cjs'), `console.log(JSON.stringify({version:${version},path:__dirname,args:process.argv.slice(2)}));`);
-    writeFileSync(join(source, 'service.cjs'), 'console.log(__dirname);setInterval(()=>{},1000);');
+    writeFileSync(join(source, 'service.cjs'), 'console.log(__dirname);process.stdin.on("data",bytes=>{require("node:fs").writeFileSync(process.env.CONTRIBUTION_TEST_SUPPORT_ROOT+"/native-hint.json",bytes)});setInterval(()=>{},1000);');
     const files = Object.fromEntries(['runtime/node', 'cli.cjs', 'service.cjs'].map(file => [file, createHash('sha256').update(readFileSync(join(source, file))).digest('hex')]));
     writeFileSync(join(source, 'manifest.json'), JSON.stringify({ schemaVersion: 1, distribution: 'unsigned-development', files, entrypoints: { cli: 'cli.cjs', service: 'service.cjs' } }));
   };
@@ -24,6 +24,9 @@ try {
   running = spawn(launcher, [], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let errors = ''; running.stderr.on('data', bytes => { errors += bytes; });
   const oldPath = String((await Promise.race([once(running.stdout, 'data'), once(running, 'exit').then(([code]) => { throw new Error(`Launcher exited ${code}: ${errors}`); })]))[0]).trim();
+  const hintPath = join(support, 'native-hint.json');
+  for (let attempt = 0; attempt < 40; attempt++) { try { readFileSync(hintPath); break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); } }
+  assert.deepEqual(JSON.parse(readFileSync(hintPath, 'utf8')), { event: 'launch' }, 'The UI-closed launcher relays a categorical hint to its one engine child');
   assert(oldPath.startsWith(join(support, 'Payloads/'))); assert.equal(statSync(oldPath).mode & 0o777, 0o500);
   const call = () => spawnSync(launcher, ['--cli', 'version', '--json'], { env, encoding: 'utf8', timeout: 20000 });
   assert.equal(JSON.parse(call().stdout).path, oldPath);

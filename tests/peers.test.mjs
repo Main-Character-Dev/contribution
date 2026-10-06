@@ -13,11 +13,15 @@ import { repository, commit, git } from './integration/service.mjs';
 
 async function pairFixture() {
   const root = mkdtempSync(join(tmpdir(), 'ct-peers-')), hosts = {}, stores = [];
+  let loseChecks = false, oldLookup = false; const exchanges = [];
   let offline = false, loseActivation = false, loseReceipt = false, loseAcknowledgment = false, beforeAcknowledgment, legacyReceipt = false;
   const transport = async (alias, envelope) => {
+    exchanges.push(envelope.action);
+    if (oldLookup && envelope.action === 'operation.lookup-request') throw new Fault('PEER_ACTION_UNSUPPORTED', 'Fixture old peer', 3);
     if (offline) throw new Fault('PEER_UNAVAILABLE', 'Fixture peer disconnected.', 3);
     if (envelope.action === 'operation.acknowledge') beforeAcknowledgment?.(envelope);
     const result = await hosts[alias].dispatch({ schemaVersion: 1, command: 'peer.exchange', args: { envelope }, cwd: root });
+    if (loseChecks && envelope.action === 'checks.start') { loseChecks = false; throw new Fault('PEER_UNAVAILABLE', 'Lost checks admission receipt', 3); }
     if (legacyReceipt && envelope.action === 'operation.get' && result.result) {
       delete result.result.completionReceipt; delete result.result.logStatus; result.result.log = '';
     }
@@ -45,7 +49,7 @@ async function pairFixture() {
     }
     throw new Error('Fixture operation timed out: ' + JSON.stringify(await call(host, 'runs.get', { operationId })));
   };
-  return { root, hosts, source, target, config, call, wait, offline: value => { offline = value; }, loseActivation: () => { loseActivation = true; }, loseReceipt: () => { loseReceipt = true; },
+  return { exchanges, loseChecks: () => { loseChecks = true; }, oldLookup: () => { oldLookup = true; }, root, hosts, source, target, config, call, wait, offline: value => { offline = value; }, loseActivation: () => { loseActivation = true; }, loseReceipt: () => { loseReceipt = true; },
     loseAcknowledgment: () => { loseAcknowledgment = true; }, beforeAcknowledgment: fn => { beforeAcknowledgment = fn; }, legacyReceipt: value => { legacyReceipt = value; }, transport,
     cleanup: async () => { for (const host of Object.values(hosts)) host.stopping = true; while (Object.values(hosts).some(host => host.active.size || host.peers.busy)) await new Promise(resolve => setTimeout(resolve, 20)); for (const store of stores) store.close(); rmSync(root, { recursive: true }); } };
 }
@@ -83,6 +87,7 @@ test('completed handoff is durable before acknowledgment and a lost reply retrie
     const recoveredStore = new Journal(store.directory);
     try {
       const resumed = new Peers(recoveredStore, f.hosts.laptop.repos, 'fixture', f.transport);
+      resumed.connectivity.invalidate(f.hosts.mini.store.hostId, 'mini', true);
       await resumed.tick(); assert.equal(recoveredStore.record('peerCompletionOutbox', local.operationId).state, 'acknowledged');
     } finally { recoveredStore.close(); }
     assert.equal(store.peerEvidenceProtected(store.get(local.operationId)), false);
@@ -205,13 +210,18 @@ test('canonical checks run on the owner and an unreachable owner never substitut
     const seed = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); await f.wait('laptop', seed.operationId);
     f.offline(true);
     const unavailable = await f.call('laptop', 'checks.run', { repo, canonical: true, requestId: randomUUID() });
-    assert.equal(unavailable.error.code, 'PEER_UNAVAILABLE'); assert.equal(unavailable.operationId, null);
+    assert.equal(unavailable.error, null); assert.equal(unavailable.operationState, 'queued_local');
+    assert.ok(f.hosts.laptop.store.get(unavailable.operationId));
+    // Real work is retained before any connection attempt, with no mirror check.
+    await f.hosts.laptop.peers.tick(); assert.equal(f.hosts.mini.store.byRequest(f.hosts.laptop.store.get(unavailable.operationId).requestId), undefined);
     f.offline(false);
-    const request = { repo, canonical: true, requestId: randomUUID() }, accepted = await f.call('laptop', 'checks.run', request);
-    assert.equal(accepted.error, null); assert.equal(accepted.result.canonicalHostId, f.hosts.mini.store.hostId);
-    const remote = f.hosts.mini.store.get(accepted.result.remoteOperationId); assert.equal(remote.input.sourcePath, realpathSync(f.target));
-    assert.equal((await f.call('laptop', 'checks.run', request)).operationId, accepted.operationId);
+    await f.call('laptop', 'hosts.retry', { host: f.hosts.mini.store.hostId }); await f.hosts.laptop.peers.settledChecks();
+    const request = { repo, canonical: true, requestId: f.hosts.laptop.store.get(unavailable.operationId).requestId }, accepted = await f.call('laptop', 'checks.run', request);
+    assert.equal(accepted.error, null);
     const result = await f.wait('laptop', accepted.operationId);
+    const local = f.hosts.laptop.store.get(accepted.operationId), remote = f.hosts.mini.store.get(local.result.remoteOperationId);
+    assert.equal(remote.input.sourcePath, realpathSync(f.target));
+    assert.equal((await f.call('laptop', 'checks.run', request)).operationId, accepted.operationId);
     assert.equal(result.operationState, 'waiting'); assert.equal(result.error.code, 'CHECKS_UNCONFIGURED');
     const log = await f.call('laptop', 'logs', { operationId: accepted.operationId });
     assert.equal(log.result.originHostId, f.hosts.mini.store.hostId); assert.equal(log.result.freshness, 'cached'); assert.match(log.result.text, /CHECKS_UNCONFIGURED/);
@@ -250,6 +260,7 @@ test('lost authority reply leaves the old writer fenced and retry resumes the sa
     assert.equal((await f.call('laptop', 'repos.pair', request)).error.code, 'PEER_UNAVAILABLE');
     assert.throws(() => f.hosts.laptop.peers.assertWriter(f.hosts.laptop.repos.all()[0]), /fenced/);
     assert.doesNotThrow(() => f.hosts.mini.peers.assertWriter(f.hosts.mini.repos.all()[0]));
+    await f.call('laptop', 'hosts.retry', { host: f.hosts.mini.store.hostId }); await f.hosts.laptop.peers.settledChecks();
     assert.equal((await f.call('laptop', 'repos.pair', request)).error, null);
     assert.throws(() => f.hosts.laptop.peers.assertWriter(f.hosts.laptop.repos.all()[0]), /mirror/);
     f.offline(true);
@@ -363,5 +374,38 @@ test('Git incoming transfers retain file ownership and reserve bounded unfinishe
     await assert.rejects(call('transfer.chunk', { transferId: manifest.transferId, offset: 0, data: Buffer.from('foreign append').toString('base64') }), { code: 'TRANSFER_FILE_CHANGED' });
     await assert.rejects(call('transfer.begin', { manifest }), { code: 'TRANSFER_FILE_CHANGED' });
     assert.equal(readFileSync(incoming.path).length, 0); assert.equal(f.hosts.mini.store.byRequest(manifest.requestId), undefined);
+  } finally { await f.cleanup(); }
+});
+
+for (const legacy of [false, true]) test(`lost canonical admission queries the immutable request before retry; old lookup=${legacy}`, async () => {
+  const f = await pairFixture(); try {
+    const repo = f.config.repositoryId;
+    const bootstrap = await f.call('laptop', 'repos.initialize', { repo, requestId: randomUUID() }); await f.wait('laptop', bootstrap.operationId);
+    await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() });
+    const seed = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); await f.wait('laptop', seed.operationId);
+    f.loseChecks(); const requestId = randomUUID(), accepted = await f.call('laptop', 'checks.run', {repo, canonical: true, requestId});
+    while (f.hosts.laptop.peers.busy) await new Promise(resolve => setTimeout(resolve, 10));
+    await f.hosts.laptop.peers.tick();
+    const remote = f.hosts.mini.store.byRequest(requestId); assert.ok(remote);
+    assert.equal(f.hosts.laptop.store.get(accepted.operationId).result.remoteOperationId, undefined);
+    if (legacy) f.oldLookup();
+    await f.call('laptop', 'hosts.retry', {host:f.hosts.mini.store.hostId}); await f.hosts.laptop.peers.settledChecks();
+    const result = await f.wait('laptop', accepted.operationId);
+    assert.equal(f.exchanges.filter(action => action === 'checks.start').length, 1);
+    assert.ok(f.exchanges.includes('operation.lookup-request'));
+    assert.equal(f.hosts.mini.store.byRequest(requestId).operationId, remote.operationId);
+    assert.equal(result.operationState, legacy ? 'needs_attention' : 'waiting');
+    if (legacy) assert.equal(result.error.code,'OUTCOME_UNCERTAIN');
+    await assert.rejects(f.hosts.mini.peers.receive({fromHostId:f.hosts.laptop.store.hostId,expectedHostId:f.hosts.mini.store.hostId,compatibility:{version:'0.1.0'},action:'operation.lookup-request',body:{repositoryId:repo,requestId,scopeDigest:'bad'}}), {code:'REQUEST_ID_CONFLICT'});
+    if (!legacy) {
+      const retained = f.hosts.mini.store.record('peerRequest', requestId);
+      f.hosts.mini.store.db.prepare("DELETE FROM records WHERE namespace='peerRequest' AND key=?").run(requestId);
+      await assert.rejects(f.hosts.mini.peers.receive({fromHostId:f.hosts.laptop.store.hostId,expectedHostId:f.hosts.mini.store.hostId,compatibility:{version:'0.1.0'},action:'operation.lookup-request',body:{repositoryId:repo,requestId,scopeDigest:retained.digest}}), {code:'OUTCOME_UNCERTAIN'});
+      f.hosts.mini.store.put('peerRequest',requestId,retained);
+      const other = await f.hosts.mini.repos.add(repository(f.root,'lookup-other'));
+      const cancelled = randomUUID(); f.hosts.mini.store.put('peerCancellation',`${f.hosts.laptop.store.hostId}:${cancelled}`,{repositoryId:repo,from:f.hosts.laptop.store.hostId,requestId:cancelled});
+      await assert.rejects(f.hosts.mini.peers.receive({fromHostId:f.hosts.laptop.store.hostId,expectedHostId:f.hosts.mini.store.hostId,compatibility:{version:'0.1.0'},action:'operation.lookup-request',body:{repositoryId:other.id,requestId:cancelled,scopeDigest:retained.digest}}), {code:'PEER_OPERATION_UNAUTHORIZED'});
+    }
+
   } finally { await f.cleanup(); }
 });

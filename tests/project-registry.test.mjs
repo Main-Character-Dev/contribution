@@ -50,8 +50,9 @@ test('offline metadata and uncertain delivery keep a durable generation and retr
     let response = await f.call('laptop', 'hosts.sync', { host }); assert.equal(response.result.registry.state, 'pending');
     const catalog = local.peers.registry.local(), generation = catalog.generation;
     assert.equal(remote.peers.registry.view().length, 1); assert.equal(local.store.getMeta('projectRegistryCatalog').generation, generation);
-    f.offline(false); f.loseReply(); response = await f.call('laptop', 'hosts.sync', { host });
+    f.offline(false); await f.call('laptop','hosts.retry',{host}); await local.peers.settledChecks(); f.loseReply(); response = await f.call('laptop', 'hosts.sync', { host });
     assert.equal(response.result.registry.state, 'pending'); assert.equal(remote.peers.registry.view().length, 2);
+    await new Promise(resolve=>setTimeout(resolve,2000)); await f.call('laptop','hosts.retry',{host}); await local.peers.settledChecks();
     response = await f.call('laptop', 'hosts.sync', { host }); assert.equal(response.result.registry.state, 'acknowledged');
     assert.equal(response.result.registry.generation, generation); assert.equal(remote.peers.registry.view().length, 2);
     assert.equal(remote.repos.all().length, 0);

@@ -1,3 +1,4 @@
+import { recordGitConnectivity } from './peer-connectivity.js';
 import { processLifecycle, ownedProcess } from './resource-process.js';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, fsyncSync, lstatSync, realpathSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -257,6 +258,7 @@ export class Workflows {
       env: adoptedEnvironment as NodeJS.ProcessEnv ?? { CONTRIBUTION_OPERATION_ID: op.operationId, CONTRIBUTION_HOOK_TOKEN: hookToken } });
     const gate = this.store.record<ObjectValue>('gate', op.operationId) ?? { state: 'not_run' };
     const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
+    recordGitConnectivity(this.store, repo.id, scope.destination, observed);
     const remoteTip = observed.code === 0 ? observed.stdout.split('\t')[0]?.trim() : null;
     if (remoteTip === scope.tip && (!['passed', 'inactive'].includes(String(gate['state'])) || gate['sourceTip'] !== scope.tip)) {
       if (result.code === 0 && /^=\t/m.test(result.stdout) && gate['state'] === 'not_run') return { delivery: 'up_to_date', gate, remoteTip, observedBy: 'git_no_op_after_admission', gitExit: result.code };
