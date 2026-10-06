@@ -421,3 +421,21 @@ pass. These fixtures make a separately authorized isolated Contribution clone a
 reasonable first generic Git/process pilot; they do not qualify installed service,
 Simulator/provider/native attachment or paired-host behavior. The existing primary
 and all other chats' worktrees keep the interim workflow.
+
+## Connectivity implementation — October 6, 2026
+
+The owner-approved additive [VPN connectivity amendment](requirements/10-VPN_CONNECTIVITY.md)
+now uses the same engine, journal, peer transport, CLI and native client. Read-only
+paired health, bounded stage/confidence facts, shared host retries, passive native
+wake/network hints, optional provider diagnostics, distinct actual Git evidence
+and locally durable canonical-check admission are implemented. Uncertain admission
+looks up immutable retained scope before another dispatch; old readers are fenced
+by journal v3 without lowering resource versions. Exact private process-release
+evidence can be observed without stopping a live owner. The [connectivity record](CONNECTIVITY.md)
+contains the gap map, policies, troubleshooting, migration impact and remaining
+proof; [the receipt](verification/connectivity.json) owns actual commands/results.
+
+Source and automated fixtures remain separate from actual MacBook Pro/Mini,
+Proton/Tailscale, installed launchd and physical network acceptance. No live VPN
+settings, SSH trust, installation or enrollment were changed. Existing integration
+ownership, gates and Local/Standard validation are retained.

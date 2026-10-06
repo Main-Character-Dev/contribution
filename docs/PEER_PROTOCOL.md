@@ -82,3 +82,13 @@ The fixed `device.ownership.accept` endpoint accepts only a schema-checked relea
 Initial publication-hook adoption is not permission to move an adopted project's canonical owner. Existing native landing entry points and older task checkouts still need a qualified persistent authority fence. Both the source `repos pair` route and destination authority activation therefore refuse adopted adapters with `ADOPTED_AUTHORITY_MIGRATION_REQUIRED`. Generic transfers also preserve unknown legacy/generic writer directories and recovery boundaries instead of treating an unreadable owner as idle. Nine peer fixtures pass with these guards. Completing the adopted writer cutover remains implementation work, not a hardware-only acceptance item.
 
 Incoming Git transfers record their private file and parent identity before acknowledging any bytes. Bounded descriptor writes refuse replacement, symbolic/shared files and changed private ownership; a partially written chunk resumes only when its retained prefix matches. Unknown pre-existing paths and older partial rows without ownership identity remain available for explicit reconciliation. At most three unfinished transfers per repository and one GiB of outstanding Git reservations are admitted. Historical completion receipts remain readable independently of later payload retention.
+
+## Connectivity amendment
+
+[Connectivity implementation and validation](CONNECTIVITY.md) records the canonical
+additive health, host retry budget, failure-stage and migration behavior. Paired
+`health` is read-only and repository-independent. Canonical checks are locally
+durable before dispatch; uncertain check/publication/device admission queries the
+retained immutable request before any resend. Unsupported lookup or absent
+historical scope preserves uncertainty. Provider evidence never grants readiness,
+trust, owner authority or permission to replay work.

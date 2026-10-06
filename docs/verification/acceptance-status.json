@@ -1654,198 +1654,422 @@
     {
       "id": "AT-VPN01",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN02",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN03",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN04",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN05",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN06",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN07",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN08",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN09",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN10",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN11",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN12",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN13",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN14",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two-journal disposable peer fixtures retain identities, query uncertain admission, preserve unsupported/historical-scope uncertainty and reject conflicting request or cancellation repository scope. No real paired Mac is qualified."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN15",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two-journal disposable peer fixtures retain identities, query uncertain admission, preserve unsupported/historical-scope uncertainty and reject conflicting request or cancellation repository scope. No real paired Mac is qualified."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN16",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two-journal disposable peer fixtures retain identities, query uncertain admission, preserve unsupported/historical-scope uncertainty and reject conflicting request or cancellation repository scope. No real paired Mac is qualified."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN17",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two-journal disposable peer fixtures retain identities, query uncertain admission, preserve unsupported/historical-scope uncertainty and reject conflicting request or cancellation repository scope. No real paired Mac is qualified."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN18",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN19",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/integration/native-client.mjs",
+          "scope": "Compiled Swift, CLI and disposable verified worker share authenticated IPC and connectivity snapshots. Actual installed background credentials, user agents and physical Mac context remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN20",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN21",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN22",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN23",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two-journal disposable peer fixtures retain identities, query uncertain admission, preserve unsupported/historical-scope uncertainty and reject conflicting request or cancellation repository scope. No real paired Mac is qualified."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN24",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN25",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN26",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/connectivity.test.mjs",
+          "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN27",
       "track": "connectivity",
-      "implementation": "not_started",
-      "outcome": "not_run",
-      "evidence": []
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Two-journal disposable peer fixtures retain identities, query uncertain admission, preserve unsupported/historical-scope uncertainty and reject conflicting request or cancellation repository scope. No real paired Mac is qualified."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     },
     {
       "id": "AT-VPN28",
       "track": "connectivity",
-      "implementation": "not_started",
+      "implementation": "partial",
       "outcome": "not_run",
-      "evidence": []
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/integration/native-payload.mjs",
+          "scope": "Compiled UI-closed launcher retains one immutable worker payload and relays a categorical launch hint over its private pipe. Actual launchd installation, wake and network changes remain not run."
+        }
+      ],
+      "source": "requirements/10-VPN_CONNECTIVITY.md",
+      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
     }
   ],
   "acceptanceHardening": {

@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-06",
+  "taskBranch": "codex/vpn-connectivity",
+  "baseline": "b27a8038bec543e02b46a6796070db66e4dfd462",
+  "originalTaskHead": "429b11622e7321cc2601f4fbba7845a4aed5b555",
+  "authorization": "Owner approved implementation of the reviewed connectivity plan; no installation, live enrollment, VPN changes or push authorized.",
+  "sourceStatus": "implemented",
+  "automatedStatus": "passed",
+  "commands": [
+    {
+      "command": "bash scripts/setup.sh",
+      "exitCode": 0,
+      "result": "Pinned Node 24.21.0 and pnpm 11.23.0; frozen dependencies verified."
+    },
+    {
+      "command": "pnpm contracts:check",
+      "exitCode": 0,
+      "result": "Build, generation drift, contract type checks and 31 contract/projection tests passed."
+    },
+    {
+      "command": "node --test tests/connectivity.test.mjs",
+      "exitCode": 0,
+      "tests": 36,
+      "result": "Shared policy, real disposable Git/process/IPC, migration, capability, provider and ordering fixtures passed."
+    },
+    {
+      "command": "node --test --test-name-pattern='lost canonical admission' tests/peers.test.mjs",
+      "exitCode": 0,
+      "tests": 2,
+      "result": "Immutable acceptance lookup, historical scope, repository cancellation fences and old-peer uncertainty passed."
+    },
+    {
+      "command": "pnpm check",
+      "exitCode": 0,
+      "tests": 455,
+      "result": "Complete Node suite, contract type checks, generation drift and foundation governance passed on final source."
+    },
+    {
+      "command": "bash scripts/native-test.sh",
+      "exitCode": 0,
+      "tests": 26,
+      "result": "Swift platform and connectivity presentation fixtures passed."
+    },
+    {
+      "command": "bash scripts/native-build.sh",
+      "exitCode": 0,
+      "result": "Unsigned arm64/macOS 14 minimum app artifact verified with pinned Sparkle runtime/license."
+    },
+    {
+      "command": "bash scripts/check-native-client.sh",
+      "exitCode": 0,
+      "result": "Compiled Swift client, CLI and disposable verified background worker share authenticated IPC and connectivity snapshots."
+    },
+    {
+      "command": "bash scripts/check-native-payload.sh",
+      "exitCode": 0,
+      "result": "Compiled UI-closed helper retains immutable payloads, forwards a categorical hint and preserves owned child lifetime."
+    },
+    {
+      "command": "bash scripts/package-app.sh \"$PWD/.build/ContributionConnectivityFinal.app\"",
+      "exitCode": 0,
+      "result": "Final unsigned app, service launcher, CLI launcher and immutable engine payload packaged; CLI version verified without installation."
+    },
+    {
+      "command": "pnpm check:foundation",
+      "exitCode": 0,
+      "result": "MIT, 26 unchanged imported JSON files, existing requirements, all 132 acceptance identities, payload/privacy boundaries and local links checked."
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0,
+      "result": "No whitespace errors."
+    }
+  ],
+  "gapMap": "docs/CONNECTIVITY.md",
+  "migration": {
+    "journalVersion": 3,
+    "readerRefusal": "Actual previous Journal fixture refuses v3 before writer/effects.",
+    "retained": "Existing bindings, request IDs, operations, receipts, resources and original policy.",
+    "downgrade": "No automatic downgrade or reset; use a compatible payload.",
+    "liveUserStateChanged": false
+  },
+  "hardware": {
+    "outcome": "not_run",
+    "MacBookProMini": "not_run",
+    "ProtonTailscale": "not_run",
+    "installedLaunchdWakeNetwork": "not_run",
+    "realSSHTrustAuthResolverProxyControlMaster": "not_run",
+    "reason": "Requires intended hosts, approved installed payloads, user-controlled network/protections and separate live authority.",
+    "instructions": "docs/requirements/10-VPN_CONNECTIVITY.md",
+    "nativeVisualKeyboardAccessibility": "not_run"
+  },
+  "changedFiles": [
+    "apps/macos/Packages/ContributionPlatform/Sources/ContributionPlatform/ConnectivityContract.swift",
+    "apps/macos/Packages/ContributionPlatform/Sources/ContributionPlatform/ConnectivityPresentation.swift",
+    "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/ConnectivityTests.swift",
+    "apps/macos/ServiceLauncher.swift",
+    "apps/macos/Sources/ContributionApp.swift",
+    "docs/CONNECTIVITY.md",
+    "docs/IMPLEMENTATION_STATUS.md",
+    "docs/PEER_PROTOCOL.md",
+    "docs/README.md",
+    "docs/REQUIREMENTS_REVIEW.md",
+    "docs/SETUP_STATUS.md",
+    "docs/requirements/10-VPN_CONNECTIVITY.md",
+    "docs/verification/acceptance-status.json",
+    "docs/verification/connectivity.json",
+    "packages/cli/src/client.ts",
+    "packages/contracts/schemas/connectivity.schema.json",
+    "packages/contracts/src/generated/connectivity.ts",
+    "packages/contracts/src/index.ts",
+    "packages/engine/src/diagnostics.ts",
+    "packages/engine/src/git.ts",
+    "packages/engine/src/journal.ts",
+    "packages/engine/src/peer-connectivity.ts",
+    "packages/engine/src/peers.ts",
+    "packages/engine/src/repositories.ts",
+    "packages/engine/src/resource-lifecycle.ts",
+    "packages/engine/src/service-main.ts",
+    "packages/engine/src/service.ts",
+    "packages/engine/src/tailscale-diagnostics.ts",
+    "packages/engine/src/workflows.ts",
+    "scripts/check-foundation.mjs",
+    "scripts/check-native-payload.sh",
+    "scripts/generate.mjs",
+    "tests/connectivity.test.mjs",
+    "tests/contracts.test.mjs",
+    "tests/device-ownership.test.mjs",
+    "tests/device-transfer.test.mjs",
+    "tests/git-bundle-retention.test.mjs",
+    "tests/integration/native-client.mjs",
+    "tests/integration/native-payload.mjs",
+    "tests/maintenance.test.mjs",
+    "tests/paired-removal.test.mjs",
+    "tests/peers.test.mjs",
+    "tests/project-registry.test.mjs",
+    "tests/resource-lifecycle.test.mjs"
+  ],
+  "limitations": [
+    "Fixture results and unsigned packaging are not physical/network or release qualification.",
+    "Optional provider fields and CLI command support remain version dependent; unsupported or unmapped evidence degrades safely.",
+    "Incomplete or inaccessible retained process identity evidence cannot prove release and remains blocked for owner review."
+  ],
+  "delivery": {
+    "localIntegration": "Authorized guarded fast-forward to clean primary main; verified in the final handoff.",
+    "remoteDelivery": "not_requested",
+    "installation": "not_performed",
+    "enrollment": "not_performed",
+    "vpnOrSshTrustChanges": "not_performed",
+    "worktree": "Archive only after local integration, cleanliness and preservation of needed ignored artifacts."
+  },
+  "codeCommit": "dd31c8f5ddf189a40215f44e231f1fe65668a6e0",
+  "verifiedSourceCommit": "c7adbe65afaf480a98c107cc7e68ea237f34f652",
+  "packagedEngineManifestSha256": "918e353cf60da1b6377d570d2e4854899edb207228fcf90dcd94ee012841cb09",
+  "reviewCorrections": [
+    "Sandbox ps restrictions initially produced false process-release failures; process-dependent checks passed with normal process inspection.",
+    "Recovery fixtures now exercise the shared target budget and explicit Retry instead of immediate per-operation reconnect assumptions.",
+    "The new cross-repository fence fixture retains the existing repository authorization gate and explicitly associates its disposable repository.",
+    "Monotonic freshness and durable journal-sequence ordering are covered, including wall-clock changes and equal timestamps."
+  ]
+}

@@ -1,5 +1,9 @@
 # S0 setup status
 
+This is the historical S0 receipt. Current source authorization and implementation
+are recorded in [Implementation status](IMPLEMENTATION_STATUS.md), including the
+October 6 [connectivity amendment](CONNECTIVITY.md).
+
 Date: 2026-10-04, America/New_York. Scope: repository foundation only. The independent source/build foundation checks passed on the task checkout and an isolated clean staged-source snapshot. Visual window/menu smoke remains pending where automation lacks existing GUI capture permission. M0 is not complete.
 
 ## Checkout and reconciliation
