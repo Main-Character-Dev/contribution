@@ -98,3 +98,47 @@ process-adapter-version-2 compatible payload. Never run two finalizers or restor
 a database backup to pretend external effects were undone. Completed development
 worktree archival uses Codex's supported owning operation only after local
 integration and preservation of needed ignored evidence.
+
+## Cleanup restart repair checkpoint
+
+The subsequent review reproduced a source defect: restart observation changed a
+resource's generation without updating its accepted cleanup continuation. The
+same request then failed with `RESOURCE_SELECTION_CHANGED` and kept admission
+fenced, including after confirmed disappearance. The earlier pilot crashed
+before its cleanup preview and did not cover this boundary.
+
+Source repair: `d5f27a319abc899c3544f323e91a70db796b5efd`, based on locally
+integrated `429b11622e7321cc2601f4fbba7845a4aed5b555`. Resource and expectation
+updates now share one journal transaction, including reviewed admission, stop,
+failure, release and same-context observation. Other-owner generation, token,
+identity, pin, dependency, host, boot, clone or enrollment changes remain
+protected. Retry/backoff is preserved. A review that never committed granted
+no cleanup authority and requires a fresh preview after startup observation.
+Existing unendorsed/torn records are not silently adopted.
+
+| Check | Result |
+| --- | --- |
+| Final focused lifecycle/Simulator/owner/IPC group | 59 tests passed, zero failures/cancellations/skips |
+| `bash scripts/dev.sh check` | 416 tests passed, zero failures/cancellations/skips; strict builds, generated drift, contract types and foundation passed |
+| New interruption regressions | 31 tests: fifteen real SIGKILL persistence edges in a disposable synthetic-owner child, retained lifetimes, partial dependencies, new-resource preservation, drift refusal, retry/backoff, deferred/failed observation and a concurrent final-guard race |
+| Packaged-service IPC pilot extension | Actual SIGKILL during reviewed process cleanup; same-request continuation, duplicate completion and successful subsequent new check proved in a temporary repository |
+| `bash scripts/native-build.sh` | Unsigned development app build/artifact verification passed |
+| `bash scripts/package-app.sh` with a fresh output | Unsigned app assembled with the repaired immutable engine/runtime; manifest verified and packaged lifecycle JavaScript byte-matched to the tested build |
+
+The preserved app is `Contribution-d5f27a3.app` under
+`/Users/gabe/.codex/visualizations/2026/10/06/01a112c0-cee0-73e2-aaa5-37967afa2197/resource-cleanup-recovery/`.
+Its payload manifest digest is
+`e476585982b00f91b22301fa1e4f1c3a6eddcb47c657a46e31af7c5905836d80`.
+Fresh logs, packaged-payload identity and final integration evidence are retained
+there. Packaging did not install, register, enroll or start a user service.
+Native Swift source was unchanged; the earlier 24-test Swift result remains a
+historical checkpoint, not a new rerun or installation proof.
+
+This removes the reviewed blocker for selecting an isolated full clone of
+Contribution as the first generic Git/process/storage pilot on one Mac. Keep the
+primary and native Codex worktrees under the interim workflow. Use an explicit
+meaningful validation check with enrolled-project pins; generic enrollment's
+default empty check list cannot qualify a gate. Follow the existing rollout and
+rollback sequence with separate installation/enrollment authority. Simulator,
+provider, native attachment, update/signing and two-host qualification remain
+open, and all AT-LC01–21 remain `partial_fixture`.

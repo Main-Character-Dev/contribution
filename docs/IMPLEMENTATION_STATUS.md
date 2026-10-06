@@ -401,3 +401,23 @@ The first resource allocation transaction advances the existing journal to versi
 The source extension also includes bounded named provider/service owners, existing-admission repository bridges with exact qualification gates, native owning-chat closeout fallback, independent full/shallow Git archive and restore verification, paired native service registration/retirement receipts, storage reservations, private allowlisted resource diagnostics and timestamped on-demand health. Enrollment/authority changes are fenced by retained resources. No second scheduler, ownership database or cleanup daemon was added.
 
 Focused proof includes 48 resource/Git/native-owner/privacy/peer tests, 28 process/maintenance/session tests, 31 process/build-output/device-build/lifecycle tests, 24 Swift tests and a disposable immutable-payload SIGKILL/restart pilot. These groups overlap and do not establish actual installed acceptance. Final cumulative results and integration identity belong to the implementation receipt. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) owns the requirement matrix, source/capability limits, remaining AT-LC01–21 variants and rollout/rollback owners. No real project enrollment, Simulator/provider/phone action or installation occurred.
+
+## Reviewed cleanup restart repair
+
+The post-implementation review reproduced an unresumable cleanup: startup
+observation changed the resource generation without advancing the accepted
+cleanup's expectation. This left admission fenced even after confirmed absence.
+The repair commits reviewed resource/expectation transitions atomically, including
+initial selection, stop, failure, completion and same-context observation. It
+does not endorse unrelated generation or identity drift. Retry limits/backoff
+remain retained, and a never-committed review requires a fresh preview.
+
+Thirty-one new crash/race/drift/lifetime tests cover fifteen SIGKILL persistence
+edges, partial dependency progress, untouched selections, confirmed disappearance,
+retained presence, deferred/failed observation and revocation of an awaited close.
+The packaged-service pilot now also crashes during process cleanup and proves
+same-request continuation plus restored new admission. Fifty-nine focused tests
+pass. These fixtures make a separately authorized isolated Contribution clone a
+reasonable first generic Git/process pilot; they do not qualify installed service,
+Simulator/provider/native attachment or paired-host behavior. The existing primary
+and all other chats' worktrees keep the interim workflow.
