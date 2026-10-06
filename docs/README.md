@@ -43,4 +43,4 @@ S0 moved the twelve schema and fourteen example JSON files into `packages/contra
 
 Private audit evidence is dated background, not current code or executable instructions. See [SOURCE_PACKAGE.md](SOURCE_PACKAGE.md). Never copy the whole input archive into the repository.
 
-The [durable resource lifecycle amendment](requirements/09-RESOURCE_LIFECYCLE.md) owns R1–R12 and the additive AT-LC01–21 acceptance extension. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) records implemented behavior and qualification gaps.
+The [durable resource lifecycle amendment](requirements/09-RESOURCE_LIFECYCLE.md) owns R1–R12 and the additive AT-LC01–21 acceptance extension. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) records implemented behavior and qualification gaps. The [implementation receipt](RESOURCE_LIFECYCLE_RECEIPT.md) records source identities, verification and rollout/rollback.
