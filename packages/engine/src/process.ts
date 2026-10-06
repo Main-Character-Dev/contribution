@@ -60,10 +60,11 @@ export function gitPushAncestor(caller: { pid: number; start: string }): { pid: 
 }
 export interface ProcessMember { pid: number; start: string }
 export interface ProcessOwnership {
-  intent(executable: string, argv: readonly string[]): void;
+  intent(executable: string, argv: readonly string[], deadlineAt: string): void;
   allocated(pid: number, start: string): void;
   grant(): void;
   members(members: ProcessMember[]): void;
+  unconfirmed?(members: ProcessMember[]): void;
   stopping(): void;
   finished(result: ProcessResult): void;
   uncertain(reason: string): void;
@@ -90,7 +91,8 @@ export async function run(executable: string, argv: readonly string[], options: 
   const timeoutMs = options.timeoutMs ?? 30000;
   requireValue(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 86400000, 'INVALID_PROCESS_DEADLINE', 'Select a finite command deadline no longer than one day.', 2);
   const ownership = typeof options.ownership === 'function' ? options.ownership() : options.ownership;
-  ownership?.intent(executable, argv);
+  const deadline = Date.now() + timeoutMs;
+  ownership?.intent(executable, argv, new Date(deadline).toISOString());
   const granted = Boolean(ownership);
   return new Promise((resolveResult, reject) => {
     const child = spawn(granted ? process.execPath : executable, granted ? [fileURLToPath(new URL('./resource-process-worker.js', import.meta.url))] : [...argv],
@@ -99,6 +101,7 @@ export async function run(executable: string, argv: readonly string[], options: 
     let exitCode: number | null = null, exitSignal: string | null = null, exited = false, streamsClosed = false, identityUnknown = false;
     let callbackFailure: 'OUTPUT_SINK_FAILED' | 'PROCESS_OBSERVER_FAILED' | undefined;
     let drainTimer: NodeJS.Timeout | undefined, killTimer: NodeJS.Timeout | undefined, finalTimer: NodeJS.Timeout | undefined;
+    const unknown = new Map<number, string>(); let unknownLive = false;
     const known = new Map<number, string>(), pending = { stdout: '', stderr: '' };
     const maxBytes = options.maxBytes ?? 4 * 1024 * 1024;
     const retain = (): ProcessMember[] | null => {
@@ -115,7 +118,12 @@ export async function run(executable: string, argv: readonly string[], options: 
         if (!added) break;
       }
       const group = census.filter(r => r.group === child.pid);
-      if (group.some(r => known.get(r.pid) !== r.start)) identityUnknown = true;
+      let unknownChanged = false;
+      for (const row of group.filter(r => known.get(r.pid) !== r.start)) if (unknown.get(row.pid) !== row.start) { unknown.set(row.pid, row.start); unknownChanged = true; }
+      // These late group observations confer no signal authority. Wait for
+      // positive disappearance; a resistant/escaped unknown remains unresolved.
+      unknownLive = census.some(r => unknown.get(r.pid) === r.start);
+      if (unknownChanged) try { ownership?.unconfirmed?.([...unknown].map(([pid, start]) => ({ pid, start }))); } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; identityUnknown = true; }
       if (changed) { try { ownership?.members([...known].map(([pid, start]) => ({ pid, start }))); } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; identityUnknown = true; } }
       return census.filter(r => known.get(r.pid) === r.start).map(r => ({ pid: r.pid, start: r.start }));
     };
@@ -143,7 +151,7 @@ export async function run(executable: string, argv: readonly string[], options: 
     };
     const check = (): void => {
       if (settled) return; const members = retain();
-      if (exited && streamsClosed && members && members.length === 0) finish(!identityUnknown, identityUnknown ? 'PROCESS_IDENTITY_UNCONFIRMED' : null);
+      if (exited && streamsClosed && members && members.length === 0 && !unknownLive) finish(!identityUnknown, identityUnknown ? 'PROCESS_IDENTITY_UNCONFIRMED' : null);
       else if (exited && !stopped) stop();
     };
     const stop = (): void => {
@@ -174,7 +182,7 @@ export async function run(executable: string, argv: readonly string[], options: 
           if (granted) {
             requireValue(!stopped && !options.signal?.aborted, 'CANCELLED', 'Dispatch was cancelled.', 130); ownership!.grant();
             const env = Object.fromEntries(Object.entries(environment).filter((e): e is [string, string] => typeof e[1] === 'string'));
-            const grant = JSON.stringify({ executable, argv, environment: env, deadline: Date.now() + timeoutMs });
+            const grant = JSON.stringify({ executable, argv, environment: env, deadline });
             requireValue(Buffer.byteLength(grant) <= 1024 * 1024, 'PROCESS_GRANT_TOO_LARGE', 'Private execution grant exceeds its bound.', 2);
             (child.stdio[3] as Writable).end(grant);
           }

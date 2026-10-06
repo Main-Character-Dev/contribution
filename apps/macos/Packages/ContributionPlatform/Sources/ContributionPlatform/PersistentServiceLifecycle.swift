@@ -1,11 +1,14 @@
 import Foundation
 import CryptoKit
 import Darwin
+import IOKit
 
 /// This is the existing native installer owner's private receipt, independent
 /// of editable checkouts and available before the service journal can open.
 @MainActor public final class PersistentServiceLifecycle {
     public struct Receipt: Codable, Equatable, Sendable {
+        public let schemaVersion: Int
+        public let hostIdentity: String
         public let requestID: UUID
         public let domain: String
         public let label: String
@@ -17,12 +20,25 @@ import Darwin
         public var reason: String? = nil
     }
     private let home: URL, bundle: URL
+    private let hostIdentity: @MainActor () throws -> String
     private var busy = false
     private var directory: URL { home.appendingPathComponent("Library/Application Support/Contribution") }
     private var url: URL { directory.appendingPathComponent("service-installation.json") }
     private var executable: URL { bundle.appendingPathComponent("Contents/Library/ContributionService") }
     private var plist: URL { bundle.appendingPathComponent("Contents/Library/LaunchAgents/dev.contribution.service.plist") }
-    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, bundle: URL = Bundle.main.bundleURL) { self.home = home; self.bundle = bundle }
+    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, bundle: URL = Bundle.main.bundleURL, hostIdentity: (@MainActor () throws -> String)? = nil) {
+        self.home = home; self.bundle = bundle; self.hostIdentity = hostIdentity ?? { try Self.platformHostIdentity() }
+    }
+    private static func platformHostIdentity() throws -> String {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+        guard service != 0 else { throw NSError(domain: "Contribution.ServiceLifecycle", code: 3, userInfo: [NSLocalizedDescriptionKey: "This host cannot establish an exact persistent service identity."]) }
+        defer { IOObjectRelease(service) }
+        guard let raw = IORegistryEntryCreateCFProperty(service, kIOPlatformUUIDKey as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String, UUID(uuidString: raw) != nil else {
+            throw NSError(domain: "Contribution.ServiceLifecycle", code: 3, userInfo: [NSLocalizedDescriptionKey: "Persistent host identity is unavailable; preserve the registration."])
+        }
+        // The hardware value never leaves this local owner or appears in logs.
+        return SHA256.hash(data: Data((raw + ":" + String(getuid())).utf8)).map { String(format: "%02x", $0) }.joined()
+    }
     private func failure(_ message: String) -> NSError { NSError(domain: "Contribution.ServiceLifecycle", code: 3, userInfo: [NSLocalizedDescriptionKey: message]) }
     private func privateDirectory() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -50,7 +66,9 @@ import Darwin
         try privateDirectory()
         var value = stat(); if lstat(url.path, &value) != 0 && errno == ENOENT { return nil }
         guard value.st_mode & 0o077 == 0 else { throw failure("Service ownership receipt permissions changed.") }
-        return try JSONDecoder().decode(Receipt.self, from: bytes(url, max: 16_384))
+        let record = try JSONDecoder().decode(Receipt.self, from: bytes(url, max: 16_384))
+        guard record.schemaVersion == 1, ["registrationIntent", "registered", "retirementIntent", "retirementUnconfirmed", "retired", "unresolved"].contains(record.phase), record.retries >= 0, record.retries <= 3 else { throw failure("The service receipt version/state is unsupported. Preserve it and use its compatible owning app.") }
+        return record
     }
     private func save(_ value: Receipt) throws {
         try privateDirectory(); let data = try JSONEncoder().encode(value)
@@ -66,11 +84,11 @@ import Darwin
         let config = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
         guard config?["Label"] as? String == "dev.contribution.service", config?["BundleProgram"] as? String == "Contents/Library/ContributionService", config?["KeepAlive"] as? Bool == false else { throw failure("The bundled service label, executable or restart policy is unsupported.") }
         let hash: (Data) -> String = { SHA256.hash(data: $0).map { String(format: "%02x", $0) }.joined() }
-        return Receipt(requestID: UUID(), domain: "gui/\(getuid())", label: "dev.contribution.service", bundle: bundle.path, executableDigest: hash(executableData), plistDigest: hash(plistData), phase: "registrationIntent", retries: 0)
+        return Receipt(schemaVersion: 1, hostIdentity: try hostIdentity(), requestID: UUID(), domain: "gui/\(getuid())", label: "dev.contribution.service", bundle: bundle.path, executableDigest: hash(executableData), plistDigest: hash(plistData), phase: "registrationIntent", retries: 0)
     }
     private func exact(_ record: Receipt) throws {
         let selected = try selected()
-        guard record.domain == selected.domain, record.label == selected.label, record.bundle == selected.bundle, record.executableDigest == selected.executableDigest, record.plistDigest == selected.plistDigest,
+        guard record.hostIdentity == selected.hostIdentity, record.domain == selected.domain, record.label == selected.label, record.bundle == selected.bundle, record.executableDigest == selected.executableDigest, record.plistDigest == selected.plistDigest,
               try receipt() == record else { throw failure("Service ownership or payload changed. Preserve it and reconcile the exact registered app.") }
     }
     public func register(isRegistered: () -> Bool, effect: () throws -> Void) throws {
@@ -82,7 +100,7 @@ import Darwin
         guard !isRegistered() else { throw failure("This existing registration has no owned receipt. Preserve it and reconcile its owning installation before adopting it.") }
         var record = try selected(); try save(record); try exact(record)
         do { try effect(); guard isRegistered() else { throw failure("Registration needs approval or has an uncertain result. Open Login Items for this app.") }; record.phase = "registered"; try save(record) }
-        catch { record.phase = "unresolved"; record.reason = error.localizedDescription; try save(record); throw error }
+        catch { record.phase = "unresolved"; record.reason = String(error.localizedDescription.prefix(1024)); try save(record); throw error }
     }
     public func unregister(isUnloaded: () -> Bool, effect: @escaping @MainActor () async throws -> Void) async throws {
         guard !busy else { throw failure("Service retirement is already being reconciled.") }; busy = true; defer { busy = false }

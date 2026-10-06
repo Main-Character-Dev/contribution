@@ -10,7 +10,7 @@ export async function git(path: string, args: readonly string[], options: RunOpt
 }
 export async function gitText(path: string, args: readonly string[], options: RunOptions = {}): Promise<string> {
   const result = await git(path, args, options);
-  if (result.code !== 0) throw new Fault('GIT_FAILED', `Git ${args[0] ?? 'operation'} failed.`, 5, { diagnostic: redact(result.stderr).slice(0, 2048) });
+  if (result.code !== 0) throw new Fault('GIT_FAILED', `Git ${args[0] ?? 'operation'} failed.`, 5, { diagnostic: redact(result.stderr).slice(0, 2048), exitCode: result.code, actualExitCode: result.actualExitCode ?? null, cleanup: result.cleanup ?? null });
   return result.stdout.trim();
 }
 export interface GitIdentity { path: string; commonDir: string; branch: string | null; tip: string | null; objectFormat: string }

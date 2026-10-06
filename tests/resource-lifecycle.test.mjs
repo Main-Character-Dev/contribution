@@ -164,3 +164,13 @@ test('AT-LC08 bounded restart inspection defers remaining owned observations vis
     assert.equal(f.lifecycle.get(first.resource.resourceId).state, 'unresolved'); assert.equal(f.lifecycle.get(second.resource.resourceId).state, 'unresolved');
   } finally { f.close(); }
 });
+
+test('AT-LC06 short-lived unconfirmed group members are observed to disappear without granting signal authority', async () => {
+  const f = fixture(); try {
+    const lifecycle = new ResourceLifecycle(f.store, () => ({ clone: 'fixture-clone', revision: 'v1' }), bootIdentity); lifecycle.register(processResourceAdapter);
+    const result = await run('/bin/sh', ['-c', 'sleep 0.2 >/dev/null 2>&1 & exit 0'], { ownership: () => ownedProcess(lifecycle, f.op), timeoutMs: 3000, terminationGraceMs: 500 });
+    assert.equal(result.actualExitCode, 0); assert.equal(result.code, 0); assert.equal(result.cleanup.released, true);
+    const record = lifecycle.all()[0]; assert.equal(record.state, 'stopped'); assert(record.identity.value.unconfirmed);
+    assert.equal(JSON.parse(record.identity.value.members).length, 1); // No discovery-based kill ownership.
+  } finally { f.close(); }
+});

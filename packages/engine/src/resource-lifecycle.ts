@@ -30,7 +30,7 @@ let boot: string | undefined;
 export function bootIdentity(): string {
   if (boot) return boot;
   try {
-    if (process.platform === 'darwin') boot = execFileSync('/usr/sbin/sysctl', ['-n', 'kern.boottime'], { encoding: 'utf8', timeout: 2000 }).trim();
+    if (process.platform === 'darwin') boot = execFileSync('/usr/sbin/sysctl', ['-n', 'kern.bootsessionuuid'], { encoding: 'utf8', timeout: 2000 }).trim();
     else if (process.platform === 'linux') boot = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
   } catch { /* Denied boot inspection is never the current time or a fake UUID. */ }
   requireValue(boot, 'BOOT_IDENTITY_UNAVAILABLE', 'This platform cannot establish the current host boot identity.', 3); return boot;

@@ -66,6 +66,12 @@ escaped/reparented daemon still needs platform qualification; a zero process exi
 is not proof that every possible detached effect ended. Provider/OS integration
 must not infer ownership from an executable name, port or apparently idle process.
 
+The version-2 process adapter journals late unconfirmed group members separately
+from owned descendants. It never signals them, and requires positive disappearance
+before reporting release. Their continued existence, including outside the original
+group, remains unresolved. The operation deadline is retained before allocation;
+macOS boot fencing uses the kernel boot-session UUID rather than a wall-clock time.
+
 Native service ownership uses the existing installer's private synchronized
 `service-installation.json` receipt because that owner exists before the service
 journal can run. It does not create a daemon or another scheduler. Missing or
@@ -73,6 +79,8 @@ replaced payloads and an already registered legacy installation without an owned
 receipt are preserved with an actionable reconciliation error. The existing plist
 keeps `KeepAlive=false`. Source tests inject registration APIs; no real registration
 or unregister operation was executed.
+The private receipt is versioned and bound to an opaque local host/user identity;
+foreign-host and unsupported-version receipts cannot authorize retirement.
 
 ## Rollout and rollback
 

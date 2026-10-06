@@ -12,9 +12,12 @@ function members(resource: Resource): ProcessMember[] {
   requireValue(Array.isArray(value) && value.length > 0 && value.length <= 4096 && value.every(m => Number.isSafeInteger(m.pid) && m.pid > 0 && typeof m.start === 'string' && m.start.length > 0), 'PROCESS_GRANT_CHANGED', 'Process members require exact identities.'); return value;
 }
 export const processResourceAdapter: ResourceAdapter = {
-  id: 'owned-process', version: 1,
+  id: 'owned-process', version: 2,
   async observe(resource): Promise<ResourceIdentity | 'absent' | 'unknown'> {
     const known = members(resource), census = processCensus(); if (!census) return 'unknown';
+    const uncertain = JSON.parse(String(resource.identity!.value['unconfirmed'] ?? '[]')) as ProcessMember[];
+    if (!Array.isArray(uncertain) || uncertain.length > 64 || uncertain.some(m => !Number.isSafeInteger(m.pid) || m.pid < 1 || typeof m.start !== 'string' || !m.start)) return 'unknown';
+    if (census.some(p => uncertain.some(m => m.pid === p.pid && m.start === p.start))) return 'unknown';
     const group = Number(resource.identity!.value['group']);
     if (census.some(p => p.group === group && !known.some(m => m.pid === p.pid && m.start === p.start))) return 'unknown';
     const live = census.filter(p => known.some(m => m.pid === p.pid && m.start === p.start));
@@ -35,8 +38,8 @@ export const processResourceAdapter: ResourceAdapter = {
 export function ownedProcess(lifecycle: ResourceLifecycle, op: Operation, dependencies: string[] = [], kind: 'process' | 'server' = 'process'): ProcessOwnership {
   let resource: Resource;
   return {
-    intent(executable, argv) {
-      resource = lifecycle.begin(op, { requestId: id(), kind, owner: 'utility', lifetime: 'ephemeral', adapter: processResourceAdapter.id, adapterVersion: 1,
+    intent(executable, argv, deadlineAt) {
+      resource = lifecycle.begin(op, { requestId: id(), kind, owner: 'utility', lifetime: 'ephemeral', adapter: processResourceAdapter.id, adapterVersion: processResourceAdapter.version, deadlineAt,
         dependencies, scope: `process:${id()}`, reason: `Accepted command ${digest({ executable, argv })}`, stopAction: 'contribution service resources --preview' });
     },
     allocated(pid, start) {
@@ -44,6 +47,7 @@ export function ownedProcess(lifecycle: ResourceLifecycle, op: Operation, depend
     },
     grant() { resource = lifecycle.grant(resource); },
     members(values) { requireValue(values.length <= 4096, 'PROCESS_CENSUS_LIMIT', 'Too many descendants remain protected.'); resource = lifecycle.transition(resource, { identity: { type: 'process', value: { ...resource.identity!.value, members: JSON.stringify(values) } } }); },
+    unconfirmed(values) { requireValue(values.length <= 64, 'PROCESS_CENSUS_LIMIT', 'Unknown members require bounded exact-owner inspection.'); resource = lifecycle.transition(resource, { identity: { type: 'process', value: { ...resource.identity!.value, unconfirmed: JSON.stringify(values) } } }); },
     stopping() { resource = lifecycle.transition(resource, { state: 'stopping' }); },
     finished(result: ProcessResult) { resource = lifecycle.finish(resource, { code: result.code, actualExitCode: result.actualExitCode ?? null, signal: result.signal, timedOut: result.timedOut, cancelled: result.cancelled, cleanup: result.cleanup ?? null }, result.cleanup?.released === true);
       const current = lifecycle.store.get(op.operationId); lifecycle.store.update(current, { result: { ...current.result, resourceReceipts: [...((current.result['resourceReceipts'] as unknown[]) ?? []), { resourceId: resource.resourceId, workflowExit: result.code, actualExitCode: result.actualExitCode ?? null, release: resource.state, cleanup: result.cleanup ?? null }] } });
