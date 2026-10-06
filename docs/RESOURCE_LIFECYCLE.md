@@ -23,6 +23,16 @@ Reconcile is observation-only. Stop requires an exact reviewed selection and a s
 
 Resource count limits are explicit host/project maps. Empty maps defer to existing project admission and the service/storage caps; they do not invent a global native-worktree cap. Interactive expiry is observation, not stop authority. Platform and provider integration must retain exact identities, use supported APIs and remain fail-closed when capability is unavailable.
 
+Cleanup admission retains the original selection and its per-resource expectations
+in one transaction. Stop, failure, confirmed release and unchanged-context restart
+observation advance each resource and its continuation together. Untouched selected
+resources can still resume after partial cleanup. External generation/identity,
+pin, dependency, token, host, boot, clone and enrollment drift cannot be endorsed
+as progress. Retry budgets and backoff survive observation. A review admission
+that never committed needs a fresh preview after startup observation; it granted
+no cleanup authority. Preexisting unendorsed or torn records remain protected for
+exact-owner repair rather than being silently adopted.
+
 Current proof is source, generated-contract/build checks and disposable fixture/subprocess/Git/IPC tests. Real registration, enrolled project adapters, Simulator boot/data preservation, native Codex integration, actual paired hosts, sleep/reboot and physical devices remain separate qualification. The original MainCharacter/Roboty helpers remain active and Mathy's borrowed visual behavior and Glass Alpha's name-based ownership limitation remain preserved.
 
 Implementation proceeds through process/Simulator lifecycle, repository/session admission, independent Git recovery, persistent services/cross-host/budgets, a disposable one-host pilot and incremental adoption. The [canonical ledger](verification/acceptance-status.json) retains every unfinished case. Remove interim helpers only after equivalent fixtures, actual-host cancellation/crash recovery and rollback pass for that exact workflow.
@@ -36,7 +46,7 @@ Implementation proceeds through process/Simulator lifecycle, repository/session 
 | R3 | Command timeout/cancel/failure and setup/cleanup results remain separate; bounded adapter cleanup and dependency ordering | Process/platform owner: actual-host sleep/reboot and detached daemon qualification; AT-LC01/06/07/08 |
 | R4 | Exact Simulator admission bridge, prior boot state, same lease, shared-user fence and release after verified Shutdown; synthetic concurrency/borrow/retention/drift cases | Platform/adoption owners: wire each existing admission implementation after exact-host qualification; data/Xcode clones and actual transition failures; AT-LC02–09/15 |
 | R5 | Journaled process group/membership, identity-scoped TERM/grace/KILL; server commands can use the same owner with server kind. Named provider/service reserve/grant/close adapter preserves user sessions | Session owners: real provider capability bridge and long-lived server workflow wiring are disabled until qualified. Ports are never authority. AT-LC06/07/15 |
-| R6 | Observation-only restart, retry limits, retained writer leases, generation-bound cleanup continuation, affected-scope fences and authenticated existing peer authority fences | Recovery/peer owners: transition census, actual two-host lost acknowledgment, sleep/reboot and incompatible payload cycles; AT-LC08/09/13/20/21 |
+| R6 | Observation-only restart, retry limits, retained writer leases, atomic generation-bound cleanup continuation, partial/dependent cleanup, affected-scope fences and authenticated existing peer authority fences. SIGKILL persistence edges and packaged-service crash during cleanup are fixture proved | Recovery/peer owners: remaining transition census, actual two-host lost acknowledgment, sleep/reboot and incompatible payload cycles; AT-LC08/09/13/20/21 |
 | R7 | Existing worktree owner requires independent transport-copied archive, fsck, available-object/shallow-boundary match and separate restore; corrupted/shared/large/partial output is protected. Native closeout uses exact attachment API or exact owning-chat instruction | Git/native owners: remote hydration/partial-promisor support and actual Codex capability bridge. Current support refuses those topologies rather than destroying available history; AT-LC10–12 |
 | R8 | Review tokens, exact evidence/reason/lifetime/dependency/unknown bytes, post-await revalidation, removal intent/tombstone and same-request recovery | Cleanup owner: extend interruption/failure variants and actual owning-tool acknowledgment recovery; AT-LC05/11/13 |
 | R9 | Existing native installer retains domain/label/app/payload/plist intent before SMAppService registration; observed result and paired retirement receipt; five-second unload reply deadline, bounded attempts and no repeat while uncertain | Native installation owner: installed registration/approval, legacy receipt adoption, missing/moved app, signing and actual update/uninstall qualification; AT-LC14/21 |

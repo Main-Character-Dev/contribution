@@ -25,6 +25,7 @@ export interface ResourceIntent {
 }
 interface Preview { token: string; resources: Resource[]; createdAt: string }
 interface Cleanup { requestId: string; preview: Preview; completed: string[]; state: 'stopping' | 'completed'; result?: ObjectValue }
+interface CleanupExpectation { requestId: string; current: string }
 const locks = new WeakMap<Journal, Set<string>>();
 let boot: string | undefined;
 export function bootIdentity(): string {
@@ -148,6 +149,34 @@ export class ResourceLifecycle {
   static pending(store: Journal, repositoryId: string, exceptOperation?: string): boolean {
     return store.records<Resource>('resource').some(r => r.repositoryId === repositoryId && ['utility', 'borrowed'].includes(r.owner) && r.operationId !== exceptOperation && ['ephemeral', 'borrowed'].includes(r.lifetime) && r.state !== 'stopped');
   }
+  private cleanupOwns(cleanup: Cleanup, expected: Resource): boolean {
+    const selected = cleanup.preview.resources.find(r => r.resourceId === expected.resourceId);
+    const proof = this.store.record<CleanupExpectation>('resourceCleanupExpectation', expected.resourceId);
+    return cleanup.state === 'stopping' && !cleanup.completed.includes(expected.resourceId) && Boolean(selected &&
+      (digest(selected) === digest(expected) || proof?.requestId === cleanup.requestId && proof.current === digest(expected)));
+  }
+  /** Only unchanged, host-local records already endorsed by this review can
+   * carry observation transitions into its continuation. Never adopt drift. */
+  private observationCleanup(expected: Resource): string | undefined {
+    try { this.assertCurrent(expected); } catch { return undefined; }
+    const owners = this.store.records<Cleanup>('resourceCleanup').filter(c => this.cleanupOwns(c, expected));
+    return owners.length === 1 ? owners[0]!.requestId : undefined;
+  }
+  /** Caller holds the journal transaction: the resource and its continuation
+   * must commit or roll back together, including observation and error paths. */
+  private saveTransition(expected: Resource, patch: Pick<Partial<Resource>, 'state' | 'reason' | 'outcome' | 'retries' | 'retryAfter'>, cleanupRequest?: string): Resource {
+    requireValue(digest(this.get(expected.resourceId)) === digest(expected), 'RESOURCE_IDENTITY_CHANGED', 'The resource changed before its retained transition.');
+    if (cleanupRequest) {
+      const cleanup = this.store.record<Cleanup>('resourceCleanup', cleanupRequest);
+      requireValue(cleanup && this.cleanupOwns(cleanup, expected), 'RESOURCE_SELECTION_CHANGED', 'This transition is outside the retained cleanup selection.');
+    }
+    const result = this.save({ ...expected, ...patch, generation: expected.generation + 1, updatedAt: now() });
+    if (cleanupRequest) this.store.put('resourceCleanupExpectation', expected.resourceId, { requestId: cleanupRequest, current: digest(result) });
+    return result;
+  }
+  private saveObservation(expected: Resource, patch: Pick<Partial<Resource>, 'state' | 'reason' | 'outcome'>): Resource {
+    return this.saveTransition(expected, patch, this.observationCleanup(expected));
+  }
   async stop(resourceId: string, manual = false, deadlineMs = 10000, cleanupRequest?: string): Promise<Resource> {
     requireValue(Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 30000, 'RESOURCE_DEADLINE_INVALID', 'Cleanup has a finite deadline no longer than thirty seconds.');
     let record = this.get(resourceId); if (record.state === 'stopped') return record;
@@ -163,9 +192,8 @@ export class ResourceLifecycle {
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Fault('RESOURCE_CLEANUP_TIMEOUT', 'Resource cleanup reached its finite deadline.', 3)); }, deadlineMs); });
     try {
-      record = this.save({ ...record, state: 'stopping', retries: record.retries + 1, retryAfter: null, generation: record.generation + 1, updatedAt: now() });
+      record = this.store.transaction(() => this.saveTransition(record, { state: 'stopping', retries: record.retries + 1, retryAfter: null }, cleanupRequest));
       const selected = record;
-      if (cleanupRequest) this.store.put('resourceCleanupExpectation', resourceId, { requestId: cleanupRequest, current: digest(record) });
       const guard = (): void => { requireValue(!controller.signal.aborted, 'RESOURCE_CLEANUP_TIMEOUT', 'Cleanup authority expired.', 3); this.assertCurrent(selected); };
       const effect = async (): Promise<Resource> => {
         const observation = await adapter.observe(selected, controller.signal); guard();
@@ -174,14 +202,13 @@ export class ResourceLifecycle {
           await adapter.stop(selected, guard, controller.signal); guard();
           requireValue(await adapter.observe(selected, controller.signal) === 'absent', 'RESOURCE_RELEASE_UNCONFIRMED', 'The owning tool has not confirmed release.', 3); guard();
         }
-        const finished = this.finish(selected, { released: true, confirmedAt: now(), adapter: adapter.id }, true);
-        if (cleanupRequest) this.store.put('resourceCleanupExpectation', resourceId, { requestId: cleanupRequest, current: digest(finished) }); return finished;
+        this.assertCurrent(selected);
+        return this.store.transaction(() => this.saveTransition(selected, { state: 'stopped', outcome: { released: true, confirmedAt: now(), adapter: adapter.id } }, cleanupRequest));
       };
       return await Promise.race([effect(), timeout]);
     } catch (error) {
       const current = this.get(resourceId);
-      if (digest(current) === digest(record)) { const failed = this.save({ ...current, state: 'unresolved', reason: error instanceof Fault ? error.code : 'RESOURCE_CLEANUP_FAILED', retryAfter: new Date(Date.now() + 30000).toISOString(), generation: current.generation + 1, updatedAt: now() });
-        if (cleanupRequest) this.store.put('resourceCleanupExpectation', resourceId, { requestId: cleanupRequest, current: digest(failed) }); }
+      if (digest(current) === digest(record)) this.store.transaction(() => this.saveTransition(current, { state: 'unresolved', reason: error instanceof Fault ? error.code : 'RESOURCE_CLEANUP_FAILED', retryAfter: new Date(Date.now() + 30000).toISOString() }, cleanupRequest));
       throw error;
     } finally { controller.abort(); if (timer) clearTimeout(timer); busy.delete(resourceId); }
   }
@@ -192,7 +219,7 @@ export class ResourceLifecycle {
     // release is inferred from an expired wall clock or missing parent.
     for (const prior of pending) {
       if (performance.now() >= deadline) {
-        this.store.transaction(() => { for (const deferred of pending) if (['ephemeral', 'borrowed'].includes(deferred.lifetime) && digest(this.get(deferred.resourceId)) === digest(deferred)) this.unresolved(deferred, 'RESOURCE_OBSERVATION_DEFERRED: resume bounded observation for this exact owner.'); });
+        this.store.transaction(() => { for (const deferred of pending) if (['ephemeral', 'borrowed'].includes(deferred.lifetime) && digest(this.get(deferred.resourceId)) === digest(deferred)) this.saveObservation(deferred, { state: 'unresolved', reason: 'RESOURCE_OBSERVATION_DEFERRED: resume bounded observation for this exact owner.' }); });
         break;
       }
       try {
@@ -202,9 +229,9 @@ export class ResourceLifecycle {
         try { observed = adapter ? await Promise.race([adapter.observe(prior, controller.signal), new Promise<'unknown'>(resolve => { timer = setTimeout(() => { controller.abort(); resolve('unknown'); }, Math.max(1, Math.ceil(Math.min(2000, deadline - performance.now())))); })]) : 'unknown'; }
         finally { controller.abort(); if (timer) clearTimeout(timer); }
         this.assertCurrent(prior);
-        if (observed === 'absent' && prior.identity) this.finish(prior, { released: true, observedAt: now(), recovery: 'observation' }, true);
-        else if (['ephemeral', 'borrowed'].includes(prior.lifetime)) this.unresolved(prior, 'Restart requires the exact retained owning action; no start or teardown was replayed.');
-      } catch { const latest = this.get(prior.resourceId); if (digest(latest) === digest(prior)) this.unresolved(prior, 'RESOURCE_OBSERVATION_UNCONFIRMED'); }
+        if (observed === 'absent' && prior.identity) this.store.transaction(() => this.saveObservation(prior, { state: 'stopped', outcome: { released: true, observedAt: now(), recovery: 'observation' } }));
+        else if (['ephemeral', 'borrowed'].includes(prior.lifetime)) this.store.transaction(() => this.saveObservation(prior, { state: 'unresolved', reason: 'Restart requires the exact retained owning action; no start or teardown was replayed.' }));
+      } catch { const latest = this.get(prior.resourceId); if (digest(latest) === digest(prior)) this.store.transaction(() => this.saveObservation(prior, { state: 'unresolved', reason: 'RESOURCE_OBSERVATION_UNCONFIRMED' })); }
     }
   }
   async preview(): Promise<ObjectValue> {
@@ -229,14 +256,18 @@ export class ResourceLifecycle {
     requireValue(!this.store.records<Cleanup>('resourceCleanup').some(r => r.requestId !== requestId && r.state === 'stopping' && r.preview.resources.some(a => preview.resources.some(b => a.scope === b.scope))), 'RESOURCE_CLEANUP_PENDING', 'Resume the original cleanup in this scope.', 3);
     if (!cleanup) {
       for (const r of preview.resources) { this.assertCurrent(r); requireValue(this.store.get(r.operationId).state !== 'running', 'RESOURCE_OPERATION_ACTIVE', 'Cancel/drain the exact owner first.', 3); }
-      cleanup = { requestId, preview, completed: [], state: 'stopping' }; this.store.put('resourceCleanup', requestId, cleanup);
+      cleanup = { requestId, preview, completed: [], state: 'stopping' };
+      this.store.transaction(() => {
+        this.store.put('resourceCleanup', requestId, cleanup);
+        for (const selected of preview.resources) this.store.put('resourceCleanupExpectation', selected.resourceId, { requestId, current: digest(selected) });
+      });
     }
     // Dependencies first. A cycle remains protected and receives an action.
     let remaining = preview.resources.filter(r => !cleanup!.completed.includes(r.resourceId));
     while (remaining.length) {
       const selected = remaining.find(r => !remaining.some(other => other.dependencies.includes(r.resourceId) || other.parentId === r.resourceId));
       requireValue(selected, 'RESOURCE_DEPENDENCY_CYCLE', 'Inspect the retained dependency graph before cleanup.', 3);
-      const current = this.get(selected.resourceId), expected = this.store.record<{ requestId: string; current: string }>('resourceCleanupExpectation', selected.resourceId);
+      const current = this.get(selected.resourceId), expected = this.store.record<CleanupExpectation>('resourceCleanupExpectation', selected.resourceId);
       requireValue(digest(current) === digest(selected) || expected?.requestId === requestId && expected.current === digest(current), 'RESOURCE_SELECTION_CHANGED', 'Generation/state changed outside this retained cleanup; preserve the resource.', 3);
       requireValue(digest(current.identity) === digest(selected.identity) && current.token === selected.token && current.owner === selected.owner && current.lifetime === selected.lifetime && current.pinned === selected.pinned && current.deadlineAt === selected.deadlineAt && current.adapter === selected.adapter && current.adapterVersion === selected.adapterVersion && current.parentId === selected.parentId && current.hostId === selected.hostId && current.bootId === selected.bootId && current.clone === selected.clone && current.enrollmentRevision === selected.enrollmentRevision && digest(current.dependencies) === digest(selected.dependencies), 'RESOURCE_SELECTION_CHANGED', 'The reviewed resource changed; preserve it.');
       if (current.state !== 'stopped') await this.stop(current.resourceId, true, 10000, requestId);
