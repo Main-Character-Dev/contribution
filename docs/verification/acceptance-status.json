@@ -1650,6 +1650,202 @@
         }
       ],
       "nextStep": "Resource-record version upgrade/downgrade and actual payload rollback cannot let an older reader ignore unresolved ownership Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-VPN01",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN02",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN03",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN04",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN05",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN06",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN07",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN08",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN09",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN10",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN11",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN12",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN13",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN14",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN15",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN16",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN17",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN18",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN19",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN20",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN21",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN22",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN23",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN24",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN25",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN26",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN27",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
+    },
+    {
+      "id": "AT-VPN28",
+      "track": "connectivity",
+      "implementation": "not_started",
+      "outcome": "not_run",
+      "evidence": []
     }
   ],
   "acceptanceHardening": {

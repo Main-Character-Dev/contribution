@@ -41,3 +41,7 @@ Archive integrity, contract results, preservation counts and link checks are rec
 ## October 6 resource lifecycle amendment
 
 The owner authorized the [durable resource lifecycle plan](requirements/09-RESOURCE_LIFECYCLE.md). It adds positive resource ownership, explicit lifetimes, bounded teardown and recovery while preserving original requirements and the original 83 acceptance identities. Source and fixture proof remain separate from installed/physical qualification.
+
+## October 6 connectivity amendment
+
+[VPN-01–11](requirements/10-VPN_CONNECTIVITY.md) clarify PRD-SETUP-002 and architecture section 5: ordinary configured SSH is the generic peer transport; Tailscale is an optional configured network. PRD-MODEL-002, PRD-WORK-004 and the separate Remote Devices qualification remain in force. The byte-checked baseline is retained.

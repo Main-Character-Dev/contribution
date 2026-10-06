@@ -13,7 +13,7 @@ assert.equal(version.channel, 'development');
 assert.equal(version.schemaVersion, 1);
 const schemaDir = new URL('packages/contracts/schemas/', root);
 const names = (await readdir(schemaDir)).filter(n => n.endsWith('.schema.json')).sort();
-assert.equal(names.length, 17, 'Reconcile the contract census before adding schemas');
+assert.equal(names.length, 18, 'Reconcile the contract census before adding schemas');
 const local = new Map();
 for (const name of names) {
   const schema = JSON.parse(await readFile(new URL(name, schemaDir), 'utf8'));
@@ -40,6 +40,10 @@ const statuses = response.properties.requestStatus.enum;
 const states = response.properties.operationState.anyOf[0].enum;
 outputs.set('apps/macos/Packages/ContributionPlatform/Sources/ContributionPlatform/BuildIdentity.swift',
 `// Generated from version.json and response.schema.json.\npublic enum BuildIdentity {\n    public static let version = "${version.version}"\n    public static let build = "${version.build}"\n    public static let channel = "${version.channel}"\n    public static let schemaVersion = ${version.schemaVersion}\n}\npublic enum RequestStatus: String, Codable, Sendable {\n${statuses.map(s => `    case ${s}`).join('\n')}\n}\npublic enum OperationState: String, Codable, Sendable {\n${states.map(s => `    case ${s}`).join('\n')}\n}\n`);
+const connectivity = await readJSON('packages/contracts/schemas/connectivity.schema.json');
+outputs.set('apps/macos/Packages/ContributionPlatform/Sources/ContributionPlatform/ConnectivityContract.swift',
+  '// Generated from connectivity.schema.json.\n' + ['state', 'stage', 'helper', 'freshness'].map(key =>
+    `public enum Connectivity${key[0].toUpperCase() + key.slice(1)}: String, Codable, Sendable {\n${connectivity.properties[key].enum.map(value => `    case \`${value}\``).join('\n')}\n}\n`).join(''));
 for (const [path, content] of outputs) {
   const url = new URL(path, root);
   if (process.argv.includes('--check')) {

@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contribution.dev/schemas/connectivity.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "targetKind",
+    "targetId",
+    "endpointRevision",
+    "generation",
+    "state",
+    "freshness",
+    "observedAt",
+    "lastSuccessAt",
+    "reasonCode",
+    "stage",
+    "retryable",
+    "confidence",
+    "source",
+    "helper",
+    "failures",
+    "nextRetryAt",
+    "actions",
+    "capabilities",
+    "provider"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "targetKind": {
+      "type": "string",
+      "enum": [
+        "contribution-peer",
+        "git-remote"
+      ]
+    },
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "endpointRevision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "checking",
+        "ready",
+        "unavailable",
+        "requires_action"
+      ]
+    },
+    "freshness": {
+      "type": "string",
+      "enum": [
+        "fresh",
+        "stale",
+        "unknown"
+      ]
+    },
+    "observedAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastSuccessAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "configuration",
+        "resolution",
+        "connection",
+        "trust",
+        "authentication",
+        "helper",
+        "protocol",
+        "identity",
+        "operation",
+        "none"
+      ]
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "inferred",
+        "unknown"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "ssh",
+        "helper",
+        "git",
+        "service"
+      ]
+    },
+    "helper": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "available",
+        "unavailable",
+        "incompatible",
+        "not_applicable"
+      ]
+    },
+    "failures": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nextRetryAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "retry",
+          "diagnostics",
+          "connection_settings",
+          "verify_host",
+          "update_peer",
+          "reconcile"
+        ]
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "client",
+        "target",
+        "path"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "unavailable",
+            "skipped",
+            "not_applicable",
+            "observed"
+          ]
+        },
+        "client": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "running",
+            "stopped",
+            "login_required"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "visible",
+            "absent",
+            "reachable"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "direct",
+            "relay"
+          ]
+        }
+      }
+    }
+  }
+}

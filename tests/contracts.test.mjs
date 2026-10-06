@@ -5,7 +5,7 @@ import { schemaNames, validateContract, validateContractFormat } from '../packag
 import { example, exampleSchemas, negativeCases } from './fixtures/contracts.mjs';
 
 test('all canonical schemas compile with local references', () => {
-  assert.equal(schemaNames.length, 17);
+  assert.equal(schemaNames.length, 18);
 });
 test('all imported examples are covered by schema validation', () => {
   const files = readdirSync(new URL('../packages/contracts/examples/', import.meta.url)).filter(n => n.endsWith('.json'));
@@ -33,4 +33,10 @@ test('format checking covers URI, UUID and real calendar dates', () => {
     assert.equal(validateContractFormat(format, valid), true);
     assert.equal(validateContractFormat(format, invalid), false);
   }
+});
+
+test('connectivity contract rejects incompatible versions, unbounded capabilities and raw provider inventory', () => {
+  const value = { schemaVersion: 1, targetKind: 'contribution-peer', targetId: 'fixture-host', endpointRevision: 'fixture-route', generation: 0, state: 'unknown', freshness: 'unknown', observedAt: null, lastSuccessAt: null, reasonCode: 'NONE', stage: 'none', retryable: false, confidence: 'unknown', source: 'service', helper: 'unknown', failures: 0, nextRetryAt: null, actions: ['retry','diagnostics'], capabilities: [], provider: { status: 'not_applicable', client: 'unknown', target: 'unknown', path: 'unknown' } };
+  assert.equal(validateContract('connectivity',value).valid,true);
+  for (const invalid of [{...value,schemaVersion:2},{...value,state:'vpn_connected'},{...value,capabilities:Array.from({length:17},(_,i)=>'cap'+i)},{...value,provider:{...value.provider,Peer:{private:'inventory'}}},{...value,observedAt:'2026-02-30T00:00:00Z'}]) assert.equal(validateContract('connectivity',invalid).valid,false);
 });

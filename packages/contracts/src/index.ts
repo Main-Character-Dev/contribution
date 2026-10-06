@@ -3,6 +3,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { AnySchema, ValidateFunction } from 'ajv';
 
+export type { Connectivity } from './generated/connectivity.js';
 export type { Response } from './generated/response.js';
 export type { Repository } from './generated/repository.js';
 export type { Resource } from './generated/resource.js';

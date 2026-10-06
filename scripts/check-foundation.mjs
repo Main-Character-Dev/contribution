@@ -23,9 +23,10 @@ const ledger = json('docs/verification/acceptance-status.json');
 assert.equal(ledger.cases.filter(c => c.track === 'core' && !c.id.startsWith('AT-R')).length, 54);
 assert.equal(ledger.cases.filter(c => c.track === 'core' && c.id.startsWith('AT-R')).length, 5);
 assert.equal(ledger.cases.filter(c => c.track === 'remote-device').length, 24);
-assert.equal(new Set(ledger.cases.filter(c => c.track !== 'resource-lifecycle').map(c => c.id)).size, 83);
+assert.equal(new Set(ledger.cases.filter(c => !['resource-lifecycle', 'connectivity'].includes(c.track)).map(c => c.id)).size, 83);
 assert.equal(ledger.cases.filter(c => c.track === 'resource-lifecycle').length, 21);
-assert.equal(new Set(ledger.cases.map(c => c.id)).size, 104);
+assert.equal(ledger.cases.filter(c => c.track === 'connectivity').length, 28);
+assert.equal(new Set(ledger.cases.map(c => c.id)).size, 132);
 for (const c of ledger.cases) {
   assert(['not_run', 'partial_fixture'].includes(c.outcome), `${c.id}: no physical/release acceptance is recorded at this checkpoint`);
   assert(['not_started', 'partial'].includes(c.implementation));
@@ -37,7 +38,7 @@ for (const c of ledger.cases) {
     assert(evidence.scope && evidence.scope.length > 20);
   }
 }
-const caseIds = [read('docs/requirements/06-ACCEPTANCE_TESTS.md'), read('docs/requirements/08-REMOTE_IPHONE_DEVELOPMENT.md'), read('docs/requirements/09-RESOURCE_LIFECYCLE.md')]
+const caseIds = [read('docs/requirements/06-ACCEPTANCE_TESTS.md'), read('docs/requirements/08-REMOTE_IPHONE_DEVELOPMENT.md'), read('docs/requirements/09-RESOURCE_LIFECYCLE.md'), read('docs/requirements/10-VPN_CONNECTIVITY.md')]
   .flatMap(text => [...text.matchAll(/^\| (AT-(?:[A-Z]+)?\d{2}) \|/gm)].map(match => match[1]));
 assert.deepEqual([...new Set(ledger.cases.map(c => c.id))].sort(), [...new Set(caseIds)].sort());
 const pins = json('toolchain.json'), pkg = json('package.json');
@@ -84,4 +85,4 @@ for (const file of files(root)) {
     links++;
   }
 }
-console.log(`Foundation checked: MIT, 26 byte-identical JSON imports, 63 PRD/40 RDEV requirements, all 83 preserved plus 21 lifecycle acceptance identities with explicit partial evidence, pins, payload boundary, privacy and ${links} local links.`);
+console.log(`Foundation checked: MIT, 26 byte-identical JSON imports, 63 PRD/40 RDEV requirements, all 83 preserved plus 21 lifecycle and 28 connectivity acceptance identities with explicit partial evidence, pins, payload boundary, privacy and ${links} local links.`);
