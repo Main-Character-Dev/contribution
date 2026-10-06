@@ -143,12 +143,12 @@
     "Incomplete or inaccessible retained process identity evidence cannot prove release and remains blocked for owner review."
   ],
   "delivery": {
-    "localIntegration": "Authorized guarded fast-forward to clean primary main; verified in the final handoff.",
+    "localIntegration": "Guarded fast-forward completed; primary main verified clean. Exact final SHA is recorded in the completion handoff.",
     "remoteDelivery": "not_requested",
     "installation": "not_performed",
     "enrollment": "not_performed",
     "vpnOrSshTrustChanges": "not_performed",
-    "worktree": "Archive only after local integration, cleanliness and preservation of needed ignored artifacts."
+    "worktree": "Retained clean: the normal Codex archive operation refused because this task checkout is considered primary. Needed ignored logs and unsigned final app were preserved separately. No manual removal was attempted."
   },
   "codeCommit": "dd31c8f5ddf189a40215f44e231f1fe65668a6e0",
   "verifiedSourceCommit": "c7adbe65afaf480a98c107cc7e68ea237f34f652",
