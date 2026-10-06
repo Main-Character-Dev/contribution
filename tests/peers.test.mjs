@@ -403,6 +403,8 @@ for (const legacy of [false, true]) test(`lost canonical admission queries the i
       await assert.rejects(f.hosts.mini.peers.receive({fromHostId:f.hosts.laptop.store.hostId,expectedHostId:f.hosts.mini.store.hostId,compatibility:{version:'0.1.0'},action:'operation.lookup-request',body:{repositoryId:repo,requestId,scopeDigest:retained.digest}}), {code:'OUTCOME_UNCERTAIN'});
       f.hosts.mini.store.put('peerRequest',requestId,retained);
       const other = await f.hosts.mini.repos.add(repository(f.root,'lookup-other'));
+      f.hosts.mini.repos.save({...other,availability:'both-macs'});
+      f.hosts.mini.store.put('authority',other.id,{phase:'active',ownerHostId:f.hosts.mini.store.hostId,peerHostId:f.hosts.laptop.store.hostId});
       const cancelled = randomUUID(); f.hosts.mini.store.put('peerCancellation',`${f.hosts.laptop.store.hostId}:${cancelled}`,{repositoryId:repo,from:f.hosts.laptop.store.hostId,requestId:cancelled});
       await assert.rejects(f.hosts.mini.peers.receive({fromHostId:f.hosts.laptop.store.hostId,expectedHostId:f.hosts.mini.store.hostId,compatibility:{version:'0.1.0'},action:'operation.lookup-request',body:{repositoryId:other.id,requestId:cancelled,scopeDigest:retained.digest}}), {code:'PEER_OPERATION_UNAUTHORIZED'});
     }
