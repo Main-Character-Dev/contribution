@@ -4,7 +4,12 @@ import { alive, processIdentity } from './process.js';
 
 /** An exited worker or terminal transport reply does not settle its history.
  * Lifecycle changes need the complete bounded dependency census. */
+export function assertRepositoryResourcesReleased(store: Journal, repositoryId: string): void {
+  const pending = store.db.prepare(`SELECT key FROM records WHERE namespace='resource' AND json_extract(body,'$.repositoryId')=? AND json_extract(body,'$.state')!='stopped' LIMIT 1`).get(repositoryId);
+  requireValue(!pending, 'RESOURCE_RECONCILIATION_REQUIRED', 'A retained session/resource still depends on this clone. Use its exact owning stop action before changing enrollment or transferring authority.', 3);
+}
 export function assertRepositorySettled(store: Journal, repositoryId: string): void {
+  assertRepositoryResourcesReleased(store, repositoryId);
   const rows = store.db.prepare('SELECT body FROM operations WHERE repository_id=? LIMIT 10001').all(repositoryId);
   requireValue(rows.length <= 10000, 'REPOSITORY_CENSUS_LIMIT', 'This repository needs a paged dependency review before changing enrollment or authority.', 3);
   for (const row of rows) {

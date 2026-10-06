@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
+import { WorktreeHistory } from '../packages/engine/dist/worktree-history.js';
 import { OwnedWorktrees } from '../packages/engine/dist/owned-worktrees.js';
 import { Engine } from '../packages/engine/dist/service.js';
 import { git, repository, commit } from './integration/service.mjs';
@@ -85,6 +86,7 @@ test('lost cleanup completion resumes its exact identity and fences new jobs wit
   const f = fixture(); try {
     const one = await f.add('candidate'), two = await f.add('build'), preview = await f.owned.preview(), request = randomUUID();
     f.store.put('worktreeCleanup', request, { requestId: request, preview: f.store.record('worktreeCleanupPreview', preview.scopeToken), completed: [], state: 'removing' });
+    await new WorktreeHistory(f.store).retain(one.op.attemptId, f.primary, f.repo.commonDir, one.owner.tip);
     git(f.primary, 'worktree', 'remove', one.directory); // Crash after Git removed the selected checkout.
     assert.throws(() => f.store.admit(randomUUID(), 'checks', f.repo.id, {}, 'fixture'), { code: 'STORAGE_CLEANUP_PENDING' });
     assert.equal(f.store.admit(one.op.requestId, one.op.kind, f.repo.id, one.op.input, 'new').operationId, one.op.operationId);

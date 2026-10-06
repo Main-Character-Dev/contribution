@@ -1,0 +1,266 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "resourceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "operationId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "attemptId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "repositoryId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "hostId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "bootId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "clone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "enrollmentRevision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "parentId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "uniqueItems": true,
+      "maxItems": 64
+    },
+    "kind": {
+      "enum": [
+        "process",
+        "server",
+        "provider",
+        "simulator",
+        "service"
+      ]
+    },
+    "owner": {
+      "enum": [
+        "utility",
+        "borrowed",
+        "native",
+        "user",
+        "unknown"
+      ]
+    },
+    "lifetime": {
+      "enum": [
+        "ephemeral",
+        "borrowed",
+        "interactive",
+        "persistent"
+      ]
+    },
+    "adapter": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "adapterVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "token": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "state": {
+      "enum": [
+        "intent",
+        "allocated",
+        "active",
+        "stopping",
+        "stopped",
+        "retained",
+        "unresolved"
+      ]
+    },
+    "identity": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "process",
+                "simulator",
+                "provider",
+                "service"
+              ]
+            },
+            "value": {
+              "type": "object",
+              "maxProperties": 24,
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "stopAction": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "deadlineAt": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pinned": {
+      "type": "boolean"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "retries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "retryAfter": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "resourceId",
+    "requestId",
+    "operationId",
+    "attemptId",
+    "repositoryId",
+    "hostId",
+    "bootId",
+    "clone",
+    "enrollmentRevision",
+    "parentId",
+    "dependencies",
+    "kind",
+    "owner",
+    "lifetime",
+    "adapter",
+    "adapterVersion",
+    "scope",
+    "token",
+    "generation",
+    "state",
+    "identity",
+    "reason",
+    "stopAction",
+    "deadlineAt",
+    "pinned",
+    "createdAt",
+    "updatedAt",
+    "retries",
+    "retryAfter",
+    "outcome"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:resource:v1",
+  "title": "Contribution retained resource v1"
+}

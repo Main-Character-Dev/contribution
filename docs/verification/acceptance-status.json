@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewDate": "2026-10-05",
+  "reviewDate": "2026-10-06",
   "scope": "Implementation evidence ledger; partial fixtures and builds do not establish full case or physical acceptance",
   "coreRelease": "not_verified",
   "fullRemoteTarget": "not_verified",
@@ -1275,6 +1275,361 @@
         }
       ],
       "nextStep": "Real SSH, both physical Macs and adopted-project parity remain open."
+    },
+    {
+      "id": "AT-LC01",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Success/failure/zero-exit cancellation/timeout; finite effective outcome, original exit retained, descendants stopped before release Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC02",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-simulator.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Initially Shutdown versus Booted; only positively owned boot restored; exact UDID and data preserved Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC03",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-simulator.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Nested lease has one finalizer; borrowed and retained visual session survives with accountable stop action Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC04",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Token/generation/UDID/PID/start/boot-context drift preserves the changed resource Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC05",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Drift during awaited observation is rejected by the final guard, including enrollment/pin/dependency changes Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC06",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "TERM-resistant descendant, redirected/closed stdio, stalled shutdown and failed inspection reach a finite unresolved result without false release Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC07",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-simulator.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Setup/provider/control-close failure runs remaining safe cleanup; dependent Simulator shutdown waits for driver proof Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC08",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/resource-pilot.test.mjs",
+          "scope": "One disposable repository on this host, packaged immutable service over IPC, actual SIGKILL/restart, exact orphan observation, request replay and reviewed idempotent cleanup; no launchd or user enrollment."
+        }
+      ],
+      "nextStep": "Crash at every transition, SIGKILL, restart, sleep/wake, clock changes and reboot; no repeated start or guessed kill Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC09",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-simulator.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/resource-owner.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Two repositories compete fairly across shared/exclusive slots; no lock cycle; foreign-host identities rejected Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC10",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/worktree-history.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Detached/shallow/partial/promisor history, misleading successful fetch, incomplete bundle and independent restore Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC11",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/owned-worktrees.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Dirty/staged/untracked/ignored valuable files, replaced paths, links, locks, submodules/embedded/shared checkouts and live dependencies remain intact Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC12",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-owner.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Native attachment API unavailable: exact owning-chat closeout instruction; no native directory/database mutation Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC13",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/resource-pilot.test.mjs",
+          "scope": "One disposable repository on this host, packaged immutable service over IPC, actual SIGKILL/restart, exact orphan observation, request replay and reviewed idempotent cleanup; no launchd or user enrollment."
+        }
+      ],
+      "nextStep": "Stale preview, changed request inputs, duplicate completion and crash during partial cleanup preserve new resources and replay the same receipt Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC14",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/PersistentServiceLifecycleTests.swift",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Missing service executable/repo/config, registration drift and interrupted uninstall: bounded visible failure, no log resurrection or relaunch loop Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC15",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-owner.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Unowned server/browser/system process, occupied port and unknown Simulator clone remain protected Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC16",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/worktree-history.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/managed-storage.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Storage pressure, failed/unsealable evidence and incomplete accounting block admission without deleting protected material Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC17",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-owner.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/adoption.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Utility unavailable and adoption rollback preserve original gates, source guards, shared sessions, history and one teardown owner Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC18",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/resource-pilot.test.mjs",
+          "scope": "One disposable repository on this host, packaged immutable service over IPC, actual SIGKILL/restart, exact orphan observation, request replay and reviewed idempotent cleanup; no launchd or user enrollment."
+        }
+      ],
+      "nextStep": "Intent retained before allocation; dispatch impossible before identity/grant persistence; failed journal write cannot authorize effects Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC19",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Lifetime/budget configuration revision, expiry/renewal and pin behavior; unknown usage remains protected Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC20",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-owner.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/peers.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/diagnostics.test.mjs",
+          "scope": "Disposable source/owning-API fixtures prove this bounded subset; installed Mac, real owning providers/native attachments and two actual hosts remain unqualified."
+        }
+      ],
+      "nextStep": "Lost transfer acknowledgement, revoked authority, unsupported adapter and private diagnostic export; no new owner until fenced release is proved Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
+    },
+    {
+      "id": "AT-LC21",
+      "track": "resource-lifecycle",
+      "source": "requirements/09-RESOURCE_LIFECYCLE.md",
+      "implementation": "partial",
+      "outcome": "partial_fixture",
+      "evidence": [
+        {
+          "level": "fixture",
+          "source": "tests/resource-lifecycle.test.mjs",
+          "scope": "Focused lifecycle fixtures establish the implemented subset; actual Mac installation, native Codex and cross-host qualification remain unrun."
+        }
+      ],
+      "nextStep": "Resource-record version upgrade/downgrade and actual payload rollback cannot let an older reader ignore unresolved ownership Complete the remaining variants and separately authorized actual-host qualification. See the requirement gap matrix and explicit deferred owner in docs/RESOURCE_LIFECYCLE.md."
     }
   ],
   "acceptanceHardening": {

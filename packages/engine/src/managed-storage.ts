@@ -13,7 +13,7 @@ export interface ManagedUsage {
 }
 const defaultPolicy: StoragePolicy = { schemaVersion: 1, maxStateBytes: 10 * 1024 ** 3 };
 const directories: Record<string, string> = { Payloads: 'installed_payloads', logs: 'raw_logs', backups: 'journal_backups', transfers: 'outgoing_git_bundles', incoming: 'incoming_git_bundles',
-  'artifact-incoming': 'incoming_artifacts', 'device-builds': 'device_builds', candidates: 'landing_checkouts', 'adopted-landings': 'adopted_checkouts', 'legacy-reports': 'original_gate_output', 'legacy-reporting': 'original_gate_output' };
+  'worktree-history': 'verified_history_archives', 'backend-sessions': 'private_backend_sessions', 'artifact-incoming': 'incoming_artifacts', 'device-builds': 'device_builds', candidates: 'landing_checkouts', 'adopted-landings': 'adopted_checkouts', 'legacy-reports': 'original_gate_output', 'legacy-reporting': 'original_gate_output' };
 
 /** A bounded read-only census. Link targets are never traversed and unknown
  * files count toward the cap; absence of a completed census never means zero. */

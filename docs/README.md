@@ -42,3 +42,5 @@ Schema validity proves data shape, not authorization, cross-record consistency, 
 S0 moved the twelve schema and fourteen example JSON files into `packages/contracts` as the single maintained source. Runtime validation, generated TypeScript types, and checked Swift projection coverage are described in the [contract package](../packages/contracts/README.md). There is no second editable schema/example copy under `docs`.
 
 Private audit evidence is dated background, not current code or executable instructions. See [SOURCE_PACKAGE.md](SOURCE_PACKAGE.md). Never copy the whole input archive into the repository.
+
+The [durable resource lifecycle amendment](requirements/09-RESOURCE_LIFECYCLE.md) owns R1–R12 and the additive AT-LC01–21 acceptance extension. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) records implemented behavior and qualification gaps.

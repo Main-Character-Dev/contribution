@@ -49,7 +49,7 @@ export class Diagnostics {
     return { schemaVersion: 1, generatedAt: now(), scope: selected ? 'selected_operation' : 'local_service', privacy: 'allowlisted_summary',
       software: { contribution: buildIdentity.version, protocolVersion: 1, runtime: process.version, platform: process.platform, architecture: process.arch },
       service: { paused: this.store.getMeta('paused') === true, maintenance: this.store.getMeta('maintenance') === true,
-        remoteDevicesEnabled: object(settings['remoteDevices'])['enabled'] === true, databaseSchema: 1 },
+        remoteDevicesEnabled: object(settings['remoteDevices'])['enabled'] === true, databaseSchema: Number(this.store.db.prepare('PRAGMA user_version').get()?.['user_version']) },
       storage: { rawLogBytes: count(storage.totalBytes), protectedLogBytes: count(storage.protectedBytes), eligibleLogBytes: count(storage.eligibleBytes), maxLogBytes: count(storage.maxLogBytes), admissionBlocked: storage.admissionBlocked,
         accounting: 'raw_logs_only' },
       managedData: { logicalBytes: managed.logicalBytes, maxStateBytes: managed.maxStateBytes, complete: managed.complete, admissionBlocked: managed.admissionBlocked, reason: managed.reason, categories: managed.categories },
@@ -59,6 +59,7 @@ export class Diagnostics {
         availability: choice(repo.availability, ['this-mac', 'both-macs']), owner: repo.canonicalHostId === this.store.hostId ? 'local' : 'peer',
         gate: choice(repo.config.validation.gate, ['enabled', 'inactive']) })),
       history: { retainedOperations: count(total), includedOperations: operations.length, truncated: !selected && total > operations.length, order: 'newest_first' },
+      resourceOwnership: this.store.db.prepare(`SELECT json_extract(body,'$.kind') kind, json_extract(body,'$.state') state, json_extract(body,'$.lifetime') lifetime, COUNT(*) count FROM records WHERE namespace='resource' AND (? IS NULL OR json_extract(body,'$.operationId')=?) GROUP BY kind,state,lifetime LIMIT 101`).all(operationId ?? null, operationId ?? null).slice(0, 100).map(row => ({ kind: choice(row['kind'], ['process', 'server', 'provider', 'simulator', 'service']), state: choice(row['state'], ['intent', 'allocated', 'active', 'stopping', 'stopped', 'retained', 'unresolved']), lifetime: choice(row['lifetime'], ['ephemeral', 'borrowed', 'interactive', 'persistent']), count: count(row['count']) })),
       operations: operations.map(summarize),
       omissions: ['project and device names', 'absolute paths', 'host and device identifiers', 'network endpoints', 'source and commit contents', 'command arguments', 'raw logs and screenshots', 'error messages', 'pairing and signing assets', 'app data', 'free-form evidence'],
       evidenceBoundary: 'A redacted diagnostic summary is not device qualification or publication proof. Exact retained evidence remains private.' };

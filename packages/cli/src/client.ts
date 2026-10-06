@@ -21,6 +21,7 @@ const flags: Record<string, string> = { '--refresh': 'refresh', '--preview': 'pr
 flags['--prepare-existing-adoption'] = 'prepareExistingAdoption';
 flags['--list-adoptions'] = 'listAdoptions';
 flags['--worktrees'] = 'worktrees';
+flags['--reconcile'] = 'reconcile';
 flags['--bundles'] = 'bundles';
 flags['--resume'] = 'resume';
 flags['--resume-native'] = 'resumeNative';
@@ -67,6 +68,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID] [--prepare-reporting|--prepare-adoption --request-id UUID]',
         'repos migration --repo ID --list-adoptions', 'repos migration --repo ID --adoption-plan ID [--review-file PATH --review-side before|after --review-offset BYTES]', 'repos migration --repo ID --apply-adoption|--activate-adoption|--rollback-adoption ID --expected-revision REV --request-id UUID',
         'repos migration --repo ID --prepare-existing-adoption --original-tip OID --migration-tip OID --request-id UUID',
+        'service resources [--preview|--reconcile|--scope-token TOKEN --request-id UUID] --json', 'service resource-policy [--file PATH --expected-revision REV --request-id UUID] --json',
         'service diagnostics [--run OPERATION] --json', 'service storage-policy [--file PATH --expected-revision REV --request-id UUID] --json', 'hosts sync --host HOST', 'repos resolve PATH --repo ID --host HOST --expected-revision REVISION',
         'service power-policy [--file PATH --expected-revision REV --request-id UUID] --json',
         'devices list|status|apps|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',

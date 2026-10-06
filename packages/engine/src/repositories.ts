@@ -1,3 +1,4 @@
+import { assertRepositoryResourcesReleased } from './repository-idle.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readdirSync, lstatSync, openSync, closeSync, fsyncSync, renameSync } from 'node:fs';
 import { basename, join, resolve, dirname } from 'node:path';
 import { assertContract } from '@contribution/contracts';
@@ -138,6 +139,7 @@ export class Repositories {
     requireValue(config.repositoryId === repo.id && config.integration.branch === repo.config.integration.branch && config.integration.adapter === repo.config.integration.adapter,
       'AUTHORITY_TRANSITION_REQUIRED', 'Identity, branch and adapter changes require an explicit reconciled migration.');
     requireValue(!this.store.unsettled().some(op => op.repositoryId === repo.id), 'REPOSITORY_BUSY', 'Reconcile queued or uncertain operations before changing effective policy.');
+    assertRepositoryResourcesReleased(this.store, repo.id);
     const updated = { ...repo, config, revision: digest(config) };
     const adopted = this.store.record<AdoptedHookRegistration>('adoptedHooks', repo.id);
     let adoption: ConfigurationIntent['adoption'];
@@ -183,9 +185,11 @@ export class Repositories {
       this.store.put('configurationRequests', intent.requestId, { digest: intent.identity, result: { repository: updated } }); }); return updated;
   }
   async relocate(repo: Enrolled, path: string): Promise<Enrolled> {
+    assertRepositoryResourcesReleased(this.store, repo.id);
     const info = await identity(path);
     requireValue(info.commonDir === repo.commonDir || (!existsSync(repo.path) && existsSync(join(info.path, 'contribution.json')) && JSON.parse(readFileSync(join(info.path, 'contribution.json'), 'utf8')).repositoryId === repo.id),
       'REPOSITORY_IDENTITY_CHANGED', 'Relocation could not establish the enrolled repository identity.');
+    assertRepositoryResourcesReleased(this.store, repo.id);
     const updated = { ...repo, path: realpathSync(path), commonDir: info.commonDir }; this.save(updated); return updated;
   }
   async status(repo: Enrolled, refresh: boolean): Promise<ObjectValue> {

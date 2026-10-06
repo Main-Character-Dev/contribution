@@ -43,3 +43,9 @@ Track each original case in [the acceptance ledger](verification/acceptance-stat
 The [acceptance hardening review](ACCEPTANCE_HARDENING.md) adds AT-R01–05 to the existing plan: 59 core and 24 device cases now remain tracked. Implement these with M2/M3 or M4/M5 as assigned, reusing existing scenarios for already-covered checks. S0 and approved product scope are unchanged.
 
 Missing hardware, signing, unlock/trust prompts, or network switching blocks only dependent proof. Continue authorized independent work. Preserve every unresolved requirement with its blocker, next decisive proof, and relevant IDs. See [VERIFICATION.md](VERIFICATION.md) for the current access matrix and later evidence standard.
+
+## Resource lifecycle extension
+
+The [resource lifecycle amendment](requirements/09-RESOURCE_LIFECYCLE.md) adds R1–R12/AT-LC01–21. Source work follows durable process/Simulator ownership; repository/session admission; independent Git recovery; persistent services/cross-host/limits; disposable actual-host qualification; incremental adoption. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) owns current implementation and limitations. Actual installation and live enrollment remain deferred. Existing retention and device/writer qualifications remain open until independently proved.
+
+The resource lifecycle deferred owners and remaining case variants are explicit in [the current gap matrix](RESOURCE_LIFECYCLE.md#current-requirement-gap-matrix). Adoption/installation/platform/peer owners must qualify live bridges and legacy registration receipt adoption before expansion; Git owners must qualify partial/promisor and large topology recovery. No source fixture closes these owners.

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+import type { Writable } from 'node:stream';
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, rmdirSync, openSync, closeSync } from 'node:fs';
 import { join, resolve, delimiter, basename } from 'node:path';
@@ -56,8 +58,18 @@ export function gitPushAncestor(caller: { pid: number; start: string }): { pid: 
   }
   return null;
 }
-export interface ProcessResult { code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean; outputLimited?: boolean }
-export interface RunOptions { cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number; terminationGraceMs?: number;
+export interface ProcessMember { pid: number; start: string }
+export interface ProcessOwnership {
+  intent(executable: string, argv: readonly string[]): void;
+  allocated(pid: number, start: string): void;
+  grant(): void;
+  members(members: ProcessMember[]): void;
+  stopping(): void;
+  finished(result: ProcessResult): void;
+  uncertain(reason: string): void;
+}
+export interface ProcessResult { cleanup?: { released: boolean; reason: string | null; members: ProcessMember[] };  code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean; outputLimited?: boolean }
+export interface RunOptions { ownership?: ProcessOwnership | (() => ProcessOwnership); cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number; terminationGraceMs?: number;
   /** Grant a waiting wrapper its input only after its exact process identity
    * has been retained. A throwing callback closes input and stops the wrapper. */
   inputAfterStarted?: (pid: number, start: string) => string | Buffer;
@@ -75,78 +87,136 @@ export async function run(executable: string, argv: readonly string[], options: 
   // A caller's Git repository/index overrides must never retarget the service.
   for (const key of Object.keys(environment)) if (/^GIT_(?:DIR$|COMMON_DIR$|WORK_TREE$|INDEX_FILE$|OBJECT_DIRECTORY$|ALTERNATE_OBJECT_DIRECTORIES$|NAMESPACE$|PREFIX$|CONFIG(?:$|_)|REPLACE_REF_BASE$)/.test(key)) delete environment[key];
   Object.assign(environment, options.env ?? {});
+  const timeoutMs = options.timeoutMs ?? 30000;
+  requireValue(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 86400000, 'INVALID_PROCESS_DEADLINE', 'Select a finite command deadline no longer than one day.', 2);
+  const ownership = typeof options.ownership === 'function' ? options.ownership() : options.ownership;
+  ownership?.intent(executable, argv);
+  const granted = Boolean(ownership);
   return new Promise((resolveResult, reject) => {
-    const child = spawn(executable, [...argv], { cwd: options.cwd, env: environment, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '', stderr = '', bytes = 0, binaryBytes = 0, binaryOverflow = false, timedOut = false, cancelled = false, stopped = false, closed = false, killTimer: NodeJS.Timeout | undefined;
+    const child = spawn(granted ? process.execPath : executable, granted ? [fileURLToPath(new URL('./resource-process-worker.js', import.meta.url))] : [...argv],
+      { cwd: options.cwd, env: environment, detached: true, stdio: granted ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '', bytes = 0, binaryBytes = 0, binaryOverflow = false, timedOut = false, cancelled = false, stopped = false, settled = false;
+    let exitCode: number | null = null, exitSignal: string | null = null, exited = false, streamsClosed = false, identityUnknown = false;
     let callbackFailure: 'OUTPUT_SINK_FAILED' | 'PROCESS_OBSERVER_FAILED' | undefined;
-    const pending = { stdout: '', stderr: '' };
+    let drainTimer: NodeJS.Timeout | undefined, killTimer: NodeJS.Timeout | undefined, finalTimer: NodeJS.Timeout | undefined;
+    const known = new Map<number, string>(), pending = { stdout: '', stderr: '' };
     const maxBytes = options.maxBytes ?? 4 * 1024 * 1024;
+    const retain = (): ProcessMember[] | null => {
+      const census = processCensus(); if (!census) { identityUnknown = true; return null; }
+      let changed = false;
+      // Membership is acquired only from exact ancestry while a retained parent
+      // exists, or the still-owned detached group while the leader is live.
+      for (let depth = 0; depth < 32; depth++) {
+        let added = false;
+        for (const row of census) if (!known.has(row.pid) && ((known.get(row.parent) && census.some(p => p.pid === row.parent && p.start === known.get(row.parent))) ||
+          (!exited && row.group === child.pid && census.some(p => p.pid === child.pid && p.start === known.get(child.pid!))))) {
+          known.set(row.pid, row.start); changed = added = true;
+        }
+        if (!added) break;
+      }
+      const group = census.filter(r => r.group === child.pid);
+      if (group.some(r => known.get(r.pid) !== r.start)) identityUnknown = true;
+      if (changed) { try { ownership?.members([...known].map(([pid, start]) => ({ pid, start }))); } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; identityUnknown = true; } }
+      return census.filter(r => known.get(r.pid) === r.start).map(r => ({ pid: r.pid, start: r.start }));
+    };
+    const signalOwned = (signal: 'SIGTERM' | 'SIGKILL'): void => {
+      const members = retain();
+      if (members) for (const member of members) if (processIdentity(member.pid) === member.start) {
+        try { process.kill(member.pid, signal); } catch { /* exit is verified separately */ }
+      }
+      // Before grant an unreaped direct wrapper cannot be a reused PID. This
+      // fallback closes only that wrapper, never an unobserved process group.
+      if (!exited && child.pid && !known.has(child.pid)) try { child.kill(signal); } catch { /* already exited */ }
+    };
+    const cleanup = (): void => { clearTimeout(timer); clearInterval(poll); if (drainTimer) clearTimeout(drainTimer); if (killTimer) clearTimeout(killTimer); if (finalTimer) clearTimeout(finalTimer); options.signal?.removeEventListener('abort', cancel); };
+    const finish = (released: boolean, reason: string | null): void => {
+      if (settled) return; settled = true; cleanup();
+      for (const text of Object.values(pending)) if (text && !callbackFailure) try { options.output?.(text); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; }
+      const result: ProcessResult = { code: cancelled ? 130 : timedOut ? 124 : bytes > maxBytes || binaryOverflow || !released ? 5 : exitCode ?? 5,
+        actualExitCode: exitCode, signal: exitSignal, stdout, stderr, timedOut, cancelled, outputLimited: binaryOverflow || bytes > maxBytes,
+        cleanup: { released, reason, members: [...known].map(([pid, start]) => ({ pid, start })) } };
+      try { ownership?.finished(result); } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; }
+      child.stdout?.destroy(); child.stderr?.destroy(); child.stdin?.destroy(); if (granted) (child.stdio[3] as Writable | null)?.destroy(); child.unref();
+      if (callbackFailure) { try { ownership?.uncertain(callbackFailure); } catch { /* existing intent remains retained */ }
+        reject(new Fault(callbackFailure, 'Retaining process output or execution ownership failed. Inspect the retained cleanup result.', 5, { actualExitCode: exitCode, cleanup: result.cleanup })); }
+      else resolveResult(result);
+    };
+    const check = (): void => {
+      if (settled) return; const members = retain();
+      if (exited && streamsClosed && members && members.length === 0) finish(!identityUnknown, identityUnknown ? 'PROCESS_IDENTITY_UNCONFIRMED' : null);
+      else if (exited && !stopped) stop();
+    };
     const stop = (): void => {
-      if (!child.pid || stopped || closed) return; stopped = true;
-      const members = groupMembers(child.pid);
-      // A still-unreaped child belongs to this process; its PID cannot be reused.
-      try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already exited */ }
-      killTimer ??= setTimeout(() => {
-        const current = groupMembers(child.pid!);
-        if (current.some(member => members.some(prior => prior.pid === member.pid && prior.start === member.start)))
-          try { process.kill(-child.pid!, 'SIGKILL'); } catch { /* group exited */ }
-      }, options.terminationGraceMs ?? 1500);
+      if (stopped || settled) return; stopped = true;
+      try { ownership?.stopping(); } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; }
+      signalOwned('SIGTERM');
+      killTimer = setTimeout(() => { signalOwned('SIGKILL'); check(); }, options.terminationGraceMs ?? 1500);
+      finalTimer = setTimeout(() => finish(false, 'PROCESS_RELEASE_UNCONFIRMED'), (options.terminationGraceMs ?? 1500) + 2500);
     };
     const cancel = (): void => { cancelled = true; stop(); };
+    const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
+    const poll = setInterval(check, 200);
     options.signal?.addEventListener('abort', cancel, { once: true });
-    const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeoutMs ?? 30000);
-    const cleanup = (): void => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); options.signal?.removeEventListener('abort', cancel); };
-    const emit = (text: string): void => {
-      if (callbackFailure) return;
-      try { options.output?.(text); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); }
-    };
+    const emit = (text: string): void => { if (callbackFailure) return; try { options.output?.(text); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); } };
     child.once('spawn', () => {
       try {
         if (child.pid) {
-          const start = processIdentity(child.pid); options.started?.(child.pid, start);
-          if (options.inputAfterStarted) {
-            requireValue(start && !stopped && !options.signal?.aborted, 'PROCESS_IDENTITY_UNAVAILABLE', 'The waiting process must have a retained identity before dispatch.', 3);
-            child.stdin.end(options.inputAfterStarted(child.pid, start));
+          const start = processIdentity(child.pid); if (start) known.set(child.pid, start);
+          if (granted) {
+            requireValue(start && !stopped && !options.signal?.aborted, 'PROCESS_IDENTITY_UNAVAILABLE', 'Retain the waiting process before execution.', 3);
+            ownership!.allocated(child.pid, start);
           }
+          options.started?.(child.pid, start);
+          const input = options.inputAfterStarted ? (() => {
+            requireValue(start && !stopped && !options.signal?.aborted, 'PROCESS_IDENTITY_UNAVAILABLE', 'The waiting process needs an exact identity.', 3);
+            return options.inputAfterStarted(child.pid!, start);
+          })() : options.input;
+          if (granted) {
+            requireValue(!stopped && !options.signal?.aborted, 'CANCELLED', 'Dispatch was cancelled.', 130); ownership!.grant();
+            const env = Object.fromEntries(Object.entries(environment).filter((e): e is [string, string] => typeof e[1] === 'string'));
+            const grant = JSON.stringify({ executable, argv, environment: env, deadline: Date.now() + timeoutMs });
+            requireValue(Buffer.byteLength(grant) <= 1024 * 1024, 'PROCESS_GRANT_TOO_LARGE', 'Private execution grant exceeds its bound.', 2);
+            (child.stdio[3] as Writable).end(grant);
+          }
+          child.stdin!.end(input);
         }
-      } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; child.stdin.end(); stop(); }
+      } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; child.stdin?.end(); (child.stdio[3] as Writable | null)?.end(); stop(); }
     });
-    child.once('error', error => { cleanup(); reject(new Fault('EXECUTABLE_UNAVAILABLE', `Cannot start ${executable}: ${(error as NodeJS.ErrnoException).code ?? 'unknown error'}`, 3)); });
+    child.once('error', error => {
+      if (settled) return; settled = true; cleanup();
+      try { ownership?.uncertain('EXECUTABLE_UNAVAILABLE'); } catch { /* retained intent survives */ }
+      reject(new Fault('EXECUTABLE_UNAVAILABLE', `Cannot start ${executable}: ${(error as NodeJS.ErrnoException).code ?? 'unknown error'}`, 3));
+    });
     const collect = (channel: 'stdout' | 'stderr', data: Buffer): void => {
-      if (callbackFailure || binaryOverflow || bytes > maxBytes) return;
+      if (settled || callbackFailure || binaryOverflow || bytes > maxBytes) return;
       if (channel === 'stdout' && options.stdoutSink) {
-        binaryBytes += data.length;
-        if (binaryBytes > options.stdoutSink.maxBytes) { binaryOverflow = true; stop(); return; }
-        try { options.stdoutSink.write(data); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); }
-        return;
+        binaryBytes += data.length; if (binaryBytes > options.stdoutSink.maxBytes) { binaryOverflow = true; stop(); return; }
+        try { options.stdoutSink.write(data); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); } return;
       }
-      bytes += data.length;
-      if (bytes > maxBytes) { stop(); return; }
+      bytes += data.length; if (bytes > maxBytes) { stop(); return; }
       const text = data.toString('utf8'); if (channel === 'stdout') stdout += text; else stderr += text;
-      pending[channel] += text;
-      const newline = pending[channel].lastIndexOf('\n');
+      pending[channel] += text; const newline = pending[channel].lastIndexOf('\n');
       if (newline >= 0) { emit(pending[channel].slice(0, newline + 1)); pending[channel] = pending[channel].slice(newline + 1); }
-      if (pending[channel].length > 65536) { pending[channel] = '[oversized log line omitted]\n'; }
+      if (pending[channel].length > 65536) pending[channel] = '[oversized log line omitted]\n';
     };
-    child.stdout.on('data', (data: Buffer) => collect('stdout', data)); child.stderr.on('data', (data: Buffer) => collect('stderr', data));
-    child.stdin.on('error', () => { /* child may exit before consuming input */ });
-    if (!options.inputAfterStarted) child.stdin.end(options.input);
-    child.once('close', (code, signal) => { closed = true; cleanup(); for (const text of Object.values(pending)) if (text) emit(text);
-      if (callbackFailure) { reject(new Fault(callbackFailure, 'Retaining process output or execution ownership failed. The process was stopped; preserve existing evidence for reconciliation.', 5, { actualExitCode: code })); return; }
-      resolveResult({
-      // A cooperative shell can trap TERM and exit zero after its deadline or
-      // cancellation. Consumers of code alone must never call that success.
-      code: cancelled ? 130 : timedOut ? 124 : bytes > maxBytes || binaryOverflow ? 5 : code ?? 5, actualExitCode: code, signal, stdout, stderr,
-      timedOut, cancelled, outputLimited: binaryOverflow || bytes > maxBytes }); });
+    child.stdout!.on('data', (data: Buffer) => collect('stdout', data)); child.stderr!.on('data', (data: Buffer) => collect('stderr', data));
+    child.stdin!.on('error', () => { /* child can finish without consuming stdin */ });
+    if (granted) (child.stdio[3] as Writable).on('error', () => { if (!exited && !settled) { callbackFailure = 'PROCESS_OBSERVER_FAILED'; stop(); } });
+    child.once('exit', (code, signal) => { exitCode = code; exitSignal = signal; exited = true; drainTimer = setTimeout(check, 10); });
+    child.once('close', (code, signal) => { exitCode = code; exitSignal = signal; exited = true; streamsClosed = true; check(); });
   });
 }
-function groupMembers(group: number): { pid: number; start: string }[] {
+interface CensusMember extends ProcessMember { parent: number; group: number }
+export function processCensus(): CensusMember[] | null {
   try {
-    return execFileSync('/bin/ps', ['-axo', 'pid=,pgid=,lstart='], { encoding: 'utf8', timeout: 2000 }).split('\n').flatMap(line => {
-      const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
-      return match && Number(match[2]) === group ? [{ pid: Number(match[1]), start: match[3]!.trim() }] : [];
-    });
-  } catch { return []; }
+    const output = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,stat=,lstart='], { encoding: 'utf8', timeout: 2000, maxBuffer: 4 * 1024 * 1024 });
+    const rows: CensusMember[] = [];
+    for (const line of output.split('\n').filter(x => x.trim())) {
+      const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line); if (!match) return null;
+      if (!match[4]!.startsWith('Z')) rows.push({ pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), start: match[5]!.trim() });
+    }
+    return rows;
+  } catch { return null; }
 }
 export function executable(name: string): string {
   if (name.startsWith('/')) { requireValue(existsSync(name), 'EXECUTABLE_UNAVAILABLE', `Missing executable ${name}.`, 3); return name; }

@@ -59,3 +59,9 @@ These are qualification dependencies, not evidence of an access denial. Exact ho
 ## Setup and later completion
 
 S0 completion is governed by [REPOSITORY_SETUP.md](REPOSITORY_SETUP.md). Thereafter, attach actual proof to the owning milestone and acceptance cases. Mark unavailable or skipped work accurately, preserve the next experiment, and keep core-release status separate from full Remote Devices completion. No physical claim can be satisfied by a schema fixture, mocked screenshot, tailnet ping, upload, or process exit alone.
+
+## Resource lifecycle evidence
+
+The original 83 acceptance definitions remain preserved. [The additive lifecycle matrix](requirements/09-RESOURCE_LIFECYCLE.md) has 21 stable cases in the shared ledger. Process/Simulator fixtures and real disposable subprocesses establish only the recorded subset. Installation, exact-device data continuity, native Codex, actual two-host admission and sleep/reboot still need separate evidence. A resource receipt distinguishes workflow completion from confirmed release; uncertain cleanup cannot qualify unattended use.
+
+The cumulative root Node fixture harness now declares four concurrent file workers. Unbounded simultaneous Git/IPC/process fixtures exceeded ten-second fixture observation deadlines under the stronger lifecycle census. This is the existing test harness capacity, not a project validation or Simulator-slot policy. Process exit also allows the ordinary stdio-close event to settle before another census; dependent cleanup remains bounded and exact. A delayed private-pipe grant is tested explicitly.

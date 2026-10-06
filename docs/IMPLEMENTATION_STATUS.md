@@ -391,3 +391,13 @@ unsigned native build passed. Evidence is in
 `.build/adoption-rollback-final-tests.log`,
 `.build/adoption-rollback-swift-tests.log` and
 `.build/adoption-rollback-native-build.log`. No live clone was changed.
+
+## Durable resource execution and cleanup
+
+Ordinary workflow commands now retain resource intent before creating a waiting worker and retain exact PID/start/boot/clone/enrollment identity before granting exec. The original stdin is independent of the grant. The process runner tracks observed descendants, verifies exact identities before bounded termination and keeps child exit, effective cancellation/timeout and cleanup release separate. Scope fences and existing writer owners survive unresolved release. Startup observes retained resources without repeating starts or guessed cleanup; maintenance includes their blockers.
+
+The first resource allocation transaction advances the existing journal to version 2, fencing older readers before effects. The canonical registry now has seventeen schemas and twenty generated outputs; original imports and the original 83 acceptance IDs remain preserved with an additive twenty-one-case lifecycle extension. Exact Simulator lifecycle and existing admission interfaces preserve initial boots, nested ownership and retained visual sessions; the macOS adapter remains unqualified and was not executed.
+
+The source extension also includes bounded named provider/service owners, existing-admission repository bridges with exact qualification gates, native owning-chat closeout fallback, independent full/shallow Git archive and restore verification, paired native service registration/retirement receipts, storage reservations, private allowlisted resource diagnostics and timestamped on-demand health. Enrollment/authority changes are fenced by retained resources. No second scheduler, ownership database or cleanup daemon was added.
+
+Focused proof includes 48 resource/Git/native-owner/privacy/peer tests, 28 process/maintenance/session tests, 23 Swift tests and a disposable immutable-payload SIGKILL/restart pilot. These groups overlap and do not establish actual installed acceptance. Final cumulative results and integration identity belong to the implementation receipt. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) owns the requirement matrix, source/capability limits, remaining AT-LC01–21 variants and rollout/rollback owners. No real project enrollment, Simulator/provider/phone action or installation occurred.

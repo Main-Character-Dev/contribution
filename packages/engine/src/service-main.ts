@@ -15,7 +15,7 @@ try {
   const lock = new ServiceLock(directory), journal = new Journal(directory), engine = new Engine(journal, payload);
   const server = await listen(engine);
   journal.setMeta('maintenance', Boolean(engine.maintenance.current()));
-  if (!engine.maintenance.current()) { await engine.recoverObservedEffects(); engine.kick(); }
+  if (!engine.maintenance.current()) { await engine.resources.reconcile(); await engine.recoverObservedEffects(); engine.kick(); }
   process.stdout.write(JSON.stringify({ state: 'ready', hostId: journal.hostId, payload: payload.identity }) + '\n');
   let closing = false;
   const monitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('maintenance')) void engine.github.tick(engine.repos.all()); }, 30000);

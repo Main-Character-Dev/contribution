@@ -8,6 +8,8 @@ import { clean, git, gitText, identity } from './git.js';
 import { privateDirectory } from './private-files.js';
 import { digest, id, now, requireValue } from './core.js';
 import type { ObjectValue } from './core.js';
+import { WorktreeHistory } from './worktree-history.js';
+import type { HistoryReceipt } from './worktree-history.js';
 import { validateContractFormat } from '@contribution/contracts';
 
 type Kind = 'candidate' | 'build' | 'adopted';
@@ -61,6 +63,7 @@ export class OwnedWorktrees {
     this.store.put('ownedWorktree', op.attemptId, { ...owner, phase: 'ready', gitDirectory, identities }); return directory;
   }
   private eligible(owner: Owned): void {
+    requireValue(!this.store.records<{ repositoryId: string; owner: string; state: string }>('resource').some(r => r.repositoryId === owner.repositoryId && ['utility', 'borrowed'].includes(r.owner) && r.state !== 'stopped'), 'WORKTREE_RESOURCE_UNRELEASED', 'Retained processes/sessions still need this clone; reconcile their exact owner before removal.', 3);
     const op = this.store.get(owner.operationId), days = this.store.getMeta<{ retention: { rawLogDays: number } }>('settings')?.retention.rawLogDays ?? 30;
     requireValue(owner.phase === 'ready' && owner.directory === this.path(owner.kind, op.attemptId) && owner.attemptId === op.attemptId && owner.repositoryId === op.repositoryId &&
       !op.pinned && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof op.result['completedAt'] === 'string' &&
@@ -107,7 +110,7 @@ export class OwnedWorktrees {
       catch (error) { protectedEntries.push({ attemptId: owner.attemptId, directory: owner.directory, reason: (error as { code?: string }).code ?? 'WORKTREE_INSPECTION_UNAVAILABLE' }); }
     }
     const preview: Preview = { token: id(), candidates, createdAt: now() }; this.store.put('worktreeCleanupPreview', preview.token, preview);
-    return { scopeToken: preview.token, worktrees: true, candidates: candidates.map(value => ({ attemptId: value.owner.attemptId, directory: value.owner.directory, repositoryId: value.owner.repositoryId, head: value.head })), protected: protectedEntries,
+    return { scopeToken: preview.token, worktrees: true, candidates: candidates.map(value => ({ attemptId: value.owner.attemptId, directory: value.owner.directory, repositoryId: value.owner.repositoryId, head: value.head, retention: 'independent archive and restore verification before removal', estimatedBytes: null })), protected: protectedEntries,
       policy: { minimumAgeDays: this.store.getMeta<{ retention: { rawLogDays: number } }>('settings')?.retention.rawLogDays ?? 30, gitRemoval: 'without_force', refsAndBundles: 'preserved', nativeWorktrees: 'excluded' }, mutation: 'none' };
   }
   async apply(token: string, requestId: string): Promise<ObjectValue> {
@@ -132,9 +135,14 @@ export class OwnedWorktrees {
         const pathPresent = present(owner.directory), registrationPresent = present(owner.gitDirectory!);
         if (pathPresent || registrationPresent) {
           requireValue(pathPresent && registrationPresent && digest(await this.inspect(owner)) === digest(selected), 'STORAGE_SELECTION_CHANGED', 'A partial or changed worktree remains protected for reconciliation.');
+          await new WorktreeHistory(this.store).retain(owner.attemptId, owner.primary, owner.commonDir, selected.head);
+          requireValue(digest(await this.inspect(owner)) === digest(selected), 'STORAGE_SELECTION_CHANGED', 'Ownership changed during independent retention; preserve it.');
           this.eligible(owner);
           await gitText(owner.primary, ['worktree', 'remove', owner.directory], { timeoutMs: 60000 });
         }
+        const retained = this.store.record<HistoryReceipt>('worktreeHistory', owner.attemptId);
+        requireValue(retained, 'WORKTREE_HISTORY_UNRETAINED', 'Missing independent restore proof; reconcile this exact partial removal.', 3);
+        await new WorktreeHistory(this.store).verify(retained);
         requireValue(!present(owner.directory) && !present(owner.gitDirectory!), 'WORKTREE_REMOVAL_UNCONFIRMED', 'Git did not confirm complete removal.');
         this.store.transaction(() => {
           this.store.put('worktreeEviction', owner.attemptId, { requestId, operationId: owner.operationId, attemptId: owner.attemptId, directory: owner.directory, head: selected.head, removedAt: now(), refsAndBundles: 'preserved' });

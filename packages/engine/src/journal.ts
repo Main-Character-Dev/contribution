@@ -30,14 +30,14 @@ export class Journal {
     // Check compatibility read-only before changing journal mode or metadata.
     if (existsSync(path) && statSync(path).size) {
       const probe = new DatabaseSync(path, { readOnly: true, allowExtension: false });
-      try { requireValue(Number(probe.prepare('PRAGMA user_version').get()?.['user_version']) <= 1, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3); }
+      try { requireValue(Number(probe.prepare('PRAGMA user_version').get()?.['user_version']) <= 2, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3); }
       finally { probe.close(); }
     }
     this.db = new DatabaseSync(path, { enableForeignKeyConstraints: true, enableDoubleQuotedStringLiterals: false, allowExtension: false });
     chmodSync(path, 0o600);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=3000;');
     const version = Number(this.db.prepare('PRAGMA user_version').get()?.['user_version']);
-    requireValue(version <= 1, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3);
+    requireValue(version <= 2, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3);
     if (version === 0) this.transaction(() => this.db.exec(`
       CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE repositories (id TEXT PRIMARY KEY, common_dir TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
@@ -63,6 +63,8 @@ export class Journal {
   records<T>(namespace: string): T[] { return this.db.prepare('SELECT body FROM records WHERE namespace=?').all(namespace).map(row => JSON.parse(String(row['body'])) as T); }
   put(namespace: string, key: string, value: unknown): void { this.db.prepare('INSERT INTO records VALUES(?,?,?) ON CONFLICT(namespace,key) DO UPDATE SET body=excluded.body').run(namespace, key, canonical(value)); }
   assertRepositoryAvailable(repositoryId: string, enrolling = false): void {
+    requireValue(!this.records<{ repositoryId: string; owner: string; state: string; lifetime: string }>('resource').some(r => r.repositoryId === repositoryId && ['utility', 'borrowed'].includes(r.owner) && ['ephemeral', 'borrowed'].includes(r.lifetime) && ['unresolved', 'stopping', 'intent', 'allocated'].includes(r.state)), 'RESOURCE_RECONCILIATION_REQUIRED', 'A retained resource in this clone needs its owning reconciliation before new work.', 3);
+    requireValue(!this.records<{ state: string; preview: { resources: { repositoryId: string }[] } }>('resourceCleanup').some(r => r.state === 'stopping' && r.preview.resources.some(x => x.repositoryId === repositoryId)), 'RESOURCE_CLEANUP_PENDING', 'Resume the retained exact resource cleanup before new work in this clone.', 3);
     const bundleCleanup = this.db.prepare(`SELECT r.key FROM records r, json_each(r.body,'$.preview.candidates') c
       WHERE r.namespace='gitBundleCleanup' AND json_extract(r.body,'$.state')='removing'
       AND json_extract(c.value,'$.repositoryId')=? LIMIT 1`).get(repositoryId);

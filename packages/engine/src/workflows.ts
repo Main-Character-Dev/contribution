@@ -1,3 +1,4 @@
+import { processLifecycle, ownedProcess } from './resource-process.js';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, openSync, closeSync, fsyncSync, lstatSync, realpathSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { Journal } from './journal.js';
@@ -180,7 +181,7 @@ export class Workflows {
     this.store.put('landing', sourceKey, receipt); return receipt;
   }
   options(op: Operation, signal: AbortSignal): RunOptions {
-    return { signal, output: text => this.store.log(op, text), started: (pid, start) => {
+    return { signal, ownership: () => ownedProcess(processLifecycle(this.store), op), output: text => this.store.log(op, text), started: (pid, start) => {
       const latest = this.store.get(op.operationId);
       this.store.update(latest, { result: { ...latest.result, processes: [...(latest.result['processes'] as ObjectValue[] ?? []), { pid, start }] } }, 'process.started');
     } };

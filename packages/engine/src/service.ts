@@ -1,3 +1,5 @@
+import { ResourceLifecycle } from './resource-lifecycle.js';
+import { processLifecycle } from './resource-process.js';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { assertContract, buildIdentity } from '@contribution/contracts';
@@ -31,6 +33,7 @@ import { Milestones } from './notifications.js';
 import type { Notice } from './notifications.js';
 import { Maintenance } from './maintenance.js';
 import { BackendSessions } from './backend-sessions.js';
+import { resourceHealth } from './resource-health.js';
 import { StorageRetention } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
 import { GitBundleRetention } from './git-bundle-retention.js';
@@ -82,7 +85,11 @@ allowed['devices.transfer-host'] = ['repo', 'device', 'fromHost', 'host', 'expec
 allowed['devices.evidence.record'] = ['repo', 'host', 'config', 'requestId'];
 allowed['devices.evidence.get'] = ['repo', 'host', 'evidence'];
 allowed['devices.evidence.review'] = ['repo', 'host', 'evidence', 'expectedRevision', 'requestId'];
+allowed['service.resources'] = ['preview', 'scopeToken', 'requestId', 'reconcile'];
+allowed['service.resource-policy'] = ['config', 'expectedRevision', 'requestId'];
 export class Engine {
+  readonly resources: ResourceLifecycle;
+  private readonly resourceLeases = new Map<string, Lease | LegacyPrimaryLease>();
   readonly repos: Repositories;
   readonly workflows: Workflows;
   readonly adoptions: Adoptions;
@@ -105,6 +112,7 @@ export class Engine {
   private requests = 0;
   get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.maintenance.busy || this.requests > 0; }
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture'; buildDriver?: DeviceBuildDriver }) {
+    this.resources = processLifecycle(store);
     this.power = new WorkPower(store);
     this.maintenance = new Maintenance(store, payload.identity);
     BackendSessions.recover(store);
@@ -176,6 +184,7 @@ export class Engine {
     for (const op of queue) {
       if (this.store.getMeta<boolean>('paused') && op.kind !== 'settings.apply') continue;
       if (this.storageHold && op.kind !== 'settings.apply') continue;
+      if (ResourceLifecycle.pending(this.store, op.repositoryId, op.operationId)) continue;
       if (this.active.size >= 2 || this.activeRepositories.has(op.repositoryId) || this.adoptions.isBusy(op.repositoryId)) continue;
       const blocked = isGitJob(op.kind) && this.store.unsettled().some(other => other.repositoryId === op.repositoryId && isGitJob(other.kind) && other.operationId !== op.operationId &&
         !(op.kind === 'native_reconciliation' && other.kind === 'submit' && other.operationId === op.input['sourceOperationId'] && other.state === 'outcome_unknown') &&
@@ -245,7 +254,10 @@ export class Engine {
         result: { ...latest.result, ...fault.details, ...(device ? { deviceOperation: device } : {}), exitCode: uncertain ? 6 : fault.exit }, error: {
           code: uncertain ? 'OUTCOME_UNCERTAIN' : fault.code, message: fault.message, retryable: fault.retryable,
           nextActions: [{ id: 'repair', label: 'Read focused repair context', argv: ['contribution', 'repair-context', op.operationId, '--json'] }] } }, `operation.${state}`);
-    } finally { lease?.release(); }
+    } finally {
+      if (lease && this.resources.blockers(op.repositoryId).some(r => r.operationId === op.operationId && ['ephemeral', 'borrowed'].includes(r.lifetime))) this.resourceLeases.set(op.operationId, lease);
+      else lease?.release();
+    }
   }
   private admit(requestId: unknown, kind: string, repositoryId: string, input: ObjectValue): Response {
     const identity = string(requestId, 'requestId'), existing = this.store.existing(identity, kind, repositoryId, input);
@@ -339,6 +351,13 @@ export class Engine {
             argv: ['contribution', 'repos', 'remove', '--repo', removal.repository.id, '--json'] }];
         }
       }
+      if (command === 'service.resources' && response.error && typeof args?.['requestId'] === 'string') {
+        const requestId = args['requestId'], retained = this.store.record<{ state: string; preview: { token: string } }>('resourceCleanup', requestId);
+        if (retained?.state === 'stopping' && retained.preview.token === args['scopeToken']) {
+          response.result = { ...response.result, requestRetained: true, requestId, scopeToken: retained.preview.token };
+          response.error.nextActions = [{ id: 'resume-resources', label: 'Resolve the retained condition and resume this exact cleanup', argv: ['contribution', 'service', 'resources', '--scope-token', retained.preview.token, '--request-id', requestId, '--json'] }];
+        }
+      }
       if (command === 'service.storage' && response.error && typeof args?.['requestId'] === 'string') {
         const worktrees = args['worktrees'] === true, bundles = args['bundles'] === true, requestId = args['requestId'];
         const retained = this.store.record<{ state: string; token?: string; preview?: { token: string } }>(worktrees ? 'worktreeCleanup' : bundles ? 'gitBundleCleanup' : 'storageCleanup', requestId);
@@ -367,7 +386,7 @@ export class Engine {
           Object.keys(args).every(key => ['repo', 'listAdoptions', 'adoptionPlan', 'reviewFile', 'reviewSide', 'reviewOffset'].includes(key));
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
-        requireValue(reads.includes(command) || migrationRead || (['service.storage-policy', 'service.power-policy'].includes(command) && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+        requireValue(reads.includes(command) || (command === 'service.resources' && !args['scopeToken']) || (command === 'service.resource-policy' && args['config'] === undefined) || migrationRead || (['service.storage-policy', 'service.power-policy'].includes(command) && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
           'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
       }
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
@@ -387,10 +406,27 @@ export class Engine {
       }
       if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
+        resources: { total: this.resources.all().length, unresolved: this.resources.all().filter(r => r.state === 'unresolved').length },
         backendSessions: BackendSessions.status(this.store),
         storageHold: this.storageHold, power: this.power.status(),
         maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
+      if (command === 'service.resource-policy') {
+        if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read policy without mutation arguments.', 2); return completed(this.resources.policy()); }
+        return completed(this.resources.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
+      }
+      if (command === 'service.resources') {
+        if (args['preview'] === true) { requireValue(args['scopeToken'] === undefined && args['requestId'] === undefined && args['reconcile'] === undefined, 'INVALID_USAGE', 'Preview has no mutation inputs.', 2); return completed(await this.resources.preview()); }
+        if (args['reconcile'] === true) { requireValue(Object.keys(args).length === 1, 'INVALID_USAGE', 'Observation uses only --reconcile.', 2); await this.resources.reconcile();
+          for (const [operationId, lease] of this.resourceLeases) if (!this.resources.blockers().some(r => r.operationId === operationId)) { lease.release(); this.resourceLeases.delete(operationId); }
+          await this.recoverObservedEffects(); this.kick(); }
+        else if (args['scopeToken'] !== undefined) {
+          const result = await this.resources.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId'));
+          for (const [operationId, lease] of this.resourceLeases) if (!this.resources.blockers().some(r => r.operationId === operationId)) { lease.release(); this.resourceLeases.delete(operationId); }
+          await this.recoverObservedEffects(); this.kick(); return completed(result);
+        } else requireValue(Object.keys(args).length === 0, 'INVALID_USAGE', 'Inspect resources without mutation inputs.', 2);
+        const rows = this.resources.all(); return completed({ total: rows.length, limited: rows.length > 200, resources: rows.slice(-200), policy: this.resources.policy() });
+      }
       if (command === 'service.storage') {
         requireValue(args['worktrees'] === undefined || args['worktrees'] === true, 'INVALID_USAGE', 'Use --worktrees to select owned checkout cleanup.', 2);
         requireValue((args['bundles'] === undefined || args['bundles'] === true) && !(args['worktrees'] && args['bundles']), 'INVALID_USAGE', 'Select one cleanup category: generated output, --worktrees or --bundles.', 2);
@@ -412,7 +448,7 @@ export class Engine {
         const result = this.power.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')); this.refreshPower(); return completed(result);
       }
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
-        database: { version: 1, journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
+        resourceHealth: await resourceHealth(this.resources), database: { version: Number(this.store.db.prepare('PRAGMA user_version').get()?.['user_version']), journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
         managedStorage: new ManagedStorage(this.store).usage(),
         devices: { enabled: this.settings().remoteDevices?.enabled ?? false, physicalQualification: 'unverified' } });
       if (command === 'service.diagnostics') return completed({ diagnostics: new Diagnostics(this.store, this.repos).snapshot(args['operationId'] === undefined ? undefined : string(args['operationId'], 'operationId')) });
@@ -526,7 +562,7 @@ export class Engine {
         if (retained) return completed(retained);
       }
       const repo = await this.repos.get(selector);
-      if (!['repos.remove', 'repos.inspect', 'status'].includes(command)) this.store.assertRepositoryAvailable(repo.id);
+      if (!['repos.remove', 'repos.inspect', 'status', 'checks.run'].includes(command)) this.store.assertRepositoryAvailable(repo.id);
       requireValue(!this.adoptions.isBusy(repo.id) || ['repos.inspect', 'status', 'repos.migration'].includes(command), 'REPOSITORY_BUSY', 'The reviewed adoption transaction is holding this repository.', 4);
       if (command === 'hook.adopted.begin' || command === 'hook.adopted.finish') {
         if (command === 'hook.adopted.finish') {
@@ -729,6 +765,7 @@ export class Engine {
         if (args['canonical'] && repo.canonicalHostId !== this.store.hostId) {
           const requestId = string(args['requestId'], 'requestId'), input = { destinationHostId: repo.canonicalHostId, checkId: args['checkId'] ?? null, fresh: args['fresh'] === true };
           const previous = this.store.existing(requestId, 'remote.checks', repo.id, input); if (previous) return this.store.response(previous);
+          this.store.assertRepositoryAvailable(repo.id);
           // Canonical source selection is frozen by the owner at admission. An
           // unavailable owner cannot silently substitute the local mirror.
           const receipt = await this.peers.call(repo.canonicalHostId, 'checks.start', { repositoryId: repo.id, requestId, ...input });
@@ -747,6 +784,7 @@ export class Engine {
           requireValue(op.kind === 'checks' && op.repositoryId === repo.id && digest(op.input['selection']) === digest(selection), 'REQUEST_ID_CONFLICT', 'This request ID already identifies a different check.');
           return this.store.response(op);
         }
+        this.store.assertRepositoryAvailable(repo.id);
         const source = await identity(sourcePath);
         requireValue(source.commonDir === repo.commonDir, 'SOURCE_OWNERSHIP_REQUIRED', 'Source belongs to a different repository.');
         requireValue(source.tip, 'UNBORN_REPOSITORY', 'Initialize history before checking a committed source.', 3);
@@ -895,6 +933,7 @@ export class Engine {
     for (const repo of this.repos.all()) {
       const lease = Lease.inspect(repo.commonDir); if (!lease) continue;
       const owner = this.store.list(100000).find(op => op.attemptId === lease.attemptId);
+      if (owner && this.resources.blockers(repo.id).some(r => r.operationId === owner.operationId)) continue;
       if (!owner || !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(owner.state)) continue;
       const children = owner.result['processes'] as { pid: number; start: string | null }[] | undefined;
       if (children?.some(proc => alive(proc.pid) && (!proc.start || !processIdentity(proc.pid) || processIdentity(proc.pid) === proc.start))) continue;

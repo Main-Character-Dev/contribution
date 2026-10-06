@@ -13,7 +13,8 @@ import ServiceManagement
         @unknown default: "Unknown registration state"
         }
     }
-    public static func register() throws { try service.register() }
-    public static func unregister() async throws { try await service.unregister() }
+    private static let lifecycle = PersistentServiceLifecycle()
+    public static func register() throws { try lifecycle.reconcile(isRegistered: { service.status == .enabled }, isUnloaded: { service.status == .notRegistered }); try lifecycle.register(isRegistered: { service.status == .enabled }, effect: { try service.register() }) }
+    public static func unregister() async throws { try await lifecycle.unregister(isUnloaded: { service.status == .notRegistered }, effect: { try await service.unregister() }) }
     public static func openSettings() { SMAppService.openSystemSettingsLoginItems() }
 }

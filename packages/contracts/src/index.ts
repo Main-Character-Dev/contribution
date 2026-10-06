@@ -5,6 +5,8 @@ import type { AnySchema, ValidateFunction } from 'ajv';
 
 export type { Response } from './generated/response.js';
 export type { Repository } from './generated/repository.js';
+export type { Resource } from './generated/resource.js';
+export type { ResourcePolicy } from './generated/resource-policy.js';
 export type { StoragePolicy } from './generated/storage-policy.js';
 export type { PowerPolicy } from './generated/power-policy.js';
 export type { Machine } from './generated/machine.js';

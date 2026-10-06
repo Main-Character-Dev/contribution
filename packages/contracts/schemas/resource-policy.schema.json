@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "hostLimits": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "process",
+          "server",
+          "provider",
+          "simulator",
+          "service"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1024
+      }
+    },
+    "projectLimits": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "process",
+          "server",
+          "provider",
+          "simulator",
+          "service"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1024
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "hostLimits",
+    "projectLimits"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:contribution:schema:resource-policy:v1",
+  "title": "Contribution resource admission policy v1"
+}

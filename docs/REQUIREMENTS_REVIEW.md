@@ -37,3 +37,7 @@ Exact pinned dependencies, Swift schema projection coverage, SQLite binding, fin
 ## Review checks
 
 Archive integrity, contract results, preservation counts and link checks are recorded in [VERIFICATION.md](VERIFICATION.md). This review does not certify the historical private audit as current, claim all external references were reverified, or change any other repository's policy.
+
+## October 6 resource lifecycle amendment
+
+The owner authorized the [durable resource lifecycle plan](requirements/09-RESOURCE_LIFECYCLE.md). It adds positive resource ownership, explicit lifetimes, bounded teardown and recovery while preserving original requirements and the original 83 acceptance identities. Source and fixture proof remain separate from installed/physical qualification.

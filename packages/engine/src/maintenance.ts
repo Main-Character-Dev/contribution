@@ -23,14 +23,14 @@ export class Maintenance {
     const window = this.current(); requireValue(window?.id === windowId, 'MAINTENANCE_WINDOW_CHANGED', 'Select the current retained maintenance window.'); return window;
   }
   blockers(active: number, background: boolean, requests: number): ObjectValue {
-    return { active, background, requests, uncertainOperations: this.store.unsettled().filter(op => op.state === 'outcome_unknown').map(op => op.operationId),
+    return { active, background, requests, resources: this.store.records<{ resourceId: string; owner: string; state: string }>('resource').filter(r => ['utility', 'borrowed'].includes(r.owner) && r.state !== 'stopped').map(r => r.resourceId), uncertainOperations: this.store.unsettled().filter(op => op.state === 'outcome_unknown').map(op => op.operationId),
       backendSessions: this.store.records<{ sessionId: string; deviceId: string; state: string; dispatchGranted: boolean; localProcess: string }>('backendSession')
         .filter(session => !['prepared', 'exited'].includes(session.state)).map(session => ({ sessionId: session.sessionId, deviceId: session.deviceId, state: session.state, localProcess: session.localProcess })),
       deviceSessions: this.store.records<{ deviceId: string; ownerHostId: string | null; state: string; priorSession: string }>('deviceOwnership')
         .filter(owner => owner.ownerHostId === this.store.hostId && !['none', 'released'].includes(owner.priorSession)).map(owner => ({ deviceId: owner.deviceId, state: owner.state, priorSession: owner.priorSession })) };
   }
   isReady(blockers: ObjectValue): boolean {
-    return !blockers['active'] && !blockers['background'] && !blockers['requests'] && !(blockers['uncertainOperations'] as unknown[]).length && !(blockers['deviceSessions'] as unknown[]).length && !((blockers['backendSessions'] ?? []) as unknown[]).length;
+    return !((blockers['resources'] ?? []) as unknown[]).length && !blockers['active'] && !blockers['background'] && !blockers['requests'] && !(blockers['uncertainOperations'] as unknown[]).length && !(blockers['deviceSessions'] as unknown[]).length && !((blockers['backendSessions'] ?? []) as unknown[]).length;
   }
   async stop(windowId: string, blockers: ObjectValue): Promise<MaintenanceWindow> {
     let window = this.require(windowId);
