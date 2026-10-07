@@ -1,5 +1,7 @@
 # S0: repository foundation
 
+Historical setup scope or dated inventory. Retained for provenance; this is not the current assignment or proof of installed acceptance. See [current implementation](IMPLEMENTATION_STATUS.md), [storage retention](STORAGE_RETENTION.md), and [journal compatibility](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback).
+
 Set up the repository so the product can be implemented in small verified increments. This task builds a foundation only. The [setup prompt](SETUP_PROMPT.md) is the next-chat assignment; the full package's implementation starter is not this task.
 
 ## Allowed work

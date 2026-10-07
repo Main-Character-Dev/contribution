@@ -11,3 +11,5 @@ Fixture and observed device receipts remain distinguishable. A readback-presence
 Raw log export is a separate explicit operation. It preserves the selected output, which can contain project content; it is not the general redacted diagnostic summary.
 
 Three focused tests in `tests/diagnostics.test.mjs` cover injected private strings across records, stable-identity omission, inactive/uncertain states, bounded history, maintenance reads, and the installed CLI route. The native sheet compiles unsigned. Clipboard, save-panel and accessibility interaction remain unrun.
+
+Connection summaries use the same offline freshness projection as app/CLI reads. Report-local target aliases, source/confidence, observation times and independently fresh/stale provider facts preserve distinct evidence without exposing endpoints or host IDs. Export does not start a network probe; unavailable or expired evidence never becomes current success. [Connectivity](CONNECTIVITY.md) owns these semantics.

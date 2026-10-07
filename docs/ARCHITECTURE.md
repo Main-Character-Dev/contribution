@@ -1,6 +1,6 @@
 # Architecture
 
-Contribution is one native macOS application backed by one user service per Mac. The shared engine makes workflow decisions; the app, CLI, and remote entry point are clients. This is the target architecture. S0 supplies only the development shell and package boundaries; see [SETUP_STATUS.md](SETUP_STATUS.md).
+Contribution uses one shared engine worker per Mac. The native app, CLI and authenticated remote entry point are clients of its private IPC. A verified native parent supervises one immutable worker and relays bounded categorical hints; it makes no workflow decisions. Source and disposable fixtures implement these boundaries, while installed launchd, signing and real-host qualification remain separate. See [current implementation](IMPLEMENTATION_STATUS.md); [S0 setup](SETUP_STATUS.md) is historical.
 
 ```mermaid
 flowchart LR
@@ -8,14 +8,16 @@ flowchart LR
   CLI[contribution CLI] --> IPC
   SSH[Fixed authenticated SSH entry point] --> IPC
   IPC --> Engine[One service and operation engine per Mac]
+  Launchd[User launchd] --> Supervisor[Native service supervisor]
+  Supervisor -->|One verified worker and private event pipe| Engine
   Engine --> Store[Local SQLite journal and private evidence]
   Engine --> Git[Git and repository adapters]
-  Engine --> Peer[SSH over Tailscale to approved peer]
+  Engine --> Peer[Configured ordinary SSH to approved peer]
   Engine --> GH[GitHub observation and explicit publication]
   Engine --> Device[Optional qualified device adapters]
 ```
 
-## Foundation decisions for S0
+## Historical foundation decisions for S0
 
 | Area | Selected direction | Setup treatment |
 |---|---|---|

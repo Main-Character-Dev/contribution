@@ -2,9 +2,9 @@
 
 An agent-native macOS workspace utility for preserving completed Git work, coordinating development across Macs, and following explicit publication through delivery and checks. An optional Remote Devices module targets verified iPhone development from either Mac.
 
-**Status: S0 development foundation implemented.** The native app/menu-bar shell and private development CLI build locally. The service and product workflows remain unavailable. No live installation is performed by setup.
+**Status: shared app, worker and CLI implemented with partial automated acceptance proof.** Durable workflows, resource ownership and connectivity recovery have disposable fixtures. Installed-service, signed-release, intended two-Mac and physical-device qualification remain incomplete. No live installation is performed by setup.
 
-Start with the [documentation index](docs/README.md), [local build instructions](docs/BUILD.md), and [setup evidence](docs/SETUP_STATUS.md). M0–M6 and D0–D4 require a later implementation request.
+Start with the [documentation index](docs/README.md), [local build instructions](docs/BUILD.md), and [setup evidence](docs/SETUP_STATUS.md). [Current implementation](docs/IMPLEMENTATION_STATUS.md) separates implemented behavior from remaining qualification. Historical setup prompts do not define the current assignment.
 
 On Apple Silicon with the pinned Xcode, run:
 

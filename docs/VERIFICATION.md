@@ -1,5 +1,11 @@
 # Verification and outstanding access
 
+Current census: 132 retained acceptance identities — 83 original core/device/robustness cases, 21 resource lifecycle cases and 28 connectivity cases. [The ledger](verification/acceptance-status.json) records only partial fixture/build proof or not-run variants; no intended MacBook Pro/Mini, Proton/Tailscale, installed launchd or physical-device case is promoted by automated tests.
+
+[Current implementation](IMPLEMENTATION_STATUS.md) owns current capability/gap statements. [Checkpoint history](IMPLEMENTATION_HISTORY.md) and eleven prior verification JSON records remain dated evidence. [Connectivity repair verification](verification/connectivity-repair.json) owns fresh repair commands/source and precise regressions; [update lifecycle](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback) owns current compatibility.
+
+The foundation validator intentionally accepts only fixture/build evidence and partial/not-run outcomes today. A future separately authorized observed qualification phase must add a reviewed evidence validator for exact installed payload, approved context, actual steps/readbacks, privacy and retained proof before permitting observed acceptance states. Do not widen those enums to turn current fixtures into hardware authority.
+
 Current status: **M0–M6 and D0–D4 implementation is in progress, with partial executable fixture and native-build evidence. No full application, two-Mac, signed-release or physical-device acceptance is claimed.** [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) records current proof and remaining implementation. [SETUP_STATUS.md](SETUP_STATUS.md) is the historical S0 record.
 
 The [acceptance ledger](verification/acceptance-status.json) retains all 59 core and 24 device cases. It now links implemented subsets to focused proof sources and names missing work. Core `partial_fixture` means only the described subset passed fixtures; physical-device rows remain `not_run` even when shared guards have fixture proof. The original requirements, 83 identities and source mappings are unchanged. Foundation checks now validate those identities and evidence boundaries instead of forcing a permanently unstarted planning ledger.
@@ -43,10 +49,10 @@ Use the original device-test-evidence schema for actual device records. This ini
 
 | Required access | Acceptance/proof it enables | Current state |
 |---|---|---|
-| Local macOS/Xcode GUI session | Native app launch, VoiceOver/keyboard/menu bar, registration, notifications, local lifecycle and update qualification; notably AT-A01, AT-O02–04, AT-U01–05 | Not exercised; S0 will record available local tooling and development-shell build |
+| Local macOS/Xcode GUI session | Native app launch, VoiceOver/keyboard/menu bar, registration, notifications, local lifecycle and update qualification; notably AT-A01, AT-O02–04, AT-U01–05 | Compiled fixtures and unsigned builds verified; GUI, registration and installed qualification not run |
 | Both actual Macs, approved SSH/Tailscale and user sessions | Durable acceptance independent of laptop/UI, offline recovery, safe mirrors, authority cutover and compatible updates; especially AT-H01–08, AT-M01–04, AT-P10 and AT-U03 | Not inventoried or exercised |
 | Explicit controlled GitHub destination and credential access | Actual publication delivery, remote checks, PR rules, notifications and external activity; AT-P and AT-G cases plus applicable AT-H02/AT-E04 | Fixture routes can be built independently; live publication not performed or authorized by setup |
-| Developer ID/notarization/update signing and release configuration | Distributable app and every enabled updater path, AT-U01–04 and M6 | Not inspected; unnecessary for S0 local development builds |
+| Developer ID/notarization/update signing and release configuration | Distributable app and every enabled updater path, AT-U01–04 and M6 | Signing/release qualification not run; unsigned development builds require no release credentials |
 | Approved iPhone and independent host pairing/signing | Device baseline, artifact/install/readback, identity denials and data continuity; AT-01, AT-12–17, AT-24 | No inventory or physical evidence |
 | Owner network changes, trust/unlock prompts and restart participation | Remote/guest/tethered routes, warm versus fresh cellular and restart recovery; AT-02–10, AT-21 | Unrun; plan one bounded assisted D1 session after prerequisites |
 | Approved meaningful test app/data, logs/test runner and debugger authority | Persistence and Keychain checks, uncertain effects, tests/UI/logs/debug cleanup; AT-11, AT-16–19 | Unrun; no valuable product data changed |
@@ -54,7 +60,7 @@ Use the original device-test-evidence schema for actual device records. This ini
 | Approved OTA signing/export and private endpoint, if selected | System-installer access, required taps, installed confirmation and data continuity; AT-20 plus AT-23 | Conditional candidate, not activated; does not close AT-08–10 developer-session scope |
 | Actual phone-only travel caller | End-to-end remote initiation for RDEV-26/AT-04 and applicable OTA case | Supported agent route or same-service private browser route must be resolved in D0 |
 
-These are qualification dependencies, not evidence of an access denial. Exact hosts, versions and commands will be known only when the corresponding implementation and inventory exist. The setup chat must report specific unavailable prerequisites without inventing executable product commands.
+These are qualification dependencies, not evidence of an access denial. Exact approved hosts, versions and observed contexts must be recorded during separately authorized qualification. Report specific missing prerequisites without inventing device or installed-service support.
 
 ## Setup and later completion
 

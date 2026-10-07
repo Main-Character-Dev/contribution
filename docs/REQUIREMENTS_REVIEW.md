@@ -1,5 +1,7 @@
 # Requirements review and amendments
 
+Authority crosswalk: the baseline requirements remain byte-preserved. Their S0/setup status banners are historical; the October 5 authorization and [current implementation](IMPLEMENTATION_STATUS.md) supersede those assignment/status claims. The dated amendments below and resource/connectivity amendments remain authoritative for behavior; they do not authorize live installation or physical experiments.
+
 Review date: 2026-10-04, America/New_York. Input: Contribution implementation package revision 2. The review found the core architecture coherent and the device scope appropriately evidence-dependent. It is ready for repository setup. It is not a verified implementation or a guarantee of fresh cellular iPhone development.
 
 The primary checkout and this task's initial worktree were clean at commit `4a23aaebfbf51dbf33eba30b479a0a8fea4c76ca`. The primary branch was `main`; the task checkout was detached. Only `README.md` and `LICENSE` were tracked. There was no prior application implementation to reconcile. The existing MIT license was retained unchanged.
@@ -44,4 +46,4 @@ The owner authorized the [durable resource lifecycle plan](requirements/09-RESOU
 
 ## October 6 connectivity amendment
 
-[VPN-01–11](requirements/10-VPN_CONNECTIVITY.md) clarify PRD-SETUP-002 and architecture section 5: ordinary configured SSH is the generic peer transport; Tailscale is an optional configured network. PRD-MODEL-002, PRD-WORK-004 and the separate Remote Devices qualification remain in force. The byte-checked baseline is retained.
+[VPN-01–11](requirements/10-VPN_CONNECTIVITY.md) clarify PRD-SETUP-002 and architecture section 6: ordinary configured SSH is the generic peer transport; Tailscale is an optional configured network. PRD-MODEL-002, PRD-WORK-004 and the separate Remote Devices qualification remain in force. The byte-checked baseline is retained.

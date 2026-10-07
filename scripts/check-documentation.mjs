@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
+const schemaNames = readdirSync('packages/contracts/schemas').filter(file => file.endsWith('.schema.json')).map(file => file.replace('.schema.json', ''));
+const read=file=>readFileSync(file,'utf8');
+const schemaIndex=read('packages/contracts/schemas/README.md');
+const listed=[...schemaIndex.matchAll(/\[([^\]]+)\.schema\.json\]\(\1\.schema\.json\)/g)].map(match=>match[1]).sort();
+assert.deepEqual(listed,[...schemaNames].sort(),'Schema index must match the canonical registry exactly');
+const index=read('docs/README.md');
+for (const file of readdirSync('docs').filter(file=>file.endsWith('.md') && file !== 'README.md')) assert(index.includes(`(${file})`),`Documentation index must give ${file} an explicit current or historical home`);
+assert(!read('README.md').includes('service and product workflows remain unavailable'),'Root status must describe current implementation');
+assert(read('docs/UPDATE_LIFECYCLE.md').includes('current reader supports v1–v4'),'Compatibility owner must describe the current reader');
+assert(read('docs/IMPLEMENTATION_HISTORY.md').includes('Historical source and fixture checkpoints'),'Checkpoint history must be explicitly historical');
+for(const file of ['REPOSITORY_SETUP','SETUP_PROMPT','D0_INVENTORY','STORAGE_BOUNDARY']) assert(read(`docs/${file}.md`).includes('Historical setup'),'Historical scope cannot be promoted to current instructions');
+assert(!read('docs/ARCHITECTURE.md').includes('SSH over Tailscale'),'Generic configured SSH must not imply a mandatory provider');
+const ledger=JSON.parse(read('docs/verification/acceptance-status.json'));
+assert.equal(ledger.cases.length,132);
+assert(ledger.cases.every(row=>['not_run','partial_fixture'].includes(row.outcome)),'Fixtures cannot promote hardware acceptance');
+console.log(`Documentation alignment checked: ${listed.length} canonical schemas, complete guide/history index, current compatibility and ${ledger.cases.length} retained acceptance identities.`);

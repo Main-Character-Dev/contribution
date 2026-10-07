@@ -1,8 +1,8 @@
 # Roadmap
 
-S0 now supplies the development foundation described in [SETUP_STATUS.md](SETUP_STATUS.md). Application fixtures are being implemented and verified; full acceptance and hardware qualification remain incomplete. This roadmap adds S0 before the supplied implementation milestones; it removes none of them.
+S0 now supplies the development foundation described in [SETUP_STATUS.md](SETUP_STATUS.md). Application and connectivity repairs have partial automated proof; full acceptance and hardware qualification remain incomplete. This roadmap adds S0 before the supplied implementation milestones; it removes none of them.
 
-## Immediate next step
+## Foundation and current qualification
 
 **S0 — Repository foundation implemented.** The reproducible build, native shell, shared packages, schema validation, focused checks, privacy exclusions, short agent guidance and toolchain records are present. Visual window/menu inspection remains explicitly pending with available GUI access. See [SETUP_STATUS.md](SETUP_STATUS.md) for proof. S0 is a subset of M0 preparation. The owner separately authorized all phases on 2026-10-05.
 
@@ -49,3 +49,5 @@ Missing hardware, signing, unlock/trust prompts, or network switching blocks onl
 The [resource lifecycle amendment](requirements/09-RESOURCE_LIFECYCLE.md) adds R1–R12/AT-LC01–21. Source work follows durable process/Simulator ownership; repository/session admission; independent Git recovery; persistent services/cross-host/limits; disposable actual-host qualification; incremental adoption. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) owns current implementation and limitations. Actual installation and live enrollment remain deferred. Existing retention and device/writer qualifications remain open until independently proved.
 
 The resource lifecycle deferred owners and remaining case variants are explicit in [the current gap matrix](RESOURCE_LIFECYCLE.md#current-requirement-gap-matrix). Adoption/installation/platform/peer owners must qualify live bridges and legacy registration receipt adoption before expansion; Git owners must qualify partial/promisor and large topology recovery. No source fixture closes these owners.
+
+Connectivity and host-resource repairs are implemented in the shared engine. [Current status](IMPLEMENTATION_STATUS.md), [connectivity qualification](CONNECTIVITY.md#migration-and-qualification) and [verification](VERIFICATION.md) distinguish source/fixtures from intended two-Mac/VPN and installed-service acceptance.

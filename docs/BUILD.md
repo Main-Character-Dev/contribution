@@ -23,7 +23,7 @@ If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global
 | `bash scripts/dev.sh build` | Drift check and strict compilation of contracts, adapters, engine, CLI |
 | `bash scripts/dev.sh typecheck` | Strict TypeScript project-reference compilation |
 | `bash scripts/dev.sh contracts:types` | Compile-time structure proof for generated clients, including thirteen expected errors |
-| `bash scripts/dev.sh contracts:check` | Generation/package build, client type proof, all 12 schemas/14 examples, 23 runtime negative shapes, formats and projection tests |
+| `bash scripts/dev.sh contracts:check` | Generation/package build, client type proof, the current 18-schema registry, 14 preserved examples, runtime negative shapes, formats and projection tests |
 | `bash scripts/dev.sh check` | Package build, boundary tests, privacy/provenance/requirements/docs checks |
 | `bash scripts/dev.sh native:test` | Compile/test the Swift platform package against canonical envelope fixtures and engine responses |
 | `bash scripts/dev.sh native:build` | Build/inspect an unsigned development `.app` with the shared Xcode scheme |
@@ -32,6 +32,7 @@ If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global
 | `bash scripts/dev.sh cli service status --json` | Inspect the user service, or report its absence with exit 3 |
 | `bash scripts/package-app.sh /absolute/new/Contribution.app` | Assemble a fresh unsigned app with immutable engine/runtime, service launcher and CLI |
 | `bash scripts/check-native-client.sh` | Compile the real Swift IPC client and exercise a disposable service |
+| `bash scripts/check-native-payload.sh` | Compile an isolated native helper; test immutable payloads and the real verified worker/event bridge |
 
 For pure JSON stdout without the pnpm script-runner prefix, invoke the compiled entry point directly:
 

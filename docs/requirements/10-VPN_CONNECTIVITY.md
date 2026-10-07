@@ -326,3 +326,7 @@ Sources checked October 6, 2026. Recheck version-dependent guidance during imple
 - **S8:** [Tailscale: Three ways to run Tailscale on macOS](https://tailscale.com/docs/concepts/macos-variants)
 - **S9:** [Tailscale: CLI reference](https://tailscale.com/docs/reference/tailscale-cli)
 - **S10:** [OpenSSH: ssh_config reference](https://man.openbsd.org/ssh_config)
+
+## Implementation proof pointers
+
+The [current implementation](../IMPLEMENTATION_STATUS.md) and [repair receipt](../verification/connectivity-repair.json) record software scope and proof. [Update lifecycle](../UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback) owns the reader floor for host-scoped grants; all requirement/acceptance IDs and independent physical variants remain authoritative. Fixture evidence grants no live trust, network change, device capability or enrollment authority.

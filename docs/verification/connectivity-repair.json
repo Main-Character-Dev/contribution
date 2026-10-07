@@ -1,0 +1,436 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-06",
+  "status": "automated_verification_passed_physical_qualification_not_run",
+  "baseline": "018d0cede12b48e79ac9d9b61d2d3ae4ea491a74",
+  "runtimeCommit": "71acf8442f17ea34e3353526d72c78d4fcb95f58",
+  "scope": "Approved connectivity audit repairs and documentation alignment; source/fixture proof only",
+  "findings": [
+    "F1 durable host process ownership and cleanup priority",
+    "F2 exception-safe permits",
+    "F3 maintenance observation/release blockers",
+    "F4 independent bounded rotating traffic",
+    "F5 monotonic live retries",
+    "F6 actual legacy feature compatibility",
+    "F7 common current evidence projection",
+    "F8 observable native bridge and real parent/engine fixture"
+  ],
+  "migration": {
+    "readerMax": 4,
+    "hostResourceProducerFloor": 4,
+    "existingIdsPreserved": true,
+    "oldReaderRefusesBeforeWrites": true,
+    "automaticDowngrade": false
+  },
+  "checks": [
+    {
+      "command": "bash scripts/dev.sh check",
+      "result": "passed",
+      "nodeTests": 481,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "scope": "Stable final runtime/test source: full Node suite, strict builds, generated drift, compile-time regressions, foundation and documentation alignment"
+    },
+    {
+      "command": "bash scripts/dev.sh native:test",
+      "result": "passed",
+      "xctestMethods": 27,
+      "failed": 0,
+      "scope": "Swift canonical projection, service client and independent provider freshness presentation"
+    },
+    {
+      "command": "bash scripts/dev.sh contracts:check",
+      "result": "passed",
+      "nodeTests": 31,
+      "scope": "Canonical runtime schemas, generated/static projections and expected type failures"
+    },
+    {
+      "command": ".tools/node/bin/node --test tests/connectivity-repairs.test.mjs",
+      "result": "passed",
+      "nodeTests": 26,
+      "scope": "Focused safety, six host-process crash boundaries, traffic progress, clock correction/restart, legacy wire and Git evidence context regressions"
+    },
+    {
+      "command": "bash scripts/dev.sh native:build",
+      "result": "passed",
+      "scope": "Unsigned arm64 macOS app and pinned Sparkle/license inspection"
+    },
+    {
+      "command": "bash scripts/check-native-client.sh",
+      "result": "passed",
+      "scope": "Real compiled Swift IPC client, shared CLI, private disposable worker and retained operations"
+    },
+    {
+      "command": "bash scripts/check-native-payload.sh",
+      "result": "passed",
+      "scope": "Immutable/tampered payload fixture plus real compiled native parent and verified worker, compile-time temporary support/journal root, categorical hints/failure, malformed bounds, pause/maintenance, exec restart pipe and signal drain"
+    },
+    {
+      "command": "bash scripts/package-app.sh /absolute/new/ContributionRepairFinal.app",
+      "result": "passed",
+      "scope": "Fresh unsigned app assembled outside the repository; no installation or registration"
+    },
+    {
+      "command": "Final payload manifest/workspace hash comparison",
+      "result": "passed",
+      "scope": "All 673 manifest files verified; 94 compiled workspace files and 18 canonical schemas match tested source"
+    },
+    {
+      "command": "bash scripts/dev.sh check:foundation",
+      "result": "passed",
+      "scope": "MIT, 26 byte-identical schema/example imports, eight preserved requirements, 63 PRD/40 RDEV IDs, all 132 acceptance IDs, privacy, pins, allowlists, 413 local links, complete guide/history index and 18-schema census"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "notRun": [
+    "actual MacBook Pro/Mini network matrix",
+    "Proton/Tailscale coexistence and direct/relay paths",
+    "actual resolver/proxy/IPv6/ControlMaster/authentication context matrix",
+    "installed launchd, real sleep/wake/network changes and GUI/accessibility",
+    "signed release/update, live enrollment or publication",
+    "physical iPhone qualification"
+  ],
+  "documentAudit": {
+    "baselineMarkdownCount": 56,
+    "currentMarkdownCount": 57,
+    "schemaCount": 18,
+    "generatedOutputCount": 22,
+    "originalRequirementsPreserved": 8,
+    "originalSchemaAndExampleImportsPreserved": 26,
+    "acceptanceIdentityCount": 132,
+    "dispositions": [
+      {
+        "path": "AGENTS.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "README.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "apps/ios-qualification/README.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "backends/go-ios/README.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/ACCEPTANCE_HARDENING.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/ADAPTER_SEAMS.md",
+        "disposition": "current_summary_rewritten_chronological_prose_preserved_in_IMPLEMENTATION_HISTORY"
+      },
+      {
+        "path": "docs/ADOPTED_CHECKS.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/ADOPTED_LANDING.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/ADOPTION.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/ARCHITECTURE.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/BUILD.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/CONNECTIVITY.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/D0_INVENTORY.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/DEVICE_EXECUTION.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/DIAGNOSTIC_SHARING.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/GITHUB_OBSERVATION.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/GO_IOS_BACKEND.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/IMPLEMENTATION_STATUS.md",
+        "disposition": "current_summary_rewritten_chronological_prose_preserved_in_IMPLEMENTATION_HISTORY"
+      },
+      {
+        "path": "docs/INTERIM_AGENT_WORKFLOW.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/LEGACY_AUTHORITY_FENCE.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/LIFECYCLE.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/NATIVE_ACTIVITY.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/NATIVE_DEVICES.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/NOTIFICATIONS.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/PEER_PROTOCOL.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/POWER_LIFECYCLE.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/PROJECT_CONFIGURATION.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/PROJECT_REGISTRY.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/README.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/REPOSITORY_REMOVAL.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/REPOSITORY_SETUP.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/REQUIREMENTS_REVIEW.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/RESOURCE_LIFECYCLE.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/RESOURCE_LIFECYCLE_RECEIPT.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/ROADMAP.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/SETUP_PROMPT.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/SETUP_STATUS.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/SOURCE_PACKAGE.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/STORAGE_BOUNDARY.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/STORAGE_RETENTION.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/UPDATE_LIFECYCLE.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/VERIFICATION.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/VISION.md",
+        "disposition": "retained_focused_guide_or_policy"
+      },
+      {
+        "path": "docs/requirements/01-PRODUCT_REQUIREMENTS.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/02-ARCHITECTURE.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/03-AGENT_CONTRACT.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/04-REPOSITORY_MIGRATION.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/05-IMPLEMENTATION_PLAN.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/06-ACCEPTANCE_TESTS.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/07-SOURCES_AND_DECISIONS.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/08-REMOTE_IPHONE_DEVELOPMENT.md",
+        "disposition": "baseline_bytes_preserved_authority_crosswalk_applies"
+      },
+      {
+        "path": "docs/requirements/09-RESOURCE_LIFECYCLE.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/requirements/10-VPN_CONNECTIVITY.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "packages/contracts/README.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "packages/contracts/examples/README.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "packages/contracts/schemas/README.md",
+        "disposition": "updated_current_owner_or_history_pointer"
+      },
+      {
+        "path": "docs/IMPLEMENTATION_HISTORY.md",
+        "disposition": "new_single_historical_checkpoint_owner"
+      }
+    ]
+  },
+  "historicalReceiptsPreserved": 10,
+  "acceptanceLedgerUpdated": "Precise repaired software subsets only; existing not_run physical variants remain not_run.",
+  "testSourceCommit": "1c34887d82df65c48a63fddb6dbb9bc62f9975ea",
+  "expandedRegressionCount": 26,
+  "intermediateVerification": [
+    {
+      "result": "passed",
+      "command": "bash scripts/dev.sh check",
+      "tests": 475,
+      "note": "Initial cumulative run passed before the final frozen-context fixture expansion."
+    },
+    {
+      "result": "failed",
+      "command": "bash scripts/dev.sh check",
+      "tests": 475,
+      "failure": "One device-ownership fixture failed in repository pairing with GIT_FAILED/Git status failed, before transfer. The exact case and all nine device-ownership fixtures subsequently passed. Root cause was not reproduced; final cumulative rerun is required.",
+      "resolution": "Exact isolated case passed; all nine device-ownership fixtures passed; final stable cumulative run passed all 481 tests. No device ownership rule was relaxed."
+    }
+  ],
+  "payloadVerification": {
+    "manifestSha256": "315028523792355f78c2f917b3fecbde319c31ada1d48b1eed912a1ddaebf314",
+    "manifestFiles": 673,
+    "compiledWorkspaceFilesMatched": 94,
+    "canonicalSchemasMatched": 18,
+    "distribution": "unsigned-development",
+    "installed": false
+  },
+  "changedFiles": [
+    "README.md",
+    "apps/macos/Packages/ContributionPlatform/Sources/ContributionPlatform/ConnectivityPresentation.swift",
+    "apps/macos/Packages/ContributionPlatform/Tests/ContributionPlatformTests/ConnectivityTests.swift",
+    "apps/macos/ServiceLauncher.swift",
+    "apps/macos/Sources/ContributionApp.swift",
+    "docs/ACCEPTANCE_HARDENING.md",
+    "docs/ADAPTER_SEAMS.md",
+    "docs/ARCHITECTURE.md",
+    "docs/BUILD.md",
+    "docs/CONNECTIVITY.md",
+    "docs/D0_INVENTORY.md",
+    "docs/DIAGNOSTIC_SHARING.md",
+    "docs/IMPLEMENTATION_HISTORY.md",
+    "docs/IMPLEMENTATION_STATUS.md",
+    "docs/LIFECYCLE.md",
+    "docs/NATIVE_ACTIVITY.md",
+    "docs/PEER_PROTOCOL.md",
+    "docs/PROJECT_REGISTRY.md",
+    "docs/README.md",
+    "docs/REPOSITORY_SETUP.md",
+    "docs/REQUIREMENTS_REVIEW.md",
+    "docs/RESOURCE_LIFECYCLE.md",
+    "docs/RESOURCE_LIFECYCLE_RECEIPT.md",
+    "docs/ROADMAP.md",
+    "docs/SETUP_PROMPT.md",
+    "docs/STORAGE_BOUNDARY.md",
+    "docs/STORAGE_RETENTION.md",
+    "docs/UPDATE_LIFECYCLE.md",
+    "docs/VERIFICATION.md",
+    "docs/requirements/09-RESOURCE_LIFECYCLE.md",
+    "docs/requirements/10-VPN_CONNECTIVITY.md",
+    "docs/verification/acceptance-status.json",
+    "docs/verification/connectivity-repair.json",
+    "packages/contracts/README.md",
+    "packages/contracts/examples/README.md",
+    "packages/contracts/schemas/README.md",
+    "packages/contracts/schemas/connectivity.schema.json",
+    "packages/contracts/schemas/resource.schema.json",
+    "packages/contracts/src/generated/connectivity.ts",
+    "packages/contracts/src/generated/resource.ts",
+    "packages/engine/src/adopted-hooks.ts",
+    "packages/engine/src/diagnostics.ts",
+    "packages/engine/src/journal.ts",
+    "packages/engine/src/maintenance.ts",
+    "packages/engine/src/peer-connectivity.ts",
+    "packages/engine/src/peers.ts",
+    "packages/engine/src/repositories.ts",
+    "packages/engine/src/resource-lifecycle.ts",
+    "packages/engine/src/resource-process.ts",
+    "packages/engine/src/service-main.ts",
+    "packages/engine/src/service.ts",
+    "packages/engine/src/workflows.ts",
+    "scripts/check-documentation.mjs",
+    "scripts/check-foundation.mjs",
+    "scripts/check-native-payload.sh",
+    "tests/connectivity-repairs.test.mjs",
+    "tests/connectivity.test.mjs",
+    "tests/integration/native-connectivity.mjs",
+    "tests/integration/native-payload.mjs",
+    "tests/maintenance.test.mjs",
+    "tests/resource-lifecycle.test.mjs"
+  ],
+  "documentationChanges": [
+    "Current status and original adapter seams replace chronological contradictions; former prose preserved in one checkpoint history",
+    "Historical S0/setup prompts and receipts retain dated scope with current-owner pointers",
+    "Ordinary SSH and native parent/worker architecture aligned",
+    "One current journal migration/rollback owner in UPDATE_LIFECYCLE.md",
+    "Complete 18-schema inventory and current build commands; mechanical documentation/index drift check",
+    "Precise repaired fixture subsets in acceptance ledger; physical variants stay not_run",
+    "All 56 original Markdown documents have recorded dispositions; one history file added; ten historical verification receipts unchanged"
+  ],
+  "remainingHumanValidation": "Separately authorize an isolated installed one-repository pilot, then intended MacBook Pro/Mini network/VPN/authentication context and physical-device qualification. Do not alter VPN protections, routing, DNS, firewall or SSH trust to make a fixture pass."
+}

@@ -1,5 +1,7 @@
 # Read-only D0 preparation
 
+Historical setup scope or dated inventory. Retained for provenance; this is not the current assignment or proof of installed acceptance. See [current implementation](IMPLEMENTATION_STATUS.md), [storage retention](STORAGE_RETENTION.md), and [journal compatibility](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback).
+
 Observed on 2026-10-04, America/New_York. This is the current local development host, not an assumed identity for either canonical product host. No pairing, host enrollment, credential import, network change, phone operation or backend installation was performed.
 
 | Observation | Method | Result |

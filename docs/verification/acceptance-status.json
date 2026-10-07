@@ -1736,10 +1736,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "unreleased diagnostic ownership remains separate from helper readiness; provider freshness has its own clock"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN07",
@@ -1811,10 +1816,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "full peer tick recovers after backward wall correction without explicit Retry; actual wake/network hardware remains not run"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN12",
@@ -1826,10 +1836,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "unreleased process overrides timedOut/cancelled/outputLimited; six host process crash boundaries retain exact ownership"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN13",
@@ -1841,10 +1856,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "all saturated waiters settle during pause and capacity survives resume"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN14",
@@ -1946,10 +1966,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "offline diagnostic freshness shares the host projection with report-local target aliases and independent provider clocks"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN21",
@@ -1976,10 +2001,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "actual v3 Journal refuses v4 host resource semantics before writes; unchanged resource and maintenance suites"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN23",
@@ -2006,10 +2036,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "invalidation retains cleanup failure when aborted generation is obsolete"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN25",
@@ -2021,10 +2056,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "healthy registry/receipt progress before stalled remote work and later ticks admit new traffic"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN26",
@@ -2036,10 +2076,15 @@
           "level": "fixture",
           "source": "tests/connectivity.test.mjs",
           "scope": "Bounded shared-engine, SSH argv, classification, retry, context, schema and simulated provider fixtures; actual MacBook Pro/Mini and VPN behavior remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "real disposable Git destination removal/resolution failure cannot present previous endpoint evidence; actual proxy/multiplexing contexts remain not run"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN27",
@@ -2051,10 +2096,15 @@
           "level": "fixture",
           "source": "tests/peers.test.mjs",
           "scope": "Two-journal disposable peer fixtures retain identities, query uncertain admission, preserve unsupported/historical-scope uncertainty and reject conflicting request or cancellation repository scope. No real paired Mac is qualified."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/connectivity-repairs.test.mjs",
+          "scope": "actual legacy receiver feature refusal and ordinary exchange; v3 reader fencing; existing unsafe-lookup uncertainty tests"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     },
     {
       "id": "AT-VPN28",
@@ -2066,10 +2116,15 @@
           "level": "fixture",
           "source": "tests/integration/native-payload.mjs",
           "scope": "Compiled UI-closed launcher retains one immutable worker payload and relays a categorical launch hint over its private pipe. Actual launchd installation, wake and network changes remain not run."
+        },
+        {
+          "level": "fixture",
+          "source": "tests/integration/native-connectivity.mjs",
+          "scope": "real compiled native parent and verified worker exercise bridge failure, bounded input, pause/maintenance, restart pipe and signal drain; actual launchd/wake/network not run"
         }
       ],
       "source": "requirements/10-VPN_CONNECTIVITY.md",
-      "nextStep": "Complete remaining variants and owner-controlled physical/network validation without treating fixtures as MacBook Pro/Mini or Proton/Tailscale acceptance. See docs/CONNECTIVITY.md and the canonical amendment."
+      "nextStep": "Complete separately authorized intended-host, installed-service and physical/network variants. Repaired software subsets are recorded in docs/verification/connectivity-repair.json; fixtures grant no physical support."
     }
   ],
   "acceptanceHardening": {

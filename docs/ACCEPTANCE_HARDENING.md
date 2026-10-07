@@ -1,5 +1,7 @@
 # Acceptance coverage audit
 
+Dated checkpoint proof. Counts and version floors below describe that checkpoint; see [current implementation](IMPLEMENTATION_STATUS.md), [verification](VERIFICATION.md), and [current journal compatibility](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback).
+
 Reviewed 2026-10-04 after the initial requirements review. This is acceptance hardening for future implementation, not new product scope or a request to extend S0. The existing architecture, agent contract, migration rules and all original acceptance rows remain unchanged.
 
 Ten of the fifteen requested areas are already substantively covered. Five need focused additional proof. Their canonical definitions are AT-R01–05 in [06 Acceptance tests](requirements/06-ACCEPTANCE_TESTS.md#r-focused-robustness-additions); this document maps coverage without maintaining a second test definition.

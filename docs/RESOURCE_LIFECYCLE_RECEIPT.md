@@ -1,5 +1,7 @@
 # Resource lifecycle implementation receipt
 
+Dated checkpoint proof. Counts and version floors below describe that checkpoint; see [current implementation](IMPLEMENTATION_STATUS.md), [verification](VERIFICATION.md), and [current journal compatibility](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback).
+
 October 6, 2026. Source implementation was authorized; installation, live
 enrollment, provider/Simulator/physical-device actions, OS changes, remote pushes
 and deployment were not performed. The historical input documents were reviewed

@@ -1,0 +1,495 @@
+# Implementation checkpoint history
+
+Historical source and fixture checkpoints, preserved from the former implementation record and adapter timeline. Their counts, version floors, next steps and checkout identities describe their dated checkpoint. [Current implementation](IMPLEMENTATION_STATUS.md), [current adapter seams](ADAPTER_SEAMS.md), [verification](VERIFICATION.md) and [current journal compatibility](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback) supersede current-state claims below. Historical text is not a new task or authorization.
+
+# Implementation record
+
+Started 2026-10-05, America/New_York, under the owner's authorization to implement M0–M6 and D0–D4 while retaining unanswered prerequisites for the end. The owner subsequently deferred live installation, live project enrollment, peer/phone setup and approvals to the final handoff. Those actions have not been performed.
+
+Checkout: `/Users/gabe/.codex/worktrees/3f07/contribution`, branch `codex/full-implementation`, based on the reviewed S0 repair `55323b8`. The earlier requirements work is retained on `codex/requirements-review` at `e65ed0d`. Primary remains separate; unrelated primary `.codex/` contents are preserved. Original code remains MIT licensed.
+
+## Current implementation, not milestone completion
+
+- A pinned-runtime development payload is assembled independently of the checkout, inventories every file, rejects symlinks and verifies hashes before service admission. Signed distribution remains pending.
+- One service owns a SQLite WAL journal, full-sync request transactions, idempotent immutable requests, ordered events, independent attempt logs, per-repository queues, process identity, bounded commands, cancellation, pause/drain and conservative restart reconciliation. Node's built-in SQLite binding is coupled to the pinned Node 24.21.0 runtime; its experimental status remains a release qualification consideration.
+- Public service commands provide local enrollment, bounded discovery, explicit unborn initialization preserving unrelated index entries, configuration revisions, status, retained logs and operations, generic committed-source capture, isolated candidate landing, original native/captured-task landing for adopted projects, and real non-force publication through an adopted managed hook lease.
+- Push preview freezes source/destination/policy. The hook runs the gate once inside the actual Git command. Inactive gates, no-op publication, gate failure, remote rejection, external hook-only observation and uncertain delivery remain distinct.
+- GitHub observation retains current-head/test-merge identities, required checks, GitHub merge state, bounded pagination, slow discovery and error-aware polling. Stale last-known success never substitutes for an unavailable current observation.
+- The native UI uses the same authenticated private service for repositories, operations, logs, pause/resume and explicit Push preview. The native build and unsigned bundled-app assembly pass; visual interaction and installation qualification remain separate evidence.
+- The generic peer implementation now includes fixed-entry-point SSH, host identity checks, retained chunked Git transfers, bootstrap admission, imported-source landing, guarded mirrors, canonical command forwarding and explicit monotonic ownership transitions. Two-journal fixtures prove lost-reply handling and refusal to replace dirty/divergent work. Real SSH and adopted-project cutover remain unqualified; see [PEER_PROTOCOL.md](PEER_PROTOCOL.md).
+- Remote Devices now shares scoped durable admission, grants/revocation, exact-context capability checks, bounded qualification budgets, ownership guards and independent effects with the core scheduler. Device fixture results are kept separate from physical proof. [DEVICE_EXECUTION.md](DEVICE_EXECUTION.md) records the current boundary and remaining implementation.
+- Project runtime selection now verifies the current source's exact Node/pnpm pins and registered executables before checks. The adopted-project inventory preserves the four policy families and Glass Alpha's inactive gate. Shared legacy writer/hook cutover is still pending; [ADAPTER_SEAMS.md](ADAPTER_SEAMS.md) records the inspected boundaries.
+- Configuration writes retain their approved intent before atomically replacing the policy file. Restart reconciles either side of the file/journal boundary; concurrent owner edits are preserved and block dependent writers. A real compiled Swift client now proves shared authenticated IPC, payload identity, admission and retained results against a disposable service.
+- Bootstrap creation also retains its generated-file intent before writing. Fixture recovery finishes a partial bootstrap without changing unrelated index entries and blocks conflicting owner edits. Settings and their completion receipt commit in one database transaction.
+- Native launch now verifies and materializes a read-only engine payload in a private digest directory before execution. A compiled launcher fixture confirms that replacing the bundle leaves a running older payload intact and rejects retained tampering. Settings includes an explicit CLI-link installer/remover that preserves foreign executables; no live link was installed. Idle restart drains and replaces the existing service process, retaining queued identities and pause state.
+- The journal now enforces the raw-log cap on every admission route, bounds running log output and expires only eligible completed logs. Pinned, active, uncertain, interrupted and unacknowledged peer evidence is protected. Reviewed artifact and legacy output cleanup preserves provenance and completion receipts while releasing confirmed incoming reservations. See [Storage retention](STORAGE_RETENTION.md). Summary and other retained-source cleanup remains under implementation.
+- The disposable [iPhone qualification app](../apps/ios-qualification/README.md) compiles unsigned for Simulator. It retains meaningful records, draft/configuration, simulated pending work and Keychain continuity evidence. It has not been installed, signed or physically qualified.
+- Canonical checks now route to the selected owner. Per-message compatibility checks, remote attention states, cancellation, explicit reconciliation and timestamped cached logs are fixture verified. Native provisioning extraction handles real plist date and certificate-data types without trying to convert the whole profile to JSON.
+- A failed Mathy post-landing native stage now has an explicit reviewed CLI/app resume route, independent immutable attempt/log, and original-worker lease ownership. The recorded landing stays distinct from its unfinished follow-up. The original source validator, frozen selection and inner-lease checks prevent replaying integration or repairing a different candidate; restart observes the original completion receipt. See [Original project landing](ADOPTED_LANDING.md).
+
+The executable fixture tests currently prove durable paused queues across restart, immutable duplicate requests, explicit initial history without unrelated file/index changes, detached task landing with dirty source preservation, actual push/gate/delivery, stale queued scope, gate versus transport failure, inactive gates, external hook uncertainty, cancellation and distinct attempt logs. GitHub fixtures cover required-check association, draft/conflict/review state, reruns, auth/permission/404/API/rate errors and incomplete observation.
+
+These are partial fixture results, not passes for every variant of the 83 acceptance cases. The original requirements and physical-device rows remain in force. This record is updated as implementation continues.
+
+## Early device and native integration findings
+
+- The installed Codex CLI exposes experimental `remote-control start|stop|pair`; help was inspected without starting it or pairing. Its availability is not evidence that the actual phone-only travel caller is qualified. The conditional authenticated browser route remains in scope until that caller is resolved.
+- Xcode 27 CoreDevice help explicitly deprecates legacy device dictionaries in favor of `properties`. A bounded inventory attempt in this execution environment exited 2 without a device result. The actual phone identity, trust, OS and route remain unknown.
+- Signing inventory reported two available identities without retaining their names. No identity has been approved or used for Contribution signing or a phone update.
+- The go-ios research candidate is pinned to `273d3e06e803fb6ee95e4df914d8be82c5ee4bb0` (2026-10-02). Its tunnel implementation has an explicit userspace mode and requires privilege when it is absent. Its default-pair-record option references Apple-owned trust data, so it must not be adopted automatically. A scoped prototype binary now builds; no tunnel or device action was started and nothing was installed. The [backend investigation](GO_IOS_BACKEND.md) records dependency notices and the remaining transport isolation and physical qualification work. Sources: [pinned tunnel implementation](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/cmd_tunnel.go), [pinned dependencies](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/go.mod).
+
+## Work still being pursued
+
+Complete native client and payload proof; strengthen crash/retention/configuration boundaries; implement authenticated peer transfer, seeding, safe mirrors and authority transitions; inspect and adapt the four live policy seams without enrolling or editing those projects; implement device grants, qualification, artifact/effect records, scoped backend dispatch and lifecycle controls; finish release/update controls and every independent acceptance fixture. Remaining hardware/signing/real-host proof will be reported together at the end.
+
+## Checkpoint verification
+
+The lifecycle checkpoint passed `bash scripts/dev.sh check`: 70 tests, compile-time regressions and foundation preservation checks. `bash scripts/dev.sh native:test` passed three Swift methods. Both native IPC and immutable-payload probes passed. `bash scripts/package-app.sh` assembled a fresh unsigned app containing the verified runtime/engine payload, service launcher and CLI launcher; the bundled development CLI reported the shared version. These commands require normal local process/socket and Xcode cache permissions; the restrictive execution sandbox cannot provide process-start identity. No service registration or live installation occurred. Subsequent work continues on this branch.
+
+The next hardening slice verifies actual Git ancestry before consuming managed hook authority and reports the configured canonical branch independently of checkout drift. Focused publication, legacy lease, wrong-ancestry and branch-status fixtures pass. The pinned go-ios prototype now builds with its pinned Go toolchain; `scripts/build-go-ios.py` verifies the module checksum/revision and collects the licenses/notices of all linked modules. It never executes the backend, and the prototype remains outside product payloads while local transport isolation and physical qualification are incomplete.
+
+Repository creation now retains the requested destination before effects, checks its directory identity and marks only its owned partial Git directory. Retries return the same initialization, including after a lost reply; concurrent files, replaced directories or unmarked Git state are preserved for reconciliation. Recovery fixtures cover the directory/Git/enrollment boundary. A crash in the narrow interval between creating `.git` and writing its ownership marker remains an explicit reconciliation case rather than permission to claim an unknown repository.
+
+GitHub monitoring now includes classic commit statuses and protection rules, test-merge precedence, recent external/scheduled/manual discovery, older active-run polling and monotonic rerun observations. Exact-attempt job/step inspection and bounded, redacted log snapshots are available in the native GitHub activity sheet. Seven focused GitHub fixtures and the unsigned native build pass; see [GITHUB_OBSERVATION.md](GITHUB_OBSERVATION.md). These checks do not establish live GitHub or visual qualification.
+
+Milestone delivery now has durable per-operation grouping, one-use delivery claims, preferred-host fencing, paired-host transport, exact origin-context lookup and obsolete GitHub alert withdrawal. The native interface supports explicit notification permission and revision-checked preferences; it reconciles uncertain delivery without replaying a banner. [NOTIFICATIONS.md](NOTIFICATIONS.md) separates fixture/build proof from pending macOS delivery qualification. A native test exposed an unreadable file-protected CLI receipt; the path-only receipt now uses the same private directory/0600 permissions as other user-service state, and its install/remove fixture passes again. Background notification and GitHub work must drain before the journal closes.
+
+## Durable update maintenance checkpoint
+
+The service now retains update holds across crashes, drains asynchronous requests and workers, blocks unresolved device effects/sessions, writes a verified private SQLite backup, and stops without clearing queued identities. Four new maintenance fixtures and the two existing lifecycle fixtures pass. Native updater integration pins Sparkle 2.10.0 and disables automatic installation; its installer state test and unsigned app build pass with exact framework/license inspection. The release candidate pipeline exists but signing, notarization, registration and real update paths have not been executed. [UPDATE_LIFECYCLE.md](UPDATE_LIFECYCLE.md) separates source behavior from remaining release proof. Node license packaging and stale-output rejection were also added.
+
+The next M4 slice adds compatible landing-flight coordination, verified against all four original modules using disposable repositories. Publication now rejects nonexecutable or escaped owned hooks and ignores inherited Git namespace/configuration overrides. Restart observes the frozen remote without replaying transport, but cannot report success unless the durable gate receipt is passed or explicitly inactive for that exact source tip. Twelve focused coordination/publication tests pass, including delivered remote state with absent, failed or wrong-tip gate evidence.
+
+Offline preparation now has explicit schema-validated host build registration, clean committed snapshots, finite Xcode commands, independent signature/provisioning checks and sealed artifact provenance. It never invokes the physical-device backend, and a failed or interrupted local build does not claim a phone effect or ownership. Seven build fixtures and two provisioning fixtures pass, including sealed-artifact restart reconciliation, entitlement mismatch and idempotency across later profile changes. The original twelve schemas remain byte-identical; one new private device-profile schema brings the maintained contract census to thirteen. Real signing, adopted project routes and physical proof remain deferred.
+
+The cumulative offline-preparation checkpoint passed 109 Node tests, strict type builds, generated-contract drift and source/privacy/preservation checks. Subsequent focused verification covers the live-build guard and artifact inspection commands. The native envelope and original acceptance definitions are unchanged.
+
+Prepared artifacts now move through the existing paired-host channel with immutable manifests, bounded resumable chunks and retained verification receipts. The receiver preserves original provenance, verifies archive/app identity and keeps transfer independent of phone and Git authority. Three archive fixtures and five two-service cases pass, including lost completion followed by later receiver revocation. Fixture artifacts remain unusable as observed authority. Actual cross-Mac SSH and native signing/provisioning proof remain deferred.
+
+Selected-host device outboxes now use the paired-host dispatcher with a frozen remote policy revision, explicit execution-host acceptance, scoped observations and existing grants. Seven device-routing fixtures pass, including offline queueing, lost admission, denial, pause/cancel and observation-only recovery. Cancellation records a target-side fence for absent requests instead of admitting new work. The shared boundary also protects core outboxes. Independent Git work proceeds around device setup blockers, and outbox metadata now rolls back atomically with failed admission. Twenty routing/peer/artifact tests and four journal tests pass.
+
+Explicit device host transfers now retain an old-host fence before cleanup, confirm owned-session release, and require independent destination observations before acceptance. Received release references work after the former Mac goes offline. Nine transfer fixtures include restart, pause/disable, unknown cleanup, conflicts and stale-receipt replay; twenty-seven combined device/lifecycle fixtures pass. Native session attribution/release, initial acquisition and manual physical recovery remain unqualified and are not inferred from these fixtures.
+
+Qualification plans are now registered through private profiles with exact context and finite budgets. Local evidence record/get/review commands preserve immutable reports and reject promotion from the wrong action/case, missing readback, fixture mode, uncertainty, unknown versions or incomplete cold/restart/data proof. Synthetic validator rows establish validation behavior only. Backend implementation gaps stop before admission, and authorization/ownership/context are rechecked after asynchronous effect preflight. Focused registration, evidence and revocation fixtures pass; no physical evidence was recorded or promoted.
+
+The cumulative ownership/qualification checkpoint passed 142 Node tests, strict builds, generated-contract drift, type regressions and foundation preservation/privacy checks. The original twelve schemas and fourteen imported examples remain byte-identical. Logs are retained privately in `.build/check-qualification.log`. This is software fixture/build proof, not a physical-device milestone pass.
+
+GitHub readiness now rechecks PR and rule identity at the end of collection, rejects unreadable required-app identities, coalesces concurrent refreshes and invalidates changed publication selections. Fifteen GitHub/notification fixtures pass. Native selection guards discard late operation/workflow/log responses. The four product primaries were reinspected read-only; Mathy's branch remains `mathy-30` but its HEAD advanced to `6e7bdd6a8544e0213ff4bf92813bca097ebf99b7`, confirming that migration plans must bind current policy fingerprints. No product source or configuration was changed.
+
+The [native device sheet](NATIVE_DEVICES.md) now provides explicit host/device selection, separate readiness dimensions, immutable artifact/app selections, bounded action forms, private profile review and named local grants. Its request journal preserves uncertain admission identities across app restart. Inventory and retained app references route to the selected peer; reconciled installation readback creates a launch reference atomically. Seventeen focused Node tests and six Swift methods pass. Native compilation is checked separately from pending GUI and physical proof.
+
+The cumulative native-device checkpoint passed 148 Node tests, generated-contract and type checks, and foundation preservation/privacy checks (227 local documentation links). Six Swift test methods and the unsigned native app build also passed. This checkpoint does not install the app or qualify any physical connection.
+
+Adopted reporting now has private per-attempt paths, bounded sealed evidence, and retained review proposals that preserve project files. Four focused fixtures pass. Current Mathy, Main Character and Roboty candidate source parses pass; Glass Alpha retains inactive validation without a new hook. These proposals are reporting preparation only; no live migration, gate execution or shared-writer cutover is claimed.
+
+The internal adopted-hook borrow protocol now validates current lease ownership and actual Git ancestry; borrowed release cannot release the outer writer. Four focused broker/lease tests pass. All four current generated source bridges also pass real disposable Git/IPC parity, including their original fallback and token-file release behavior. No adopted writer creates production bridge invocations yet; dispatcher integration and reversible cutover remain under implementation.
+
+The next adopted-push slice connects that protocol to the real outer Git runner and CLI gate child. Six end-to-end fixtures now pass with explicit fixture adoption records. They preserve original gate exits, distinguish transport refusal, keep inactive gates inactive and reject changed policy or adoption identity. Production adoption activation, external-hook support and original landing/import paths remain pending. The cumulative checkpoint passed 161 Node tests, generated/type checks and foundation preservation/privacy checks with 228 local documentation links. No live product gate or publication was executed.
+
+External adopted hooks now share the managed gate/borrow path and compatible writer lease. Real disposable Git fixtures distinguish gate-only completion, inactive/no-op results, gate failure and remote rejection; lost clients retain uncertainty and block new writers and update maintenance. Thirteen focused adopted/ancestry/borrow fixtures pass. This adds no live project hook changes and does not complete production adoption or project landing/import adapters.
+
+Initial publication-hook adoption now has a public reviewed prepare/apply/activate/rollback workflow. The service preserves the existing dispatcher, records private snapshots and requires committed matching source before activation. Compatible primary and landing-flight contention block migration; partial application resumes only matching files, and rollback keeps paired authority refusal. Synthetic all-four-policy fixtures exercise this production registration path through actual disposable publication. Live project cutover and original landing/import adaptation remain open.
+
+The cumulative adoption checkpoint passed 171 Node tests, generated/type checks, and foundation preservation/privacy checks with 229 local documentation links. A final focused six-case adoption run also passed after tightening reviewed clone identity and apply preflight. The private log is `.build/check-adoption.log`. All 83 original acceptance identities remain explicit partial or unrun evidence.
+
+A follow-up authority audit found that publication-hook adoption alone cannot fence every legacy landing entry point or older task checkout. Source and destination now explicitly block adopted canonical-owner transitions until that cooperating-writer cutover is complete. Unknown generic/legacy lease and recovery directories also block transfer. Nine focused peer fixtures pass. Generic two-service behavior remains available; adopted two-Mac ownership is an explicit remaining code boundary.
+
+Reviewed storage cleanup now expires eligible generated artifacts and private original-gate output while retaining operation identities, provenance and completion receipts. Incoming quota releases only after confirmed removal; lost-reply receipt queries still work after expiration. The cumulative checkpoint passed 180 Node tests, strict/generated contract checks and foundation/privacy preservation checks.
+
+The [original project landing adapter](ADOPTED_LANDING.md) now invokes the preserved clean detached native-task route with project-selected tools and original lease ownership. Original receipt validators, Mathy native reconciliation/selector requirements and the source completion guard decide success. Four focused synthetic fixture groups cover all policy families, preserved dirty work, post-promotion uncertainty and observation-only repair. Adopted captured-snapshot/import handling, all-writer authority migration and real-project worker parity remain open code/proof boundaries.
+
+The local adopted captured-source extension now lands only the admitted commits when a native task is dirty or advances after admission. A Contribution-owned snapshot is registered with the original candidate export under its compatible flight lock; metadata and ownership remain explicit. Seven focused fixture groups cover all four policy families, queue metadata, normal successful candidate removal, contention and same-request pre-dispatch recovery. Source eligibility still runs against the real native task at admission. Cross-host source-policy attestation and complete legacy authority fencing remain unfinished.
+
+The [original module API parity check](verification/original-landing-parity.json) passed all four current project modules against disposable Git histories without changing the source projects. It exposed and corrected a real setup gap: all four use `.nvmrc`, while the initial synthetic catalog assumed `.node-version`. The catalog now fingerprints their original `.nvmrc`; generic runtime selection supports either declaration and rejects conflicting or floating pins. Full project worker execution and the actual registered project tool environments still require their separate qualification.
+
+The [persistent legacy fence primitive](LEGACY_AUTHORITY_FENCE.md) now retains exact ownership before applying a macOS immutable flag and releases only for a confirmed local canonical transition. Six focused fence/lease tests pass, including creator exit, interrupted flag/release steps and preservation of foreign state. A reference-transaction hook was disproved as a sufficient pre-mutation fence. Adopted owner transfer remains blocked while writer qualification and peer integration are unfinished; no live repository was flagged.
+
+[Adopted local checks](ADOPTED_CHECKS.md) now select the original project runner in the explicit local source with project-pinned tools. Five focused fixture groups pass across all four adapters, including offline-owner local checks, retained legacy leases, dirty-input support/refusal, selected test paths, queued drift and original failure exits. Mathy policy-only completion and inactive Glass Alpha publication validation remain distinct from tests and gate proof. No live project suite ran.
+
+The current-source fingerprint now includes staged contents separately from working contents, reads bounded untracked files through verified descriptors and hashes symbolic links without following them. The cumulative local-check checkpoint passed 199 Node tests, strict/generated contracts, type regressions and foundation/privacy checks with 236 local links. Six Swift test methods also passed. Private logs are `.build/check-local-checks.log` and `.build/native-local-checks.log`; no physical or installed-runtime qualification is inferred.
+
+The pinned go-ios [private transport overlay](../backends/go-ios/README.md) compiles with authenticated Unix control IPC, authenticated loopback data proxying, a restricted per-device research entry point and no automatic agent startup/reconnect loop. Five Go transport tests pass without device access. The research binary remains outside the app payload while product dispatch, session/ownership integration and physical transport qualification remain unfinished. No backend executable, pairing or tunnel was started.
+
+Fresh native IPC and immutable-payload probes passed against the local-check checkpoint package. The CoreDevice adapter no longer treats cache-permitted device details or an inventory tunnel label as live readiness. Connect performs a bounded installed-app query and retains only scoped completion evidence; zero exits after timeout/cancellation cannot become success. Two focused response fixtures plus the existing device scheduler fixtures pass. This does not qualify the physical CoreDevice route or resolve native session ownership.
+
+Already migrated second clones now have explicit registration review and activation. The engine reconstructs deterministic migration seams and the original gate from complete committed history, preserves local dispatcher ownership, and changes only private registration state. Nine adoption fixture groups pass, including all four policy families and forged/missing/changed-history failures. This closes the private original-source registration gap without enabling adopted cross-host authority or source import prematurely.
+
+Paired project discovery now retains bounded monotonic catalogs and acknowledgments across offline delivery and journal restart. Missing local clones and differing configuration revisions are visible in the native sidebar. Explicit local mapping verifies project identity, revision and branch without copying paths, changing configuration or granting writer authority. Five focused registry groups and the existing nine peer groups pass; the unsigned native build passes. [Project registry](PROJECT_REGISTRY.md) records the protocol and limits, including the separate approved clone/empty-history setup step.
+
+The cumulative registry checkpoint passed 209 Node tests, strict package/type checks, generated-contract drift and foundation/privacy preservation with 240 local links. The original twelve schemas, fourteen examples and all 83 acceptance identities remain intact. The latest native build passed; no actual SSH, installation or physical evidence is inferred from these results.
+
+The main native activity view now groups attention, running/queued and recent work, with repository/host/outcome/date/search filters over the latest 200 retained attempts. Project context shows branch, canonical owner, queued handoff and cached publication state with explicit remote refresh. Generic check receipts now include the actual redacted command, profile, duration, input digest and log marker; adopted aggregate completion continues to defer individual child results to original output. Native Push and local checks use the retained request journal across uncertain admission replies. The selectable AppKit log pauses its visible snapshot on user scrolling and resumes only through Follow latest. Devices remains hidden while its module is disabled. Focused model/AppKit tests and native build evidence do not substitute for GUI/accessibility qualification.
+
+The activity checkpoint passed eight Swift test methods, the unsigned native build, eight focused engine/publication/adopted-check fixtures and foundation preservation with 241 local links. A compile error in a mixed Swift property declaration was corrected before the final build. Private proof logs are `.build/native-activity-tests-final.log`, `.build/native-activity-build-final.log` and `.build/activity-check-details.log`. The log test proves controller behavior through AppKit notifications; real input-device and accessibility interaction remains unverified.
+
+Contribution-owned build and landing checkouts now retain creation identities and a committed source ref. A separate storage review removes eligible clean detached checkouts through Git without force, preserving native task worktrees, unknown output, local files, retained history and operation receipts. Interrupted cleanup fences new jobs in affected clones and resumes only the same reviewed request. Twenty-four focused checkout, adopted-landing, build and service fixtures pass, including changed paths, locks, ignored work, live processes and lost completion. This closes checkout disposal for newly recorded output; summary compaction, other build products and full retained-state accounting remain unfinished.
+
+The cumulative checkout checkpoint passed 215 Node tests, generated/strict/type checks and source/privacy preservation with 241 local links. A follow-up reporting audit replaced size-check-then-read with bounded descriptor reads that reject growth, rewriting, replacement and shared files before sealing evidence. Twenty-six focused read-race, reporting, adopted-hook and migration fixtures pass. Logs remain private in `.build/check-owned-worktrees.log` and `.build/bounded-reporting.log`.
+
+The shared process runner now reports cancellation, timeout and output overflow as nonzero effective outcomes even when a cooperative child traps termination and exits zero. It retains the actual child exit separately. Fifteen focused process, publication/recovery, service and CoreDevice fixtures pass; `.build/process-outcomes.log` retains the proof. Ordinary project failure exits remain unchanged.
+
+Native settings now has focused tabs and a storage review flow showing raw-log usage, protected entries, current limits and explicit cleanup scope. Settings changes share the retained request journal. An error after partial cleanup retains its original client identity even when a maintenance hold refuses the next call; it cannot silently become a new deletion request. Eleven Swift test methods, twelve focused storage fixtures and the unsigned native build pass. Visual/keyboard/accessibility interaction remains unverified, and no live cleanup or installation occurred.
+
+The cumulative storage UI checkpoint passed 218 Node tests, strict/generated/type and foundation checks with 242 local links, plus eleven Swift methods and a fresh unsigned app package. The package remains uninstalled.
+
+[Repository removal](REPOSITORY_REMOVAL.md) now removes a verified generic owned hook through a durable, restartable transaction. Eighteen focused removal/service/peer fixtures pass, preserving foreign hooks, dirty source/index, native task history and retained evidence. Pending removal fences new admissions and configuration; interrupted unlink resumes the same identity. Paired authority and adopted integration still require their explicit coordinated release or reviewed rollback. No live enrollment was removed.
+
+Native New project and explicit Initialize history now use reviewed destinations/configuration revisions and retained service requests. Creation continuation survives a partial error or maintenance refusal without discarding its immutable identity. Six focused engine fixture groups, thirteen Swift methods and the unsigned native build pass. GUI interaction remains unrun; these changes created no live repository.
+
+The cumulative repository-lifecycle checkpoint passed 224 Node tests, strict/generated/type checks and foundation preservation with 244 local links. Original schema/example bytes and all acceptance identities remain intact. Native tests and build also pass; no installation or real-host proof is inferred.
+
+[Diagnostic sharing](DIAGNOSTIC_SHARING.md) now uses a bounded field allowlist through the shared service and installed CLI. Native copy/export previews the same summary, with private details available separately for local inspection. Three privacy/maintenance/CLI fixtures and the unsigned native build pass. Fixture/observed receipts, inactive gates and uncertain outcomes remain distinct; arbitrary paths, identities, credentials, raw output and app data are omitted. No diagnostic was shared externally.
+
+A protected raw-log cap no longer blocks the reviewed settings change needed to raise it. One retention-only recovery can run while normal processing stays paused; unrelated settings, stale revisions and a second pending recovery cannot bypass the cap. Creation and source/history capture also check pressure before retaining new source state. Focused pressure, pause/restart, service and peer fixtures verify the boundary without deleting protected evidence.
+
+The cumulative diagnostics/pressure checkpoint passed 229 Node tests, strict/generated/type checks and foundation/privacy preservation with 246 local links. Fresh compiled-native IPC and immutable launcher-payload probes also passed against disposable services. The latest native app build passed; no live installation, pairing or device access occurred.
+
+Managed-data accounting now covers logical bytes throughout the private support directory, with a separate strict storage-policy contract and a 10 GiB default. Incomplete censuses or pressure block new admissions and queued dispatch while preserving evidence. Reviewed policy increases and cleanup resume retained work. Native storage controls use a separate restricted continuation slot so unresolved operation requests do not prevent cap recovery. Thirty-seven focused storage/transfer/peer fixture groups, fourteen Swift methods and the unsigned native build pass. The cap is not an OS quota: already running effects and retained bounded transfers can finish; remaining producer bounds and summary/reference compaction are still unfinished.
+
+The cumulative managed-storage checkpoint passed 234 Node tests, strict/generated/type checks and foundation preservation with 248 local links. All fourteen maintained schemas compile, with the original twelve schemas and fourteen examples still byte-identical. Fourteen Swift methods and the latest unsigned native build pass.
+
+History capture now freezes seed/mirror selection before effects and preserves it across interrupted admission and later primary commits. Source refs refuse unexpected replacement. Descriptor-based bundle hashing and transfer use finite buffers and reject changes between peer acknowledgments; incoming fetch must retain exactly the declared tip. Sixteen focused reader/peer fixture groups pass, including interruption before bundle creation and before admission. Bundle producer output limits remain the next storage boundary; no live peer transfer occurred.
+
+The next slice bounds Git bundle production itself to 256 MiB and five minutes, preserving binary bytes outside text logs. Durable producer attempts seal output before atomic no-replace publication, resume link/unlink interruptions, and retain partials after disk/output failure. Failed process output/ownership callbacks stop the child and return an error rather than escaping the service. Thirty-one focused process, producer, peer, adopted-landing and service fixture groups pass. Source history and foreign destination files remain intact; no live repository or peer was used.
+
+The cumulative bounded-bundle checkpoint passed 246 Node tests, strict/generated/type checks and foundation/privacy preservation with 248 local links. The original twelve schemas, fourteen examples and all acceptance identities remain unchanged. The private proof log is `.build/check-bounded-bundles.log`.
+
+The default-off [host power preference](POWER_LIFECYCLE.md) now requests bounded idle-sleep prevention during active accepted work. Policy review, replay identity, failure visibility, shutdown and an independent native settings continuation are implemented. Tests inject the assertion process; no real power request or system setting change was performed. Native compilation and lifecycle fixtures remain separate from actual OS assertion and sleep/wake qualification.
+
+Four focused power fixture groups, fifteen Swift test methods and the unsigned native app build pass. The new power contract brings the maintained registry to fifteen schemas and eighteen generated client/identity files; original imports remain unchanged. Logs are `.build/power-fixtures-final.log`, `.build/native-power-tests.log` and `.build/native-power-build.log`.
+
+The cumulative power-lifecycle checkpoint passed 250 Node tests, strict/generated/type checks and foundation preservation with 251 local links. Private proof is retained in `.build/check-power-lifecycle.log`. Fifteen Swift methods and the latest unsigned native build also pass; installed sleep and physical device acceptance remain unrun.
+
+Task submission now retains validated source eligibility before capture effects, resumes the same range after a task advances, and preserves adopted candidate metadata. Accepted replay returns its original operation after later policy changes; changed caller inputs still conflict. Explicit `submit --resume` and retained-continuation responses keep partial capture identities through maintenance. Twenty-six focused generic/adopted/peer/service fixture groups and fifteen continuation/peer groups passed.
+
+The cumulative task-capture checkpoint passed 254 Node tests, strict/generated/type checks and foundation preservation with 251 local links. The private proof log is `.build/check-task-capture.log`. All original requirements and acceptance identities remain intact; actual cross-host and physical qualification remain outstanding.
+
+Incoming Git and signed-app chunks now retain file/parent identity and use bounded descriptor writes, preserving unknown replacements and shared files. Matching partial writes and lost acknowledgments resume without overwriting retained prefixes. Signed-app senders keep a verified descriptor across remote acknowledgments. Three unfinished Git transfers per repository and one GiB of pending reservations bound empty-file overcommit. The cumulative checkpoint passed 259 Node tests, strict/generated/type checks and foundation preservation with 251 links (`.build/check-incoming-files.log`). No live peer, app or phone was used.
+
+The private backend control client now performs bounded, mutually authenticated reads of one exact retained session and selected userspace tunnel. Six Node groups cover malformed/forged/lost/oversized responses, cancellation, finite timeout and session identity changes. A transport-only Go fixture proved real overlay interoperability in three synthetic scenarios without linking the device library. The cumulative checkpoint passed 265 Node tests, strict/generated/type checks and foundation preservation with 252 links. Logs: `.build/check-backend-control.log` and `.build/backend-control-interop.log`. Product session supervision, scoped device dispatch and physical transport qualification remain unfinished; no research device executable was run.
+
+Native **Find repositories** now scans a selected folder, reports bounded/partial results, identifies unborn and detached checkouts, and adds only individually selected existing repositories. The engine scan streams entries and reports directory/depth/entry/deadline and inspection limits instead of losing prior results. Three focused fixture groups, 268 cumulative Node tests, sixteen Swift methods and the unsigned app build pass. A Swift test exposed and corrected null detached-branch presentation. Logs: `.build/check-discovery.log`, `.build/native-discovery-tests-final.log`, `.build/native-discovery-build-final.log`. Actual keyboard/VoiceOver and GUI interaction remain unrun; no live repository was enrolled.
+
+Configuration and partially applied/rolled-back adoption now retain their native continuation through actionable errors and maintenance refusal. Configuration also has an explicit resume command using the exact retained values and original revision; changed inputs cannot take over its identity. Eleven focused configuration/adoption groups and all 269 cumulative Node tests pass with strict/generated/type and foundation preservation checks (`.build/check-policy-continuation.log`). Original source edits remain protected; migration approval, commit and activation remain separate steps.
+
+[Reviewed project settings](PROJECT_CONFIGURATION.md) now preserve active adopted gate registration across name/publication changes, rejecting original validation/runtime/integration replacement. Configuration recovery preserves a changed enrollment, owner or adapter registration. The native form retains an immutable revision-bound review and its request; generic profile selection preserves gate activation and existing checks. All 271 Node tests, eighteen Swift methods and the unsigned native build pass. Logs: `.build/check-adopted-config.log`, `.build/native-project-settings-tests.log`, `.build/native-project-settings-build.log`. GUI and live-project qualification remain separate.
+
+The native [migration review](ADOPTION.md) now exposes retained proposals, bounded exact source previews, separate apply/activate/restore confirmations and existing-clone history review. Interrupted steps keep their original continuation. Digest-checked UTF-8 paging refuses other files/repositories and changed snapshots; read-only reviews remain available during ordinary update draining. All 272 Node tests, strict/generated/type checks, foundation preservation with 255 local links, twenty Swift methods and the unsigned app build pass. Logs: `.build/check-migration-review.log`, `.build/native-migration-tests.log`, `.build/native-migration-build.log`. Live migration and GUI qualification remain unrun.
+
+The internal Roboty offline-policy selector now reuses original project exports and binds committed helpers, activation, source and retained phone compatibility before any build. Its fixtures reject identity/distribution overrides, changed build contracts and hidden source changes. All 275 Node tests, strict/generated/type checks and foundation preservation with 255 links pass (`.build/check-roboty-device-policy-final.log`). `scripts/check-roboty-device-policy-parity.mjs` also passed against private disposable copies of the current original exports (`.build/roboty-device-policy-parity.json`); this is source/API parity, not a build or live enrollment. Product wiring, shared build coordination and signed offline execution are still unfinished.
+
+The subsequent `roboty-ios-v1` adapter is now wired through explicit profile registration, exact source/policy observation and offline dispatch. It preserves original activation, active-primary selection, generator, native-input identity, app/entitlement validation, shared build pool and child supervision. Manual existing provisioning replaces the original online-provisioning choices without activating distribution. The full 280-test suite, generated/strict/type checks and foundation preservation with 255 links pass (`.build/check-roboty-offline-adapter.log`). Seven Roboty fixture groups and the actual original-module coordination check pass (`.build/roboty-build-coordination.json`). A real signed Roboty build, original Xcode output parity, installation and data-continuity proof remain unqualified; no live project, build pool or phone was touched.
+
+A fresh unsigned app was assembled at `.build/Contribution-roboty-offline.app` with its immutable engine/runtime payload (`.build/package-roboty-offline.log`). The compiled native client also passed disposable authenticated IPC, admission and retained-result checks against this engine (`.build/native-client-roboty-offline.log`). The app remains uninstalled; these checks grant no real project or phone authority.
+
+The completed implementation checkpoint and [interim agent workflow](INTERIM_AGENT_WORKFLOW.md) were fast-forwarded into local primary `main` at `95c1676`. Its tracked state was clean; local `.codex/config.toml` sandbox preferences and Finder metadata remained untouched. Requirements-review amendments remain preserved, and all twelve original schemas/fourteen examples remain byte-identical in their canonical package. The requirements branch was retained. The active implementation worktree remains in use; no push, installation or live enrollment occurred.
+
+The internal [private backend lifecycle](GO_IOS_BACKEND.md#retained-session-lifecycle) now retains a process grant before backend execution, checks current authorization and private material at dispatch, keeps process identity across `execve`, and bounds cancellation, output and deadline. Engine recovery observes retained workers without automatic restart or cleanup; endpoint identity survives client recovery. A confirmed local exit never claims phone-session release. The complete 287-test suite passed before the final deadline refinement (`.build/check-backend-sessions.log`); all 23 focused session/control/process/maintenance tests passed after it (`.build/backend-session-fixtures-final.log`). Tests use synthetic executables and local IPC. Actual backend packaging/dispatch, trust/ownership bootstrap, phone release and physical qualification remain unfinished.
+
+The compiled Swift client also passed authenticated IPC, payload identity, admission and retained-result integration against the updated engine (`.build/native-client-backend-sessions.log`). Foundation preservation and 257 local links passed (`.build/foundation-backend-sessions.log`). No device backend was executed. The earlier sandbox-limited cancellation run could not inspect its fixture process group; that exact disposable group was subsequently verified and stopped, and the approved focused run passed.
+
+Signed-app tree verification now streams bounded file reads, includes directory/entry/depth bounds and rejects changes across the census/hash boundary while preserving prior digest identities. Native signature/provisioning inspection binds its original tree and exact decoded provisioning bytes through completion. Four new fixture groups and the existing archive/build/transfer/provisioning coverage pass: 25 focused tests, generated drift and strict package build (`.build/app-tree-fixtures.log`, `.build/app-tree-build.log`). Signing responses in the new identity test are synthetic; no actual signing or phone access occurred.
+
+Direct service restart/update now reuse maintenance's owned-phone and retained-backend blockers. A rejected lifecycle request preserves service, queue and pause state instead of bypassing session reconciliation. Fourteen focused lifecycle/maintenance/session tests pass (`.build/lifecycle-session-fixtures.log`), including the real disposable queued-service restart and synthetic owned/unknown phone and backend cases. This does not claim physical session teardown or installed update qualification.
+
+Expanded adopted-policy fingerprints now cover eight additional inspected coordination entry points across Mathy, Main Character and Roboty. Changed queued policy waits for review before execution; the complete 294-test suite, generated/strict/type checks and foundation preservation with 257 links pass (`.build/check-writer-policy-inventory-final.log`). A fresh read-only four-project inventory is retained in `.build/writer-policy-inventory.json`. Selected actual original branch/comparison and lease-token entry points also passed against disposable fenced repositories after the fixture creator exited (`.build/legacy-writer-entry-parity.json`). Complete historical/cooperating-writer qualification and adopted peer activation remain blocked; no live project was modified, gated, released or fenced.
+
+## Reviewed post-landing native recovery
+
+The Mathy adapter retains a validated `landed_reconciliation_failed` result separately from overall completion and offers a preview-bound native follow-up in the CLI and run-detail Actions menu. It fixes the recorded candidate/landed identity, primary commit, receipt, candidate generations, selectors and adopted policy. Confirmation creates a separate durable operation/log. Its original worker acquires the project leases; an injected planning boundary rechecks the selection inside that lease before native/workspace effects. It never invokes an integration worker. Passed original receipts and the source guard clear the old failure fields/exit status; uncertain effects remain blocked for observation. An interrupted pre-dispatch attempt can resume with the same identity.
+
+`bash scripts/dev.sh check` passed all 300 Node tests, generated drift, strict TypeScript and unchanged requirement/schema/provenance checks. `bash scripts/dev.sh native:test` passed 20 Swift methods; the unsigned native build passed. The read-only original Mathy parity runner passed four disposable-history scenarios with native/workspace actions replaced by inert callbacks. Earlier fixture verification caught an assertion that sampled the log before an explicitly requested observation; it was corrected to test repair-log isolation at the actual repair boundary. The new command is documented as an implementation extension in `ADOPTED_LANDING.md`; all eight baseline requirement documents remain byte-identical.
+
+No real project native repair, build, workspace closure, phone action, installation or publication ran. Actual native dependency/workspace behavior and paired adopted-project execution still need qualification.
+
+## Completed build-output retention
+
+Offline preparation now records output creation before creating its build directory, then seals a bounded completion snapshot separately from the source checkout and retained signed archive. The normal output-cleanup preview can select those intermediates only after confirmed owned Git checkout removal and the configured age threshold. It rechecks the exact snapshot, directory identity, process observations, associated artifact pins and unresolved clone work. New/changed files and unrecorded or failed/unsealable output remain protected. Cache symlink targets are never traversed or removed. Partial cleanup keeps its reviewed request and allows only the unchanged remaining subset.
+
+The shared output census uses incremental directory reads, bounded entries/depth/bytes and a final identity recheck. File lookup and ancestor verification avoid quadratic work on large output inventories. `bash scripts/dev.sh check` passed 306 Node tests, generated drift, strict compilation and foundation preservation checks. Six new build-output groups cover prerequisite checkout removal, modified/new/linked output, stale review, partial recovery, unconfirmed creation and pins on later artifact-dependent attempts; the offline preparation fixture verifies the actual seal. The 25-test focused build/storage/worktree run also passed before the final associated-pin case was added. All deletion targets were generated disposable fixture data. No real project output was cleaned.
+
+Summary compaction, Git retention release, unconfirmed old build output, and retained payload/backup cleanup remain open. Limits and ownership requirements are recorded in `STORAGE_RETENTION.md`.
+
+## Native launch observation
+
+The CoreDevice adapter now retains the selected app before launch, supplies an
+explicit empty child environment, validates the returned process identity and
+performs a separate live process query between two app identity observations.
+Lost replies and journal reopening observe the retained selection without
+redispatch. Only a unique main-app process can confirm a running state; app
+extensions, changed versions/paths, malformed results and ambiguous matches
+remain uncertain. Backend preflight is followed by a synchronous engine guard
+for current authorization, ownership, context, policy and cancellation.
+
+`bash scripts/dev.sh check` passed all 313 Node tests, generated drift, strict
+TypeScript, contract type regressions and original foundation preservation with
+258 local links (`.build/check-coredevice-launch.log`). Eighteen focused device
+tests also passed. A new test initially wrote its changed observation under the
+wrong fixture key; using the actual host/repository/device digest exercised and
+confirmed the dispatch guard. No native UI changed and no physical device
+command ran. Response parsers follow documented command help and primary tool
+consumers; real response-schema, initial ownership and physical launch proof
+remain required as recorded in `DEVICE_EXECUTION.md`.
+
+## Reviewed backup retirement
+
+New update backups now retain creation ownership before SQLite writes and seal
+their verified standalone output. Their digest is streamed with bounded memory.
+The normal storage review can retire an old completed backup only after the
+configured summary-retention interval and while two newer independently
+rehashed recovery copies remain. Pins, unresolved/interrupted work, peer
+acknowledgments, potentially live retained processes and maintenance holds
+preserve backup evidence. Old unrecorded or partially created backups remain
+protected; partial removal retains its exact request and cannot consume new
+files or replacement paths. Receipts and removal tombstones stay in the journal.
+
+All 320 Node tests, generated drift, strict compilation, contract type checks
+and foundation preservation with 259 local links passed
+(`.build/check-backup-retention.log`). Seven new backup groups cover newest-copy
+retention, stale reviews, damage, pins, interrupted output and standalone SQLite
+integrity. Existing update-stop/relaunch and storage tests passed as well. An
+initial test caught read-only verification creating WAL/SHM sidecars; SQLite now
+finalizes only the new backup copy in standalone mode before sealing, with the
+live journal remaining in WAL mode. No installed update or real backup cleanup
+occurred. Payload retirement, summary compaction and Git retention release
+remain separate implementation work.
+
+## Durable peer completion exchange
+
+Execution hosts now offer an exact completed-operation receipt. The sender
+atomically retains the completed response and acknowledgment outbox before
+sending its acknowledgment. Lost replies resume that same digest after journal
+reopening without repeating history promotion or another effect. The receiver
+accepts only the original authenticated sender, retains acknowledgment history
+and rechecks the result identity. Uncertain states, changed results and older
+peers without receipt support retain evidence. Operation responses expose the
+exchange state independently of execution success.
+
+Raw-log, owned-output, checkout and backup retention now consult this exchange.
+Imported Git operations retain their sender association at admission, including
+safe handling of older imported rows. Owner changes check outstanding receipts
+on both hosts; the original sender can still finish acknowledgment through a
+frozen transition without receiving writer authority. Source refs and bundles
+remain preserved pending their separate cleanup implementation.
+
+The full 323-test Node suite, generated/strict/type checks and foundation
+preservation with 260 local links passed (`.build/check-peer-completion.log`).
+The 32-test focused peer/retention suite passed, and the final added foreign-peer
+authorization check passed separately. A lost-reply fixture initially exposed
+an acknowledgment blocked behind frozen authority; explicit preflight and the
+narrow historical-receipt route corrected that recovery boundary. All traffic
+used injected local two-journal transport; no real SSH, live handoff or source
+cleanup occurred.
+
+## Cached remote-log retention
+
+Remote snapshots now share the configured raw-log cap with local attempt files.
+They retain independent cache and origin-observation timestamps, expose UTF-8
+safe truncation, and distinguish unavailable or expired output. Unknown older
+records count as protected usage. Eligible expiry atomically retains a tombstone
+and removes only the cached text; completion identities and request replay stay
+stable. Pinned, unresolved and unacknowledged peer snapshots remain protected.
+An older peer's untagged empty reply cannot become false evidence of an empty log.
+
+All 328 Node tests, generated drift, strict/type checks and foundation
+preservation with 260 local links passed (`.build/check-remote-log-retention.log`).
+The 25-test focused peer/log suite passed before the legacy-empty-reply assertion
+was added and included in the full run. Five new retention groups cover shared
+quota, UTF-8 bounds, unavailable/expired sources, protected records and immutable
+completion replay. No actual remote host or live output was accessed. SQLite
+page allocation remains separately accounted for by the managed-data cap.
+
+## Paired companion removal and authority reservation
+
+Generic companions can now unenroll through a durable local removal fence and
+an exact release receipt from the canonical host. The owner keeps its writer
+authority and becomes local-only; the departing clone preserves dirty/staged
+work, history and the prior authority epoch. Lost replies and changed hooks
+retain the same removal continuation. Reenrollment cannot promote the removed
+companion: it stays fenced until a newer explicit owner transition. Canonical
+removal requires an explicit ownership transfer first; adopted paired removal
+still depends on its unfinished writer migration.
+
+Owner transfer now reserves the destination before disabling the source. That
+reservation excludes a competing removal, while an already retained removal
+refuses reservation before the old owner is disabled. Old in-flight source
+fences can establish the new reservation during same-request recovery. Lifecycle
+checks also preserve interrupted work, unfinished captures, incoming transfers,
+potentially live workers and unacknowledged completion evidence.
+
+The full 336-test suite passed with generated/strict/type and foundation checks
+(`.build/check-paired-removal.log`). After the final upgrade-recovery addition,
+the strict build and 25 focused paired-lifecycle/peer tests passed
+(`.build/paired-removal-final-tests.log`); foundation preservation passed with
+261 local links. Nine new fixture groups cover peer release, journal reopening,
+fenced reenrollment, authorization, dependency preservation and both concurrent
+lifecycle orderings. An initial fixture attempted to fetch into its checked-out
+unborn branch; its setup now fetches to FETCH_HEAD before selecting the fixture
+branch. All repository and network activity used disposable clones and injected
+local transport. No real project was removed or paired.
+
+## Reviewed Git bundle retirement
+
+Settings → Storage and `service storage --bundles` now review completed outgoing
+and incoming transport copies separately. Cleanup verifies recorded file
+ownership, private directories, streamed bytes, the exact retained source ref
+and successful acknowledged operations. It preserves source commits/refs,
+native tasks, manifests and request/completion receipts. Failed, pinned,
+unfinished, unowned and unacknowledged material remains protected. New work in
+affected clones waits through retained partial cleanup; a missing file can
+complete only its existing unlink intent, while replacement files survive.
+
+All 344 Node tests passed with generated drift, strict/type checks and foundation
+preservation (`.build/check-git-bundle-retention.log`). The final malformed-owner
+path guard passed the rebuilt 19-test bundle/worktree/storage suite
+(`.build/git-bundle-retention-final-tests.log`). Twenty Swift methods passed and
+the unsigned native app build succeeded, including exact cleanup-category
+selection and retained-request behavior. Logs are
+`.build/git-bundle-retention-swift-tests.log` and
+`.build/git-bundle-retention-native-build.log`. Seven new bundle groups cover
+ownership, interrupted unlink, preserved replacements/history, receipt replay
+and incoming expiration. All removed files were generated disposable bundles.
+No live source ref, project file, installed payload or user export was removed.
+
+Git ref release, failed/unconfirmed transport cleanup, summary compaction and
+retained payload retirement remain separate work. The new route deliberately
+keeps those sources and lifecycle records intact.
+
+## Bounded installed payload verification
+
+Engine and native launch verification now stream regular files through bounded
+buffers. Manifests are limited to four MiB, individual files to 512 MiB and
+aggregate payload contents to four GiB; inventories and directory depth also
+have explicit limits. Both readers reject shared hard links, symlinks and special
+files before reading, open without following links, and compare file identity
+and metadata before and after reading. Source app ownership is not restricted
+to the current user, so an administrator-owned application remains eligible.
+
+Eight focused engine cases cover a valid manifest, oversized sparse files and
+manifests, FIFOs, hard links, symlinks, deep directories and escaped entrypoints.
+The compiled native launcher fixture also rejects oversized files/manifests and
+special/shared files, then resumes valid launch after correcting the fixture.
+Its existing replacement and retained-tampering checks still pass. These checks
+use disposable unsigned payloads; they do not qualify signed installation,
+physical update/restart or a running user's installation.
+
+The full 352-test Node suite, strict/generated contracts, type regressions and
+foundation preservation passed (`.build/check-payload-bounds-unrestricted.log`).
+The sandboxed attempt could not establish fixture process identity; the rerun
+used the process/socket access required by the existing integration harness.
+
+## Rollback after second-clone registration
+
+An activated second-clone adoption can now use the existing explicit rollback
+route. Rollback derives the prior configuration from the reviewed original
+snapshot instead of the already-adopted enrollment. A source that originally
+had no configuration file returns to generated migration-required policy.
+Restored source remains uncommitted; HEAD, index, unrelated drafts and retained
+request identities are preserved. Paired authority keeps its publication guard.
+The native review exposes this action and explains its source-file effects.
+
+All 14 adoption test groups passed, including four adapter families, restoration
+of generated policy, tracked-policy rollback interrupted after a file write,
+concurrent edits and same-request continuation. Twenty Swift tests and the
+unsigned native build passed. Evidence is in
+`.build/adoption-rollback-final-tests.log`,
+`.build/adoption-rollback-swift-tests.log` and
+`.build/adoption-rollback-native-build.log`. No live clone was changed.
+
+## Durable resource execution and cleanup
+
+Ordinary workflow commands now retain resource intent before creating a waiting worker and retain exact PID/start/boot/clone/enrollment identity before granting exec. The original stdin is independent of the grant. The process runner tracks observed descendants, verifies exact identities before bounded termination and keeps child exit, effective cancellation/timeout and cleanup release separate. Scope fences and existing writer owners survive unresolved release. Startup observes retained resources without repeating starts or guessed cleanup; maintenance includes their blockers.
+
+The first resource allocation transaction advances the existing journal to version 2, fencing older readers before effects. The canonical registry now has seventeen schemas and twenty generated outputs; original imports and the original 83 acceptance IDs remain preserved with an additive twenty-one-case lifecycle extension. Exact Simulator lifecycle and existing admission interfaces preserve initial boots, nested ownership and retained visual sessions; the macOS adapter remains unqualified and was not executed.
+
+The source extension also includes bounded named provider/service owners, existing-admission repository bridges with exact qualification gates, native owning-chat closeout fallback, independent full/shallow Git archive and restore verification, paired native service registration/retirement receipts, storage reservations, private allowlisted resource diagnostics and timestamped on-demand health. Enrollment/authority changes are fenced by retained resources. No second scheduler, ownership database or cleanup daemon was added.
+
+Focused proof includes 48 resource/Git/native-owner/privacy/peer tests, 28 process/maintenance/session tests, 31 process/build-output/device-build/lifecycle tests, 24 Swift tests and a disposable immutable-payload SIGKILL/restart pilot. These groups overlap and do not establish actual installed acceptance. Final cumulative results and integration identity belong to the implementation receipt. [RESOURCE_LIFECYCLE.md](RESOURCE_LIFECYCLE.md) owns the requirement matrix, source/capability limits, remaining AT-LC01–21 variants and rollout/rollback owners. No real project enrollment, Simulator/provider/phone action or installation occurred.
+
+## Reviewed cleanup restart repair
+
+The post-implementation review reproduced an unresumable cleanup: startup
+observation changed the resource generation without advancing the accepted
+cleanup's expectation. This left admission fenced even after confirmed absence.
+The repair commits reviewed resource/expectation transitions atomically, including
+initial selection, stop, failure, completion and same-context observation. It
+does not endorse unrelated generation or identity drift. Retry limits/backoff
+remain retained, and a never-committed review requires a fresh preview.
+
+Thirty-one new crash/race/drift/lifetime tests cover fifteen SIGKILL persistence
+edges, partial dependency progress, untouched selections, confirmed disappearance,
+retained presence, deferred/failed observation and revocation of an awaited close.
+The packaged-service pilot now also crashes during process cleanup and proves
+same-request continuation plus restored new admission. Fifty-nine focused tests
+pass. These fixtures make a separately authorized isolated Contribution clone a
+reasonable first generic Git/process pilot; they do not qualify installed service,
+Simulator/provider/native attachment or paired-host behavior. The existing primary
+and all other chats' worktrees keep the interim workflow.
+
+## Connectivity implementation — October 6, 2026
+
+The owner-approved additive [VPN connectivity amendment](requirements/10-VPN_CONNECTIVITY.md)
+now uses the same engine, journal, peer transport, CLI and native client. Read-only
+paired health, bounded stage/confidence facts, shared host retries, passive native
+wake/network hints, optional provider diagnostics, distinct actual Git evidence
+and locally durable canonical-check admission are implemented. Uncertain admission
+looks up immutable retained scope before another dispatch; old readers are fenced
+by journal v3 without lowering resource versions. Exact private process-release
+evidence can be observed without stopping a live owner. The [connectivity record](CONNECTIVITY.md)
+contains the gap map, policies, troubleshooting, migration impact and remaining
+proof; [the receipt](verification/connectivity.json) owns actual commands/results.
+
+Source and automated fixtures remain separate from actual MacBook Pro/Mini,
+Proton/Tailscale, installed launchd and physical network acceptance. No live VPN
+settings, SSH trust, installation or enrollment were changed. Existing integration
+ownership, gates and Local/Standard validation are retained.
+
+
+## Adopted project seam history
+
+# Adopted project seams
+
+Read-only primary-checkout inspection on 2026-10-05 confirmed separate project runtimes and hook ownership. No project was enrolled, edited, checked, pushed or activated by that inspection.
+
+| Project | Node / pnpm observed | Preserved behavior |
+|---|---|---|
+| Mathy | 24.19.0 / 11.22.0 | Trusted dispatcher, policy-only landing, permitted multiple author dates, explicit combined message, cumulative publication selection |
+| Main Character | 24.21.0 / 11.23.0 | Husky bootstrap, integration-only landing, cumulative risk/strict gate, exact pushed tree, existing primary mutation lease |
+| Roboty | 24.21.0 / 12.4.2 | Husky owner, integration-only landing, cheap local safety, separate activation registry for device, launch and distribution actions |
+| Glass Alpha | 24.19.0 / 11.22.0 | Existing commit/lifecycle owner and one-date attribution, inactive pre-push validation and CI |
+
+These observations are not runtime constants. The installed adapter catalog identifies policy families and hashes the current bounded seam files without exporting their source or attribution identities. `repos migration --repo ID [--adapter ID]` reports the current inventory and leaves cutover pending. Unknown/missing seams cannot silently select a generic adapter. Glass Alpha enrollment preserves its visibly inactive gate while still requiring migration of its existing hook owner.
+
+`repos runtime --repo ID --node /absolute/node --pnpm /absolute/pnpm` explicitly registers the project tools. All four inspected projects declare Node through `.nvmrc`; the adopted catalog preserves that source. Generic runtime selection accepts `.nvmrc` or `.node-version`, requires matching exact versions if both exist, and checks the exact `packageManager` pin before observing both executable versions. Every relevant check revalidates the selected source pins and uses the registered tool environment. Contribution's bundled runtime is not an implicit project runtime, and missing pins never trigger a background package installation.
+
+Live inspection also confirmed that Main Character and Roboty retain latest-log paths that need per-attempt migration, and that their existing primary lease is distinct from Contribution's generic lease. Mathy acquires its lease through its own preparation module. Reviewed adoption now supplies the compatible publication boundary and [original native/captured-task landing](ADOPTED_LANDING.md). Calling an old gate beside an unrelated new lock would not establish parity. Cross-host imported sources and complete adopted two-Mac writer fencing remain unfinished.
+
+Remaining M4 work includes shared coordination extraction, verified hook lease adoption inside the original Git process ancestry, original-policy execution and receipt reuse, imported-source adapters, per-attempt legacy reporting and reversible cutover patches. The four live projects remain unchanged until the owner’s deferred enrollment step. Runtime/policy fixtures in `tests/adapters.test.mjs` establish the implemented subset, not migration completion.
+
+The first shared-coordination slice now implements the exact `primary-checkout-mutation.lock` owner protocol and recovery boundary. A [read-only source parity run](verification/legacy-lease-parity.json) loaded each of the four inspected standalone lease modules and proved mutual exclusion in disposable Git common directories: legacy refuses a Contribution-owned lease, Contribution refuses a legacy-owned lease, and matching release permits the next owner. Unknown retained locks are preserved for reconciliation. This module is not selected by an adopted writer yet; hook lease borrowing, landing-flight coordination and reversible cutover still need their own implementation and proof.
+
+Managed generic pushes now retain the actual Git process PID/start time before the hook may run. The CLI reports its live process identity, and the service checks that ancestry together with the one-use invocation token, exact ref transaction and retained writer lease. `tests/hook-ancestry.test.mjs` rejects a valid-token caller outside that process tree without consuming the invocation. The compatible legacy lease exposes the same ancestry check for future adopted hook borrowing; that API is not yet a completed project cutover.
+
+The compatible landing-flight queue now distinguishes exact candidate/requirements joins, conflicting requirements and FIFO serialization. The [four-source parity fixture](verification/legacy-flight-parity.json) passes against the inspected original modules in disposable Git directories. Unconfirmed old queue/coordinator/active owners remain retained rather than expiring into new writer authority. Joining alone does not prove an original validation receipt. Adoption still needs to bind this coordination to the project writer and original policy.
+
+`repos migration --repo ID --prepare-reporting --request-id UUID` now creates a private, immutable review proposal for the enrolled reporting owner. It preserves current source, fingerprints before/after content and records the actual branch/HEAD. It does not apply changes or activate adoption. Reusing an ID returns its original proposal even if the source later changes; interrupted proposal identity stays reserved. Source snapshots stay in the private service directory and are excluded from source/release artifacts.
+
+The shared reporter allocates separate attempt directories and seals bounded snapshots with retained checksums. Main Character already supports the required per-attempt destinations. Mathy needs one archive-destination override; Roboty needs five output overrides and an optional environment parameter. Original default paths and gate selection remain unchanged. Glass Alpha proposes no validator or activation. Four focused fixtures pass, including concurrent attempts, later log mutation, private proposal idempotency, source drift and inactive policy. Generated candidates parse against the inspected current sources; this establishes patch compatibility only, not execution parity of the full gates. Hook lease adoption and actual writer integration remain required before cutover.
+
+The installed CLI/service now also expose an internal verified borrowing protocol for an adopted gate. A private invocation must bind the running push, exact repository/policy/attempt, active gate phase, actual Git process start identity and current outer legacy lease. A generated source bridge delegates acquisition only after this verification. Its distinct borrowed token survives the legacy token-file shape, and release validates that token without removing the outer lease. Missing bridge context, changed policy, unrelated/reused processes and finished invocations refuse. Original unmanaged acquisition/release remain the fallback.
+
+The [four-source bridge proof](verification/legacy-bridge-parity.json) executes the generated wrappers through actual disposable Git pre-push ancestry and authenticated IPC. It confirms mutual exclusion, old default behavior, serialized token release and resumed legacy writers. It does not execute any product gate. Mathy's separate process-identity dependency is now included in its policy fingerprint inventory.
+
+The adopted managed-push runner now acquires the compatible primary lease and creates those invocations only after validating an active adoption record, current policy fingerprints, the existing dispatcher and a private retained original gate. The CLI executes that original shell program as a descendant of the actual Git process, preserving its argument list, stdin, logical script path, project runtime and exit status. The original lease wrapper borrows the outer writer through the authenticated service. The gate is claimed once, completion belongs to that same live client, and source, policy and destination are checked again before Git may publish. Standard configuration cannot create an active adoption record.
+
+Six end-to-end disposable cases pass: actual delivery and idempotency, original gate refusal versus remote rejection, inactive validation without a project runtime, changed policy during execution, compatible legacy contention, and an adoption change invalidating an otherwise unchanged Push preview. Gate receipts retain their adoption identity and sealed legacy output. These fixtures deliberately inject completed adoption records; production creation of those records still needs the reversible cutover transaction, canonical external-hook route and original landing/import adapters. None of the four live projects has been migrated or run through its gate.
+
+Canonical external Git pushes now enter the same adopted gate and legacy primary lease through verified live Git ancestry. The retained result describes only the gate: delivery stays unobserved even when a remote later rejects the push. Empty ref transactions remain not run; inactive validation remains inactive. Paused, busy, uncertain and companion-owned routes refuse before a gate starts. Client command prefixes that cannot be unambiguously inspected also refuse with the supported managed Push route.
+
+External clients supervise only their own gate process group with a finite budget. A missing client or exceeded budget retains uncertain evidence and the writer lease; it cannot silently release an orphaned gate or replay publication. Such a receipt blocks update maintenance. Completed external output retains a redacted bounded 128 KiB snapshot in its own attempt log, with an explicit truncation marker; interrupted output may be unavailable and is not invented. Existing project reporting snapshots remain separate. Thirteen focused Git/ancestry/lease fixtures pass, including a lost external client and transport refusal after a gate pass. Production cutover and original landing/import integration still need completion.
+
+The initial [reversible hook adoption flow](ADOPTION.md) now prepares private source proposals, applies matching reviewed changes under the compatible lease/landing-flight boundary, and activates only after an exact committed migration range. It preserves the existing trusted/Husky dispatcher and verifies its dependencies. Rollback preserves concurrent edits, source history, receipts and paired-host publication refusal. Production activation no longer requires injecting a registration into private state. Original landing/import adapters and full live policy parity remain separate; no live project has been enrolled or cut over.
+
+Partial adoption apply/rollback failures now identify their retained request in the service response, including while maintenance temporarily refuses continuation. The native request journal preserves that exact step instead of generating a new migration identity. Changed proposal/action/revision does not inherit the retained request. This does not change migration approval, source commit or activation requirements.
+
+Name and publication configuration changes on an active adopted project now reverify its original hook/dispatcher/policy evidence and bind that unchanged registration to the new configuration revision in the same durable transaction. They cannot replace validation, runtime or integration policy. Recovery refuses a changed adapter registration or enrollment/owner, preserving the retained intent and concurrent state. The original adoption proposal remains an immutable historical review; later configuration edits are not silently reverted by its old rollback snapshots.

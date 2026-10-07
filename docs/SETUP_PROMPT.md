@@ -1,5 +1,7 @@
 # Prompt for a new Contribution chat
 
+Historical setup scope or dated inventory. Retained for provenance; this is not the current assignment or proof of installed acceptance. See [current implementation](IMPLEMENTATION_STATUS.md), [storage retention](STORAGE_RETENTION.md), and [journal compatibility](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback).
+
 Open the Contribution project and paste the text below. The documentation prepared by the review is in this task checkout: `/Users/gabe/.codex/worktrees/3f07/contribution/docs`. That location is a handoff reference, not an installed runtime path. If this checkout has been archived or moved, use the maintained docs in the current Contribution repository instead.
 
 ```text

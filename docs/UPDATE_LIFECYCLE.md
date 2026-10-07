@@ -8,7 +8,22 @@ The native release updater uses checksum-pinned Sparkle 2.10.0. Its full runtime
 
 Checking requires a valid signed release app, an HTTPS feed, a 32-byte public update key and the bundled signed-release engine manifest. Unsigned development builds show the missing configuration. Reconciliation registers the currently installed helper, checks its manifest digest against the app, and explicitly releases the same journal window. An unchanged app can cancel; a changed app must reconcile activation. If the native app loses its recovery pointer, the authoritative service window remains held and needs explicit inspection; it never expires into permission to run.
 
-The journal begins at version 1 and transactionally advances to version 2 before its first resource intent. Both versions use the same existing records table. Existing versions are inspected read-only before journal-mode or metadata writes; an unsupported newer schema is rejected without restoring an old snapshot. Backups are recovery evidence, never an automatic rollback mechanism. Version-1 engines must not open version-2 resource ownership; an update or rollback must preserve records and use a compatible reader. New backups are finalized as standalone SQLite copies and retain exact creation/completion ownership. [Reviewed backup retention](STORAGE_RETENTION.md#completed-update-backups) preserves two newer verified copies and all unresolved or pinned evidence. Automated rollback selection remains pending.
+## Journal compatibility and rollback
+
+This is the single current compatibility and rollback owner. One SQLite journal and existing records table retain operation/request identities, host bindings, receipts and ownership. Compatibility is inspected read-only before journal mode, metadata writes or dispatch.
+
+| Journal floor | First producer / semantics |
+|---|---|
+| v1 | Original durable journal |
+| v2 | Repository resource intent and exact ownership before allocation |
+| v3 | Connectivity evidence and uncertain remote-admission semantics |
+| v4 | Host-scoped SSH/provider process intent, identity and grant without repository enrollment |
+
+The current reader supports v1–v4. Producers only raise the floor, inside the relevant intent transaction before effects; repository allocation cannot downgrade v3/v4. A v3 payload refuses a v4 journal before opening a writer. Host resources have explicit host scope and null repository/operation/attempt IDs, not fabricated enrollment. Old stored optional provider fields default to unknown/stale; no old cached success becomes current readiness.
+
+Maintenance status, stop, restart and update include active health/provider observations, retained process resources and legacy unconfirmed connection-release evidence. No final backup or replacement is allowed while these blockers remain. New automatic work stops in the held window; accepted effects drain under their existing owners. Exact absence is observed without guessing process kills; stopping local SSH never proves a remote mutation stopped.
+
+Rollback must use an immutable payload capable of reading the retained floor and ownership semantics. A source revert or restoring an old database cannot undo external effects or create a second finalizer. Back up state through maintenance before separately authorized installation. Backups are private recovery evidence, never automatic downgrade authority. [Backup retention](STORAGE_RETENTION.md#completed-update-backups) preserves two newer verified copies and all unresolved/pinned evidence. Automated rollback selection remains pending.
 
 ## Release candidate preparation
 
@@ -24,4 +39,4 @@ Signing, Node JIT under hardened runtime, notarization, Gatekeeper on a clean Ma
 
 An interrupted repository configuration retains its original client request across an early maintenance refusal. `repos configure --repo ID --resume --request-id UUID` uses the service's exact retained configuration and original reviewed revision; it accepts no replacement values. Concurrent source edits remain untouched and block completion until reconciled. Completed request replay returns the original result.
 
-Retained utility resource records now join maintenance/restart blockers. The first resource intent upgrades the same SQLite journal to version 2 in a transaction before allocation. Version-1 engines refuse this journal before mutation. Runtime rollback must retain/reconcile these records and use a compatible engine; restoring a backup never undoes external effects. [Resource lifecycle](RESOURCE_LIFECYCLE.md) owns the extension.
+Retained resource ownership is described in [Resource lifecycle](RESOURCE_LIFECYCLE.md); the compatibility table above owns the current floor.

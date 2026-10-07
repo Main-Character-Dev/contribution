@@ -1,6 +1,6 @@
 # Configuration and interface examples
 
-These examples describe the application Codex will implement. They do not configure this computer or claim that the Contribution commands are already installed.
+These preserved synthetic examples describe the maintained contracts and independent scenarios. They do not configure this computer or claim that the Contribution commands are already installed.
 
 | File | Interpretation |
 |---|---|
@@ -34,3 +34,5 @@ All new device examples have `recordMode: fixture`. They are independent non-liv
 The fixture app and team are deliberately fictitious. They do not change Roboty's identity or authorize its installation. App update/data-migration authority remains with each project adapter. No example includes private signing/pairing material or a claimed phone-side artifact digest.
 
 The new fixtures map to the same-named schemas, except that both device-operation JSON files use `device-operation.schema.json`. Old submission/preview fixtures continue to use `response.schema.json`. `run-event.json` uses `event.schema.json`, and `repository-status.json` uses `status.schema.json`. Resolve all schema URNs locally when validating them.
+
+The [current schema inventory](../schemas/README.md) includes additive resource/connectivity contracts; these fourteen imported JSON examples remain unchanged and do not establish physical or installed acceptance.

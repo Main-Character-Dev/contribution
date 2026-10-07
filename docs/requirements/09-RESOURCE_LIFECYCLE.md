@@ -50,3 +50,7 @@ These stable IDs complement the original 83 cases. Fixture results never qualify
 ## Implementation and qualification
 
 See [Resource lifecycle](../RESOURCE_LIFECYCLE.md), [implementation status](../IMPLEMENTATION_STATUS.md), [verification ledger](../verification/acceptance-status.json) and [roadmap](../ROADMAP.md). Raw host evidence and private historical archives remain external. Rollback must retain unresolved ownership and fence older readers; reverting source cannot erase actual effects.
+
+## Implementation proof pointers
+
+The [current implementation](../IMPLEMENTATION_STATUS.md) and [repair receipt](../verification/connectivity-repair.json) record software scope and proof. [Update lifecycle](../UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback) owns the reader floor for host-scoped grants; all requirement/acceptance IDs and independent physical variants remain authoritative. Fixture evidence grants no live trust, network change, device capability or enrollment authority.

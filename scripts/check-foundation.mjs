@@ -86,3 +86,5 @@ for (const file of files(root)) {
   }
 }
 console.log(`Foundation checked: MIT, 26 byte-identical JSON imports, 63 PRD/40 RDEV requirements, all 83 preserved plus 21 lifecycle and 28 connectivity acceptance identities with explicit partial evidence, pins, payload boundary, privacy and ${links} local links.`);
+
+await import('./check-documentation.mjs');

@@ -92,3 +92,7 @@ durable before dispatch; uncertain check/publication/device admission queries th
 retained immutable request before any resend. Unsupported lookup or absent
 historical scope preserves uncertainty. Provider evidence never grants readiness,
 trust, owner authority or permission to replay work.
+
+## Current connectivity dispatch boundary
+
+[Connectivity](CONNECTIVITY.md) owns shared retry/evidence policy. Retained hello capabilities are bounded and negotiated; known old peers receive no unsupported health request, while ordinary authenticated exchanges can establish readiness. Only the exact legacy repository-required health wire refusal maps to unsupported health; unrelated malformed `INVALID_REQUEST` stays distinct. Unsupported immutable admission lookup preserves `OUTCOME_UNCERTAIN` and never authorizes resend. SSH/provider commands use host-scoped grants in the existing resource journal; [update lifecycle](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback) owns their reader floor.
