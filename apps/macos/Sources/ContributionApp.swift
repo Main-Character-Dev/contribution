@@ -505,7 +505,7 @@ private struct ContributionSettings: View {
                             Button("Connection settings") { NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")) }
                             Button("Network diagnostics") { Task { _ = await workspace.call("hosts.diagnose", ["host": .string(hostID)]); await workspace.refresh() } }
                         }
-                        Text("Provider evidence: \(connection["provider"]?.object["status"]?.text ?? "unknown") · \(connection["provider"]?.object["path"]?.text ?? "unknown")").font(.caption).foregroundStyle(.secondary)
+                        Text(presentation.providerSummary).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Text("Contribution uses your configured SSH route. Verify changed host identity or credentials in your SSH connection settings. VPN configuration remains under your control.").font(.caption).foregroundStyle(.secondary)

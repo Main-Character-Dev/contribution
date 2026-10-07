@@ -4,10 +4,16 @@ public struct ConnectivityPresentation: Sendable {
     public let title: String
     public let message: String
     public let freshness: String
+    public let providerSummary: String
     public init(_ fields: [String: JSONValue]) {
         let state = ConnectivityState(rawValue: fields["state"]?.text ?? "") ?? .unknown
         let fresh = ConnectivityFreshness(rawValue: fields["freshness"]?.text ?? "") ?? .unknown
         freshness = fresh.rawValue
+        let provider = fields["provider"]?.object ?? [:]
+        let providerFreshness = ConnectivityFreshness(rawValue: provider["freshness"]?.text ?? "") ?? .unknown
+        let selectedPath = provider["path"]?.text ?? ""
+        let path = ["direct", "relay"].contains(selectedPath) ? selectedPath : "unknown"
+        providerSummary = "Provider evidence: " + providerFreshness.rawValue + " · " + path
         switch state {
         case .ready: title = fresh == .fresh ? "Connected" : "Previously connected"
         case .checking: title = "Checking connection…"

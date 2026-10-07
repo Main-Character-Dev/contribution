@@ -35,12 +35,13 @@ export const processResourceAdapter: ResourceAdapter = {
     while (!signal.aborted) { if (await this.observe(resource, signal) === 'absent') return; await new Promise(resolve => setTimeout(resolve, 50)); }
   }
 };
-export function ownedProcess(lifecycle: ResourceLifecycle, op: Operation, dependencies: string[] = [], kind: 'process' | 'server' = 'process'): ProcessOwnership {
+export function ownedProcess(lifecycle: ResourceLifecycle, op: Operation | null, dependencies: string[] = [], kind: 'process' | 'server' = 'process', hostScope?: string): ProcessOwnership {
   let resource: Resource;
   return {
     intent(executable, argv, deadlineAt) {
-      resource = lifecycle.begin(op, { requestId: id(), kind, owner: 'utility', lifetime: 'ephemeral', adapter: processResourceAdapter.id, adapterVersion: processResourceAdapter.version, deadlineAt,
-        dependencies, scope: `process:${id()}`, reason: `Accepted command ${digest({ executable, argv })}`, stopAction: 'contribution service resources --preview' });
+      const input = { requestId: id(), kind, owner: 'utility', lifetime: 'ephemeral', adapter: processResourceAdapter.id, adapterVersion: processResourceAdapter.version, deadlineAt,
+        dependencies, scope: hostScope ?? `process:${id()}`, reason: `Accepted command ${digest({ executable, argv })}`, stopAction: op ? 'contribution service resources --preview' : 'contribution hosts reconcile' } as const;
+      resource = op ? lifecycle.begin(op, input) : lifecycle.beginHost(input);
     },
     allocated(pid, start) {
       resource = lifecycle.allocate(resource, { type: 'process', value: { pid, start, group: pid, boot: bootIdentity(), members: JSON.stringify([{ pid, start }]) } });
@@ -50,6 +51,7 @@ export function ownedProcess(lifecycle: ResourceLifecycle, op: Operation, depend
     unconfirmed(values) { requireValue(values.length <= 64, 'PROCESS_CENSUS_LIMIT', 'Unknown members require bounded exact-owner inspection.'); resource = lifecycle.transition(resource, { identity: { type: 'process', value: { ...resource.identity!.value, unconfirmed: JSON.stringify(values) } } }); },
     stopping() { resource = lifecycle.transition(resource, { state: 'stopping' }); },
     finished(result: ProcessResult) { resource = lifecycle.finish(resource, { code: result.code, actualExitCode: result.actualExitCode ?? null, signal: result.signal, timedOut: result.timedOut, cancelled: result.cancelled, cleanup: result.cleanup ?? null }, result.cleanup?.released === true);
+      if (!op) return;
       const current = lifecycle.store.get(op.operationId); lifecycle.store.update(current, { result: { ...current.result, resourceReceipts: [...((current.result['resourceReceipts'] as unknown[]) ?? []), { resourceId: resource.resourceId, workflowExit: result.code, actualExitCode: result.actualExitCode ?? null, release: resource.state, cleanup: result.cleanup ?? null }] } });
     },
     uncertain(reason) { if (resource && resource.state !== 'stopped') resource = lifecycle.unresolved(resource, reason); }

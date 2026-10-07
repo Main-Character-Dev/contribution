@@ -303,6 +303,7 @@ export class Workflows {
       const gate = await this.checks(op, repo, repo.path, signal, true);
       requireValue(digest(await this.scope(repo)) === digest(invocation.scope), 'STALE_PUSH_SELECTION', 'Publication inputs changed during the gate.');
       const currentRemote = await git(repo.path, ['ls-remote', '--exit-code', invocation.scope.destination, invocation.scope.ref], { timeoutMs: 15000 });
+      recordGitConnectivity(this.store, repo.id, invocation.scope.destination, currentRemote);
       requireValue((currentRemote.code === 2 && !invocation.remoteBefore) || (currentRemote.code === 0 && currentRemote.stdout.split('\t')[0] === invocation.remoteBefore), 'REMOTE_CHANGED', 'The destination advanced during the gate.');
       this.store.put('gate', operationId, gate); return gate;
     } catch (error) {

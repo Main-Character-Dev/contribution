@@ -99,7 +99,7 @@ test('new observations fence the journal and resource allocation cannot downgrad
    const op=f.store.admit(randomUUID(),'checks',randomUUID(),{},'fixture');
    lifecycle.begin(op,{requestId:randomUUID(),kind:'provider',owner:'utility',lifetime:'ephemeral',adapter:'fixture',adapterVersion:1,scope:randomUUID(),reason:'Fixture resource migration',stopAction:'fixture close'});
    assert.equal(f.store.db.prepare('PRAGMA user_version').get().user_version,3);
-   f.store.db.exec('PRAGMA user_version=4');assert.throws(()=>new Journal(f.root),{code:'DATABASE_TOO_NEW'});
+   f.store.db.exec('PRAGMA user_version=5');assert.throws(()=>new Journal(f.root),{code:'DATABASE_TOO_NEW'});
  }finally{f.close();}
 });
 test('optional provider absence, login state and malformed output never alter helper readiness',async()=> {

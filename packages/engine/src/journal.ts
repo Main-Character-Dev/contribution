@@ -30,14 +30,14 @@ export class Journal {
     // Check compatibility read-only before changing journal mode or metadata.
     if (existsSync(path) && statSync(path).size) {
       const probe = new DatabaseSync(path, { readOnly: true, allowExtension: false });
-      try { requireValue(Number(probe.prepare('PRAGMA user_version').get()?.['user_version']) <= 3, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3); }
+      try { requireValue(Number(probe.prepare('PRAGMA user_version').get()?.['user_version']) <= 4, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3); }
       finally { probe.close(); }
     }
     this.db = new DatabaseSync(path, { enableForeignKeyConstraints: true, enableDoubleQuotedStringLiterals: false, allowExtension: false });
     chmodSync(path, 0o600);
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=3000;');
     const version = Number(this.db.prepare('PRAGMA user_version').get()?.['user_version']);
-    requireValue(version <= 3, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3);
+    requireValue(version <= 4, 'DATABASE_TOO_NEW', 'This payload cannot open the newer journal. Preserve it and use a compatible release.', 3);
     if (version === 0) this.transaction(() => this.db.exec(`
       CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE repositories (id TEXT PRIMARY KEY, common_dir TEXT UNIQUE NOT NULL, body TEXT NOT NULL);
@@ -46,6 +46,9 @@ export class Journal {
       CREATE TABLE records (namespace TEXT NOT NULL, key TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(namespace,key));
       PRAGMA user_version=1;`));
     this.hostId = this.getMeta<string>('hostId') ?? id(); this.setMeta('hostId', this.hostId);
+  }
+  enableHostResources(): void {
+    if (Number(this.db.prepare('PRAGMA user_version').get()?.['user_version']) < 4) this.db.exec('PRAGMA user_version=4');
   }
   enableConnectivity(): void {
     // Fence old dispatchers before recording acceptance-unknown remote checks.

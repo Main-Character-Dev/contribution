@@ -4,9 +4,9 @@ export interface Resource {
   schemaVersion: 1;
   resourceId: string;
   requestId: string;
-  operationId: string;
-  attemptId: string;
-  repositoryId: string;
+  operationId: string | null;
+  attemptId: string | null;
+  repositoryId: string | null;
   hostId: string;
   bootId: string;
   clone: string;
@@ -42,4 +42,5 @@ export interface Resource {
   outcome: {
     [k: string]: unknown;
   } | null;
+  scopeType?: "repository" | "host";
 }

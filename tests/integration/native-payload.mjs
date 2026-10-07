@@ -25,8 +25,8 @@ try {
   let errors = ''; running.stderr.on('data', bytes => { errors += bytes; });
   const oldPath = String((await Promise.race([once(running.stdout, 'data'), once(running, 'exit').then(([code]) => { throw new Error(`Launcher exited ${code}: ${errors}`); })]))[0]).trim();
   const hintPath = join(support, 'native-hint.json');
-  for (let attempt = 0; attempt < 40; attempt++) { try { readFileSync(hintPath); break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); } }
-  assert.deepEqual(JSON.parse(readFileSync(hintPath, 'utf8')), { event: 'launch' }, 'The UI-closed launcher relays a categorical hint to its one engine child');
+  for (let attempt = 0; attempt < 40; attempt++) { try { if (readFileSync(hintPath,'utf8').includes('launch')) break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); } }
+  assert(readFileSync(hintPath, 'utf8').trim().split('\n').map(line=>JSON.parse(line)).some(hint=>hint.event==='launch'), 'The UI-closed launcher relays a categorical hint to its one engine child');
   assert(oldPath.startsWith(join(support, 'Payloads/'))); assert.equal(statSync(oldPath).mode & 0o777, 0o500);
   const call = () => spawnSync(launcher, ['--cli', 'version', '--json'], { env, encoding: 'utf8', timeout: 20000 });
   assert.equal(JSON.parse(call().stdout).path, oldPath);
@@ -34,7 +34,7 @@ try {
   const next = call(); assert.equal(next.status, 0, next.stderr); const updated = JSON.parse(next.stdout);
   assert.equal(updated.version, 2); assert.notEqual(updated.path, oldPath); assert.equal(running.exitCode, null);
   assert.match(readFileSync(join(oldPath, 'cli.cjs'), 'utf8'), /version:1/);
-  assert.deepEqual(updated.args, ['version', '--json']);
+  assert.deepEqual(updated.args, ['version', '--json', '--state-dir', join(support,'Journal')]);
   const altered = join(updated.path, 'cli.cjs'); chmodSync(altered, 0o600); writeFileSync(altered, 'tampered');
   assert.equal(call().status, 3); assert.equal(readFileSync(altered, 'utf8'), 'tampered', 'A damaged retained payload is not silently overwritten');
   writeVersion(3);

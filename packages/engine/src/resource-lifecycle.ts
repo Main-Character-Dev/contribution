@@ -83,17 +83,23 @@ export class ResourceLifecycle {
     const result = { policy: value, revision: digest(value), requestId };
     this.store.transaction(() => { this.store.setMeta('resourcePolicy', value); this.store.put('resourcePolicyRequest', requestId, { input, result }); }); return result;
   }
-  begin(op: Operation, input: ResourceIntent): Resource {
+  private resourceContext(repositoryId: string | null): ResourceContext {
+    return repositoryId === null ? { clone: digest({ directory: realpathSync(this.store.directory), hostId: this.store.hostId }), revision: 'host-scope-v1' } : this.context(repositoryId);
+  }
+  beginHost(input: ResourceIntent): Resource {
+    return this.begin({ operationId: null, attemptId: null, repositoryId: null }, input);
+  }
+  begin(op: Pick<Operation, 'operationId' | 'attemptId' | 'repositoryId'> | { operationId: null; attemptId: null; repositoryId: null }, input: ResourceIntent): Resource {
     requireValue(validateContractFormat('uuid', input.requestId), 'INVALID_USAGE', 'Resource intent needs an immutable request UUID.', 2);
     const key = digest({ operationId: op.operationId, attemptId: op.attemptId, input });
     const prior = this.all().find(r => r.requestId === input.requestId);
     if (prior) { requireValue(this.store.record<{ digest: string }>('resourceRequest', input.requestId)?.digest === key, 'REQUEST_ID_CONFLICT', 'The resource request has changed inputs.'); return prior; }
-    const context = this.context(op.repositoryId), rows = this.all(), { policy } = this.policy();
+    const context = this.resourceContext(op.repositoryId), rows = this.all(), { policy } = this.policy();
     requireValue(!this.store.records<Cleanup>('resourceCleanup').some(c => c.state === 'stopping' && c.preview.resources.some(r => r.scope === input.scope)), 'RESOURCE_CLEANUP_PENDING', 'Resume the exact pending cleanup before admitting this scope.', 3);
     const occupied = rows.filter(r => r.state !== 'stopped' && ['utility', 'borrowed'].includes(r.owner));
     requireValue(!occupied.some(r => r.scope === input.scope && r.hostId === this.store.hostId && r.resourceId !== input.parentId), 'RESOURCE_BUSY', 'This exact resource scope has an unreleased owner.', 4);
     if (input.owner === 'utility') {
-      for (const [limit, count] of [[policy.hostLimits[input.kind], occupied.filter(r => r.kind === input.kind).length], [policy.projectLimits[input.kind], occupied.filter(r => r.kind === input.kind && r.repositoryId === op.repositoryId).length]])
+      for (const [limit, count] of [[policy.hostLimits[input.kind], occupied.filter(r => r.kind === input.kind).length], [op.repositoryId === null ? undefined : policy.projectLimits[input.kind], occupied.filter(r => r.kind === input.kind && r.repositoryId === op.repositoryId).length]])
         requireValue(limit === undefined || count! < limit, 'RESOURCE_LIMIT', 'Resource admission reached its configured budget.', 4);
     }
     if (input.parentId) {
@@ -103,18 +109,19 @@ export class ResourceLifecycle {
     this.store.assertAdmissionStorage();
     const stamp = now();
     const record: Resource = { schemaVersion: 1, resourceId: id(), requestId: input.requestId, operationId: op.operationId, attemptId: op.attemptId, repositoryId: op.repositoryId,
-      hostId: this.store.hostId, bootId: this.bootContext(), clone: context.clone, enrollmentRevision: context.revision, parentId: input.parentId ?? null, dependencies: input.dependencies ?? [],
+      ...(op.repositoryId === null ? { scopeType: 'host' as const } : {}), hostId: this.store.hostId, bootId: this.bootContext(), clone: context.clone, enrollmentRevision: context.revision, parentId: input.parentId ?? null, dependencies: input.dependencies ?? [],
       kind: input.kind, owner: input.owner, lifetime: input.lifetime, adapter: input.adapter, adapterVersion: input.adapterVersion, scope: input.scope, token: id(), generation: 1,
       state: 'intent', identity: null, reason: input.reason, stopAction: input.stopAction, deadlineAt: input.deadlineAt ?? null, pinned: input.pinned ?? false,
       createdAt: stamp, updatedAt: stamp, retries: 0, retryAfter: null, outcome: null };
     this.store.transaction(() => {
       // Transactional compatibility migration, before the first allocation.
       // A v1 reader refuses user_version=2 before any write or worker dispatch.
+      if (op.repositoryId === null) this.store.enableHostResources();
       if (Number(this.store.db.prepare('PRAGMA user_version').get()?.['user_version']) < 2) this.store.db.exec('PRAGMA user_version=2'); this.save(record); this.store.put('resourceRequest', input.requestId, { digest: key, resourceId: record.resourceId });
     }); return record;
   }
   assertCurrent(expected: Resource): void {
-    const latest = this.get(expected.resourceId), context = this.context(expected.repositoryId);
+    const latest = this.get(expected.resourceId), context = this.resourceContext(expected.repositoryId);
     requireValue(digest(latest) === digest(expected) && expected.hostId === this.store.hostId && expected.bootId === this.bootContext() &&
       context.clone === expected.clone && context.revision === expected.enrollmentRevision,
       'RESOURCE_IDENTITY_CHANGED', 'Resource ownership, host boot, clone or enrollment changed; preserve the resource.', 3);
@@ -212,9 +219,9 @@ export class ResourceLifecycle {
       throw error;
     } finally { controller.abort(); if (timer) clearTimeout(timer); busy.delete(resourceId); }
   }
-  async reconcile(deadlineMs = 5000): Promise<void> {
+  async reconcile(deadlineMs = 5000, select: (resource: Resource) => boolean = () => true): Promise<void> {
     requireValue(Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 30000, 'RESOURCE_DEADLINE_INVALID', 'Observation requires a finite total deadline.', 3);
-    const deadline = performance.now() + deadlineMs, pending = this.all().filter(r => r.state !== 'stopped' && ['utility', 'borrowed'].includes(r.owner));
+    const deadline = performance.now() + deadlineMs, pending = this.all().filter(r => select(r) && r.state !== 'stopped' && ['utility', 'borrowed'].includes(r.owner));
     // Startup is observation-only. No allocation, repeated start, kill or lease
     // release is inferred from an expired wall clock or missing parent.
     for (const prior of pending) {
@@ -240,7 +247,7 @@ export class ResourceLifecycle {
       try {
         this.assertCurrent(record);
         requireValue(record.owner === 'utility' && !record.pinned && record.identity && this.adapters.has(`${record.adapter}@${record.adapterVersion}`), 'RESOURCE_PROTECTED', record.stopAction, 3);
-        requireValue(this.store.get(record.operationId).state !== 'running', 'RESOURCE_OPERATION_ACTIVE', 'Cancel/drain the active owner first.', 3);
+        requireValue(record.operationId !== null && this.store.get(record.operationId).state !== 'running', 'RESOURCE_OPERATION_ACTIVE', 'Cancel/drain the active owner first.', 3);
         resources.push(record);
       } catch (error) { protectedRows.push({ resourceId: record.resourceId, reason: error instanceof Fault ? error.code : 'RESOURCE_INSPECTION_UNAVAILABLE', stopAction: record.stopAction }); }
     }
@@ -255,7 +262,7 @@ export class ResourceLifecycle {
     requireValue(preview, 'RESOURCE_PREVIEW_REQUIRED', 'Review exact resources before cleanup.', 3);
     requireValue(!this.store.records<Cleanup>('resourceCleanup').some(r => r.requestId !== requestId && r.state === 'stopping' && r.preview.resources.some(a => preview.resources.some(b => a.scope === b.scope))), 'RESOURCE_CLEANUP_PENDING', 'Resume the original cleanup in this scope.', 3);
     if (!cleanup) {
-      for (const r of preview.resources) { this.assertCurrent(r); requireValue(this.store.get(r.operationId).state !== 'running', 'RESOURCE_OPERATION_ACTIVE', 'Cancel/drain the exact owner first.', 3); }
+      for (const r of preview.resources) { this.assertCurrent(r); requireValue(r.operationId !== null && this.store.get(r.operationId).state !== 'running', 'RESOURCE_OPERATION_ACTIVE', 'Cancel/drain the exact owner first.', 3); }
       cleanup = { requestId, preview, completed: [], state: 'stopping' };
       this.store.transaction(() => {
         this.store.put('resourceCleanup', requestId, cleanup);

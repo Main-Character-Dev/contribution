@@ -13,16 +13,37 @@
       "format": "uuid"
     },
     "operationId": {
-      "type": "string",
-      "format": "uuid"
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "attemptId": {
-      "type": "string",
-      "format": "uuid"
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "repositoryId": {
-      "type": "string",
-      "format": "uuid"
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "hostId": {
       "type": "string",
@@ -224,6 +245,12 @@
           "type": "null"
         }
       ]
+    },
+    "scopeType": {
+      "enum": [
+        "repository",
+        "host"
+      ]
     }
   },
   "required": [
@@ -262,5 +289,48 @@
   "additionalProperties": false,
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:contribution:schema:resource:v1",
-  "title": "Contribution retained resource v1"
+  "title": "Contribution retained resource v1",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "scopeType": {
+            "const": "host"
+          }
+        },
+        "required": [
+          "scopeType"
+        ]
+      },
+      "then": {
+        "properties": {
+          "operationId": {
+            "type": "null"
+          },
+          "attemptId": {
+            "type": "null"
+          },
+          "repositoryId": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repositoryId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    }
+  ]
 }

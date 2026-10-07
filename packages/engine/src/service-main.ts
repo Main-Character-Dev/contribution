@@ -26,15 +26,24 @@ try {
   process.stdin.on('data', (chunk: string) => {
     for (const character of chunk) {
       if (character === '\n') {
-        if (!discardHint && !closing && !journal.getMeta('paused') && !journal.getMeta('maintenance')) {
-          try { const hint = JSON.parse(hintBuffer) as { event?: unknown }; if (['launch', 'wake', 'network'].includes(String(hint.event))) { engine.peers.networkHint(); void engine.peers.tick(); } } catch { /* categorical hints are optional */ }
+        if (!discardHint && !closing && !engine.stopping && !engine.maintenance.busy) {
+          try {
+            const hint = JSON.parse(hintBuffer) as { event?: unknown; status?: unknown };
+            if (hint && typeof hint === 'object' && !Array.isArray(hint)) {
+              if (hint.event === 'bridge' && Object.keys(hint).sort().join() === 'event,status' && ['available', 'store_unavailable', 'subscription_failed', 'dispatch_failed'].includes(String(hint.status))) journal.setMeta('connectivityHints', { status: hint.status, observedAt: new Date().toISOString() });
+              else if (Object.keys(hint).join() === 'event' && ['launch', 'wake', 'network'].includes(String(hint.event)) && !journal.getMeta('paused') && !journal.getMeta('maintenance')) {
+                journal.setMeta('connectivityHintReceipt', { event: hint.event, observedAt: new Date().toISOString() });
+                engine.peers.networkHint(); void engine.peers.tick();
+              }
+            }
+          } catch { /* categorical hints are optional */ }
         }
         hintBuffer = ''; discardHint = false;
       } else if (!discardHint) { hintBuffer += character; if (hintBuffer.length > 128) { hintBuffer = ''; discardHint = true; } }
     }
   });
   const monitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('maintenance')) void engine.github.tick(engine.repos.all()); }, 30000);
-  const peerMonitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('paused') && !journal.getMeta('maintenance')) void engine.peers.tick(); }, 1500);
+  const peerMonitor = setInterval(() => { if (!engine.stopping && !engine.stopping && !engine.maintenance.busy) void engine.peers.tick(); }, 1500);
   const storageMonitor = setInterval(() => { if (engine.storageHold && !engine.stopping && !journal.getMeta('maintenance')) engine.kick(); }, 30000);
   const close = (): void => {
     if (closing) return; closing = true; engine.stopping = true; clearInterval(monitor); clearInterval(peerMonitor); clearInterval(storageMonitor);

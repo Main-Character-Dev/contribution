@@ -1,4 +1,4 @@
-import { recordGitConnectivity } from './peer-connectivity.js';
+import { recordGitConnectivity, gitConnectivitySnapshot } from './peer-connectivity.js';
 import { assertRepositoryResourcesReleased } from './repository-idle.js';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, readdirSync, lstatSync, openSync, closeSync, fsyncSync, renameSync } from 'node:fs';
 import { basename, join, resolve, dirname } from 'node:path';
@@ -196,8 +196,9 @@ export class Repositories {
   async status(repo: Enrolled, refresh: boolean): Promise<ObjectValue> {
     if (!refresh) {
       const cached = this.store.record<ObjectValue>('status', repo.id);
-      if (cached) return { ...cached, gitConnectivity: cached['gitConnectivity'] ? { ...(cached['gitConnectivity'] as ObjectValue), freshness: 'stale' } : null, publication: { ...(cached['publication'] as ObjectValue), freshness: 'stale' } };
+      if (cached) return { ...cached, gitConnectivity: gitConnectivitySnapshot(this.store, repo.id, repo.config.publication), publication: { ...(cached['publication'] as ObjectValue), freshness: 'stale' } };
     }
+    if (refresh) this.store.db.prepare("DELETE FROM records WHERE namespace='gitConnectivity' AND key=?").run(repo.id);
     const info = await identity(repo.path); const { remote, branch } = repo.config.publication;
     const selected = await git(repo.path, ['rev-parse', '--verify', `refs/heads/${repo.config.integration.branch}`]);
     const canonicalTip = selected.code === 0 ? selected.stdout.trim() : null;
@@ -230,7 +231,7 @@ export class Repositories {
     if (branchChanged) { blockedReason = 'ACTIVE_BRANCH_CHANGED'; action = 'reconcile'; }
     const unsettled = this.store.unsettled().filter(op => op.repositoryId === repo.id);
     const result = { repositoryId: repo.id, canonicalHostId: repo.canonicalHostId, canonicalBranch: repo.config.integration.branch,
-      canonicalTip, gitConnectivity: this.store.record('gitConnectivity', repo.id) ?? null, checkout: { branch: info.branch, tip: info.tip, matchesCanonicalBranch: !branchChanged }, publication: { remote, branch, remoteTip, relation, ahead, behind, observedAt,
+      canonicalTip, gitConnectivity: gitConnectivitySnapshot(this.store, repo.id, repo.config.publication), checkout: { branch: info.branch, tip: info.tip, matchesCanonicalBranch: !branchChanged }, publication: { remote, branch, remoteTip, relation, ahead, behind, observedAt,
         freshness: observedAt ? 'fresh' : 'unknown', action, enabled: !blockedReason && repo.canonicalHostId === this.store.hostId, blockedReason },
       pending: { localSubmissions: unsettled.filter(op => op.state === 'queued_local').length, landingJobs: unsettled.filter(op => op.kind === 'submit').length,
         dirtyWorktrees: (await gitText(repo.path, ['status', '--porcelain=v1'])).length ? 1 : 0 } };

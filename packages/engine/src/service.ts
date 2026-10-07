@@ -1,3 +1,4 @@
+import { recordGitConnectivity } from './peer-connectivity.js';
 import { ResourceLifecycle } from './resource-lifecycle.js';
 import { processLifecycle } from './resource-process.js';
 import { existsSync } from 'node:fs';
@@ -157,8 +158,8 @@ export class Engine {
   settings(): Machine { return this.store.getMeta<Machine>('settings')!; }
   refreshPower(): void { this.power.refresh(!this.stopping && (this.active.size > 0 || this.externalHooks.size > 0)); }
   async refreshNotifications(): Promise<void> {
-    if (this.notificationRefresh || this.stopping || this.store.getMeta('maintenance') || Date.now() < this.notificationRefreshAt) return;
-    this.notificationRefresh = true; this.notificationRefreshAt = Date.now() + 30000;
+    if (this.notificationRefresh || this.stopping || this.store.getMeta('maintenance') || this.peers.connectivity.clock.mono() < this.notificationRefreshAt) return;
+    this.notificationRefresh = true; this.notificationRefreshAt = this.peers.connectivity.clock.mono() + 30000;
     try {
       await Promise.all(this.repos.all().filter(repo => repo.availability === 'both-macs').map(async repo => {
         const authority = this.store.record<{ peerHostId: string }>('authority', repo.id); if (!authority) return;
@@ -395,7 +396,7 @@ export class Engine {
         return completed({ window: this.maintenance.current() ?? null, ready: this.maintenance.isReady(blockers), blockers, payload: this.payload.identity });
       }
       if (command === 'maintenance.stop') {
-        const blockers = this.maintenance.blockers(this.active.size, this.notificationRefresh || this.github.busy || this.peers.busy, this.requests);
+        const blockers = this.maintenance.blockers(this.active.size, this.notificationRefresh || this.github.busy || this.peers.busy || this.peers.observing, this.requests);
         const window = await this.maintenance.stop(string(args['windowId'], 'windowId'), blockers);
         this.stopping = true; return completed({ window, state: 'stop_requested', helperStopped: false });
       }
@@ -409,7 +410,7 @@ export class Engine {
         resources: { total: this.resources.all().length, unresolved: this.resources.all().filter(r => r.state === 'unresolved').length },
         backendSessions: BackendSessions.status(this.store),
         storageHold: this.storageHold, power: this.power.status(),
-        maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
+        connectivityHints: this.store.getMeta('connectivityHints') ?? { status: 'unknown', observedAt: null }, connectivityHintReceipt: this.store.getMeta('connectivityHintReceipt') ?? null, maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
       if (command === 'service.resource-policy') {
         if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read policy without mutation arguments.', 2); return completed(this.resources.policy()); }
@@ -850,6 +851,7 @@ export class Engine {
       lease = new LegacyPrimaryLease(repo.commonDir, op.attemptId);
       const scope = await this.workflows.scope(repo);
       const remote = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
+      recordGitConnectivity(this.store, repo.id, scope.destination, remote);
       requireValue(remote.code === 0 || remote.code === 2, 'REMOTE_UNAVAILABLE', 'Cannot observe this external publication destination.', 3);
       const before = remote.code === 2 ? null : remote.stdout.split('\t')[0]!;
       const environment = await this.workflows.adopted.prepare(op, repo, scope, before, lease, true);
@@ -891,6 +893,7 @@ export class Engine {
       } else if (op.kind === 'push') {
         const scope = op.input['scope'] as { destination: string; ref: string; tip: string };
         const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
+        recordGitConnectivity(this.store, repo.id, scope.destination, observed);
         if (observed.code === 0 && observed.stdout.split('\t')[0] === scope.tip) {
           // A crash may precede copying the hook's durable receipt into the
           // outer operation. Remote delivery alone never proves that gate.

@@ -9,6 +9,14 @@ private final class ConnectivityHints: @unchecked Sendable {
     private let output: FileHandle
     private var pending: DispatchWorkItem?
     init(_ output: FileHandle) { self.output = output }
+    func fact(_ status: String) {
+        DispatchQueue.main.async { [self] in
+            try? output.write(contentsOf: Data(("{\"event\":\"bridge\",\"status\":\"" + status + "\"}\n").utf8))
+        }
+    }
+    #if CONTRIBUTION_TEST_SUPPORT_ROOT
+    func forward(_ data: Data) { DispatchQueue.main.async { [self] in try? output.write(contentsOf: data) } }
+    #endif
     func stop() { pending?.cancel(); pending = nil }
     func send(_ category: String) {
         DispatchQueue.main.async { [self] in
@@ -43,7 +51,10 @@ enum ContributionLauncher {
             #endif
             let node = payload.root.appendingPathComponent("runtime/node").path
             let entry = payload.manifest.entrypoints[cli ? "cli" : "service"]!
-            let arguments = [node, payload.root.appendingPathComponent(entry).path] + (cli ? forwarded : ["--payload", payload.root.path])
+            var arguments = [node, payload.root.appendingPathComponent(entry).path] + (cli ? forwarded : ["--payload", payload.root.path])
+            #if CONTRIBUTION_TEST_SUPPORT_ROOT
+            arguments += ["--state-dir", support.appendingPathComponent("Journal").path]
+            #endif
             if !cli {
                 // This is the existing launchd helper, supervising one verified
                 // engine child. The inherited private pipe carries categories
@@ -63,15 +74,22 @@ enum ContributionLauncher {
                 termination.resume(); interruption.resume()
                 worker.terminationHandler = { child in exit(child.terminationStatus) }
                 try worker.run()
+                #if CONTRIBUTION_TEST_SUPPORT_ROOT
+                FileHandle.standardInput.readabilityHandler = { handle in
+                    let data = handle.availableData
+                    if !data.isEmpty { relay.forward(data) }
+                }
+                #endif
                 let wake = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in relay.send("wake") }
                 let network = SCDynamicStoreCreate(nil, "Contribution connectivity hints" as CFString, { _, _, _ in
                     NotificationCenter.default.post(name: Notification.Name("ContributionNetworkHint"), object: nil)
                 }, nil)
                 let observer = NotificationCenter.default.addObserver(forName: Notification.Name("ContributionNetworkHint"), object: nil, queue: .main) { _ in relay.send("network") }
                 if let network {
-                    SCDynamicStoreSetNotificationKeys(network, nil, ["State:/Network/Global/IPv4", "State:/Network/Global/IPv6", "State:/Network/Global/DNS", "State:/Network/Interface/.*/.*"] as CFArray)
-                    SCDynamicStoreSetDispatchQueue(network, .main)
-                }
+                    if !SCDynamicStoreSetNotificationKeys(network, nil, ["State:/Network/Global/IPv4", "State:/Network/Global/IPv6", "State:/Network/Global/DNS", "State:/Network/Interface/.*/.*"] as CFArray) { relay.fact("subscription_failed") }
+                    else if !SCDynamicStoreSetDispatchQueue(network, .main) { relay.fact("dispatch_failed") }
+                    else { relay.fact("available") }
+                } else { relay.fact("store_unavailable") }
                 relay.send("launch")
                 withExtendedLifetime((network, wake, observer, termination, interruption)) { RunLoop.main.run() }
                 return

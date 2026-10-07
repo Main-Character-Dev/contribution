@@ -2,10 +2,14 @@ import { assertContract } from '@contribution/contracts';
 import type { Connectivity } from '@contribution/contracts';
 import type { Journal } from './journal.js';
 import { digest, Fault, requireValue } from './core.js';
+import { ownedProcess, processLifecycle } from './resource-process.js';
+import type { ProcessOwnership } from './process.js';
 import type { ProcessResult, RunOptions } from './process.js';
 import { run, alive } from './process.js';
 import { isIP } from 'node:net';
 
+const policies = new WeakMap<Journal, PeerConnectivity>();
+const gitObserved = new WeakMap<Journal, Map<string, number>>();
 export interface ConnectivityClock { wall(): number; mono(): number; random(): number }
 export const systemClock: ConnectivityClock = { wall: Date.now, mono: () => performance.now(), random: Math.random };
 export const connectivityPolicy = { connectSeconds: 8, healthMs: 10000, rpcMs: 45000, healthBytes: 65536, rpcBytes: 2 * 1024 * 1024, ttlMs: 30000, maxBackoffMs: 300000, concurrency: 4 } as const;
@@ -21,7 +25,8 @@ export const connectionReasons = ['NONE', 'PEER_UNAVAILABLE', 'SSH_TIMEOUT', 'SS
 export function transportFailure(result: ProcessResult): Fault {
   const text = result.stderr;
   let code = 'PEER_UNAVAILABLE', stage: Connectivity['stage'] = 'connection', retryable = true;
-  if (result.cancelled) { code = 'PROBE_CANCELLED'; retryable = false; }
+  if (result.cleanup?.released === false) { code = 'PROCESS_RELEASE_UNCONFIRMED'; retryable = false; }
+  else if (result.cancelled) { code = 'PROBE_CANCELLED'; retryable = false; }
   else if (result.timedOut) code = 'SSH_TIMEOUT';
   else if (result.outputLimited) { code = 'PROBE_OUTPUT_LIMIT'; retryable = false; stage = 'protocol'; }
   else if (result.cleanup && !result.cleanup.released) { code = 'PROCESS_RELEASE_UNCONFIRMED'; retryable = false; }
@@ -35,7 +40,7 @@ export function transportFailure(result: ProcessResult): Fault {
   else if (/Connection timed out|Operation timed out/i.test(text)) code = 'SSH_TIMEOUT';
   else if (result.code === 126) { code = 'SSH_PERMISSION_DENIED'; stage = 'configuration'; retryable = false; }
   else if (result.code === 127 || /contribution.*(?:not found|No such file)/i.test(text)) { code = 'PEER_HELPER_UNAVAILABLE'; stage = 'helper'; retryable = false; }
-  return new Fault(code, connectionMessage(code), 3, { stage, source: 'ssh', confidence: code === 'PEER_UNAVAILABLE' ? 'unknown' : 'observed', ...(code === 'PROCESS_RELEASE_UNCONFIRMED' ? { cleanup: result.cleanup ?? null } : {}) }, retryable);
+  return new Fault(code, connectionMessage(code), 3, { stage, source: 'ssh', confidence: code === 'PEER_UNAVAILABLE' ? 'unknown' : 'observed', ...(code === 'PROCESS_RELEASE_UNCONFIRMED' ? { cleanup: result.cleanup ?? null, initiatingReason: result.cancelled ? 'PROBE_CANCELLED' : result.timedOut ? 'SSH_TIMEOUT' : result.outputLimited ? 'PROBE_OUTPUT_LIMIT' : null } : {}) }, retryable);
 }
 export function connectionMessage(code: string): string {
   const messages: Record<string, string> = {
@@ -61,22 +66,43 @@ export function failureFacts(error: unknown): { code: string; stage: Connectivit
 
 /** Policy owned by Peers/Engine. Uses the existing journal and service tick. */
 export class PeerConnectivity {
+  private retryTimes = new Map<string, { wall: number; mono: number }>();
+  connectionDelay(host: string, error: unknown, businessDelay: number): number {
+    if (!failureFacts(error) && !(error instanceof Fault && error.code === 'PEER_RETRY_WAIT')) return businessDelay;
+    const value = this.store.record<Connectivity>('connectivity', host);
+    if (!value?.retryable || !value.nextRetryAt) return businessDelay;
+    return this.due.has(host) ? Math.max(0, this.due.get(host)! - this.clock.mono()) : Math.max(0, Math.min(connectivityPolicy.maxBackoffMs, Date.parse(value.nextRetryAt) - this.clock.wall()));
+  }
+  nextAttempt(key: string, delay: number): number { const bounded = Math.max(0, Math.min(connectivityPolicy.maxBackoffMs, delay)), wall = this.clock.wall() + bounded; this.retryTimes.set(key, { wall, mono: this.clock.mono() + bounded }); return wall; }
+  attemptDue(key: string, wall: number): boolean {
+    let retained = this.retryTimes.get(key);
+    if (!retained || retained.wall !== wall) { retained = { wall, mono: this.clock.mono() + Math.max(0, Math.min(connectivityPolicy.maxBackoffMs, wall - this.clock.wall())) }; this.retryTimes.set(key, retained); }
+    return this.clock.mono() >= retained.mono;
+  }
   private chains = new Map<string, Promise<unknown>>();
   private running = 0;
   private slots: (() => void)[] = [];
   private generation = new Map<string, number>();
   private expedited = new Map<string, number>();
   private due = new Map<string, number>();
+  private providerObserved = new Map<string, number>();
   private observed = new Map<string, number>();
   private controllers = new Map<string, AbortController>();
-  constructor(readonly store: Journal, readonly clock: ConnectivityClock = systemClock) {}
+  private owned = new Set<string>();
+  processOwnership(host: string, diagnostic = false): ProcessOwnership {
+    const scope = `connectivity:${diagnostic ? 'diagnostic' : 'peer'}:${host}`, owner = ownedProcess(processLifecycle(this.store), null, [], 'process', scope);
+    return { ...owner, intent: (...args) => { owner.intent(...args); this.owned.add(scope); }, finished: result => { try { owner.finished(result); } finally { this.owned.delete(scope); } }, uncertain: reason => { try { owner.uncertain(reason); } finally { this.owned.delete(scope); } } };
+  }
+  private retainedProcesses(host: string) { return this.store.records<import('@contribution/contracts').Resource>('resource').filter(r => r.scopeType === 'host' && r.scope === `connectivity:peer:${host}` && r.state !== 'stopped'); }
+  constructor(readonly store: Journal, readonly clock: ConnectivityClock = systemClock) { policies.set(store, this); }
   snapshot(hostId: string, alias: string): Connectivity {
     const revision = digest(alias), saved = this.store.record<Connectivity>('connectivity', hostId);
     const base: Connectivity = saved?.endpointRevision === revision ? { ...saved } : { schemaVersion: 1, targetKind: 'contribution-peer', targetId: hostId, endpointRevision: revision,
       generation: 0, state: 'unknown', freshness: 'unknown', observedAt: null, lastSuccessAt: null, reasonCode: 'NONE', stage: 'none', retryable: false, confidence: 'unknown', source: 'service', helper: 'unknown', failures: 0, nextRetryAt: null, actions: ['retry', 'diagnostics'], capabilities: [], provider: { status: 'not_applicable', client: 'unknown', target: 'unknown', path: 'unknown' } };
     if (!this.generation.has(hostId) || !this.observed.has(hostId) || this.clock.mono() - (this.observed.get(hostId) ?? 0) > connectivityPolicy.ttlMs) base.freshness = base.observedAt ? 'stale' : 'unknown';
+    base.provider = { ...base.provider, observedAt: base.provider.observedAt ?? null, freshness: base.provider.observedAt ? this.providerObserved.has(hostId) && this.clock.mono() - this.providerObserved.get(hostId)! <= connectivityPolicy.ttlMs ? 'fresh' : 'stale' : 'unknown' };
     if (this.controllers.has(hostId)) base.state = 'checking';
-    if (this.store.record<{ absenceConfirmed: boolean }>('peerProcessRelease', hostId)?.absenceConfirmed === false) { base.state = 'requires_action'; base.reasonCode = 'PROCESS_RELEASE_UNCONFIRMED'; base.stage = 'connection'; base.retryable = false; base.nextRetryAt = null; base.actions = ['reconcile', 'diagnostics']; }
+    if (this.retainedProcesses(hostId).length && !this.controllers.has(hostId) || this.store.record<{ absenceConfirmed: boolean }>('peerProcessRelease', hostId)?.absenceConfirmed === false) { base.state = 'requires_action'; base.reasonCode = 'PROCESS_RELEASE_UNCONFIRMED'; base.stage = 'connection'; base.retryable = false; base.nextRetryAt = null; base.actions = ['reconcile', 'diagnostics']; }
     assertContract('connectivity', base); return base;
   }
   private save(value: Connectivity): void { assertContract('connectivity', value); this.store.enableConnectivity(); this.store.put('connectivity', value.targetId, value); }
@@ -84,6 +110,8 @@ export class PeerConnectivity {
     const current = this.snapshot(host, alias);
     if (current.endpointRevision !== revision || current.generation !== generation) return;
     const saved = this.store.record<Connectivity>('connectivity', host);
+    this.providerObserved.set(host, this.clock.mono());
+    provider = { ...provider, observedAt: new Date(this.clock.wall()).toISOString(), freshness: 'fresh' };
     this.save({ ...current, state: current.state === 'checking' ? saved?.state ?? 'unknown' : current.state, provider });
   }
   eligible(host: string, alias: string): void {
@@ -110,6 +138,9 @@ export class PeerConnectivity {
     this.save({ ...value, generation, state: 'unknown', freshness: 'unknown', observedAt: null, lastSuccessAt: null, reasonCode: 'NONE', stage: 'none', failures: 0, nextRetryAt: null, capabilities: [], provider: { status: 'not_applicable', client: 'unknown', target: 'unknown', path: 'unknown' } });
   }
   async reconcile(host: string, alias: string): Promise<{ reconciled: boolean; reason: string }> {
+    if (this.controllers.has(host) || this.owned.has(`connectivity:peer:${host}`) || this.owned.has(`connectivity:diagnostic:${host}`)) return { reconciled: false, reason: 'PROCESS_OBSERVATION_ACTIVE' };
+    await processLifecycle(this.store).reconcile(5000, r => r.scopeType === 'host' && [`connectivity:peer:${host}`, `connectivity:diagnostic:${host}`].includes(r.scope));
+    if (this.retainedProcesses(host).length) return { reconciled: false, reason: 'OWNERSHIP_OBSERVATION_REQUIRED' };
     const retained = this.store.record<{ members: { pid: number; start: string }[]; complete: boolean; absenceConfirmed: boolean }>('peerProcessRelease', host);
     if (!retained || retained.absenceConfirmed) return { reconciled: true, reason: 'NO_UNRESOLVED_PROCESS' };
     if (retained.complete !== true || !Array.isArray(retained.members) || !retained.members.length || retained.members.length > 64 || !retained.members.every(member => Number.isSafeInteger(member.pid) && member.pid > 0 && typeof member.start === 'string' && member.start.length <= 128)) return { reconciled: false, reason: 'OWNERSHIP_OBSERVATION_REQUIRED' };
@@ -122,16 +153,26 @@ export class PeerConnectivity {
     return { reconciled: true, reason: 'OWNED_PROCESS_ABSENCE_CONFIRMED' };
   }
   cancel(): void { for (const controller of this.controllers.values()) controller.abort(); }
+  private async acquire(): Promise<void> {
+    if (this.running < connectivityPolicy.concurrency) { this.running++; return; }
+    await new Promise<void>(resolve => this.slots.push(resolve));
+  }
+  private release(): void {
+    const next = this.slots.shift(); if (next) next(); else this.running--;
+  }
   async execute<T>(host: string, alias: string, action: string, fn: (signal: AbortSignal) => Promise<T>, capabilities?: (result: T) => string[]): Promise<T> {
     const previous = this.chains.get(host) ?? Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
       const prior = this.store.record<Connectivity>('connectivity', host);
-      if (prior && prior.endpointRevision !== digest(alias)) this.changeEndpoint(host, alias);
+      requireValue(!prior || prior.endpointRevision === digest(alias), 'PROBE_CANCELLED', 'The configured endpoint changed before this observation dispatched.', 3);
+      const expectedGeneration = this.generation.get(host) ?? prior?.generation ?? 0;
       this.eligible(host, alias);
-      if (this.running >= connectivityPolicy.concurrency) await new Promise<void>(resolve => this.slots.push(resolve));
+      await this.acquire();
+      try {
+      requireValue((this.generation.get(host) ?? this.snapshot(host, alias).generation) === expectedGeneration, 'PROBE_CANCELLED', 'The observation changed while waiting for capacity.', 3);
+      this.eligible(host, alias);
       if (action === 'health' && (this.store.getMeta('paused') || this.store.getMeta('maintenance'))) throw new Fault('PROBE_CANCELLED', connectionMessage('PROBE_CANCELLED'), 3);
       this.store.enableConnectivity();
-      this.running++;
       const controller = new AbortController(); this.controllers.set(host, controller);
       const generation = this.generation.get(host) ?? this.snapshot(host, alias).generation; this.generation.set(host, generation);
       const timer = setTimeout(() => controller.abort(), action === 'health' ? connectivityPolicy.healthMs : connectivityPolicy.rpcMs);
@@ -144,7 +185,7 @@ export class PeerConnectivity {
         try { result = await Promise.race([invocation, aborted]); } catch (error) {
           if (controller.signal.aborted) {
             let releaseTimer: ReturnType<typeof setTimeout> | undefined;
-            try { await Promise.race([invocation.then(() => {}, () => {}), new Promise<never>((_, reject) => { releaseTimer = setTimeout(() => reject(new Fault('PROCESS_RELEASE_UNCONFIRMED', connectionMessage('PROCESS_RELEASE_UNCONFIRMED'), 3)), 4500); })]); } finally { if (releaseTimer) clearTimeout(releaseTimer); }
+            try { await Promise.race([invocation.then(() => {}, releaseError => { if (releaseError instanceof Fault && releaseError.code === 'PROCESS_RELEASE_UNCONFIRMED') throw releaseError; }), new Promise<never>((_, reject) => { releaseTimer = setTimeout(() => reject(new Fault('PROCESS_RELEASE_UNCONFIRMED', connectionMessage('PROCESS_RELEASE_UNCONFIRMED'), 3)), 4500); })]); } finally { if (releaseTimer) clearTimeout(releaseTimer); }
           }
           throw error;
         }
@@ -173,15 +214,16 @@ export class PeerConnectivity {
             helper: facts.stage === 'helper' ? 'unavailable' : facts.stage === 'protocol' ? 'incompatible' : 'unknown', actions: facts.retryable ? ['retry', 'diagnostics'] : ['connection_settings', 'diagnostics'] });
         }
         throw error;
-      } finally { clearTimeout(timer); if (this.controllers.get(host) === controller) this.controllers.delete(host); this.running--; this.slots.shift()?.(); }
+      } finally { clearTimeout(timer); if (this.controllers.get(host) === controller) this.controllers.delete(host); }
+      } finally { this.release(); }
     });
     this.chains.set(host, next); void next.finally(() => { if (this.chains.get(host) === next) this.chains.delete(host); }).catch(() => {}); return next;
   }
 }
 
 export type SSHRunner = (executable: string, argv: readonly string[], options: RunOptions) => Promise<ProcessResult>;
-export async function invokeSSH(alias: string, envelope: unknown, options: { signal?: AbortSignal; health?: boolean } = {}, runner: SSHRunner = run): Promise<ProcessResult> {
-  return runner('/usr/bin/ssh', sshArguments(alias), { input: JSON.stringify(envelope) + '\n', ...(options.signal ? { signal: options.signal } : {}),
+export async function invokeSSH(alias: string, envelope: unknown, options: { signal?: AbortSignal; health?: boolean; ownership?: ProcessOwnership } = {}, runner: SSHRunner = run): Promise<ProcessResult> {
+  return runner('/usr/bin/ssh', sshArguments(alias), { ...(options.ownership ? { ownership: options.ownership } : {}), input: JSON.stringify(envelope) + '\n', ...(options.signal ? { signal: options.signal } : {}),
     timeoutMs: options.health ? connectivityPolicy.healthMs : connectivityPolicy.rpcMs, maxBytes: options.health ? connectivityPolicy.healthBytes : connectivityPolicy.rpcBytes });
 }
 
@@ -189,10 +231,30 @@ export async function invokeSSH(alias: string, envelope: unknown, options: { sig
  * on a Contribution peer. A missing ref is a successful remote observation. */
 export function recordGitConnectivity(store: Journal, repositoryId: string, destination: string, result: ProcessResult): Connectivity {
   const endpointRevision = digest(destination), previous = store.record<Connectivity>('gitConnectivity', repositoryId);
-  const observedAt = new Date().toISOString(), ready = [0, 2].includes(result.code) && !result.timedOut && !result.cancelled && !result.outputLimited && result.cleanup?.released !== false;
+  const clock = policies.get(store)?.clock ?? systemClock;
+  const observations = gitObserved.get(store) ?? new Map<string, number>(); gitObserved.set(store, observations); observations.set(repositoryId, clock.mono());
+  const repo = store.db.prepare('SELECT body FROM repositories WHERE id=?').get(repositoryId);
+  store.put('gitConnectivityContext', repositoryId, { publication: repo ? digest(JSON.parse(String(repo['body'])).config.publication) : null });
+  const observedAt = new Date(clock.wall()).toISOString(), ready = [0, 2].includes(result.code) && !result.timedOut && !result.cancelled && !result.outputLimited && result.cleanup?.released !== false;
   const failure = transportFailure(result), facts = failureFacts(failure)!;
   const value: Connectivity = { schemaVersion: 1, targetKind: 'git-remote', targetId: repositoryId, endpointRevision, generation: previous?.endpointRevision === endpointRevision ? previous.generation : (previous?.generation ?? 0) + 1,
     state: ready ? 'ready' : facts.retryable ? 'unavailable' : 'requires_action', freshness: 'fresh', observedAt, lastSuccessAt: ready ? observedAt : previous?.endpointRevision === endpointRevision ? previous.lastSuccessAt : null,
     reasonCode: ready ? 'NONE' : facts.code === 'PEER_UNAVAILABLE' ? 'GIT_REMOTE_UNAVAILABLE' : facts.code, stage: ready ? 'none' : facts.stage, retryable: !ready && facts.retryable, confidence: ready || facts.code !== 'PEER_UNAVAILABLE' ? 'observed' : 'unknown', source: 'git', helper: 'not_applicable', failures: ready ? 0 : (previous?.failures ?? 0) + 1, nextRetryAt: null, actions: ready ? ['diagnostics'] : ['retry', 'diagnostics'], capabilities: [], provider: { status: 'not_applicable', client: 'unknown', target: 'unknown', path: 'unknown' } };
   assertContract('connectivity', value); store.enableConnectivity(); store.put('gitConnectivity', repositoryId, value); return value;
+}
+
+/** Offline presentation shared by app, CLI and allowlisted reports. */
+export function gitConnectivitySnapshot(store: Journal, repositoryId: string, publication?: unknown): Connectivity | null {
+  const value = store.record<Connectivity>('gitConnectivity', repositoryId); if (!value) return null;
+  const row = store.db.prepare('SELECT body FROM repositories WHERE id=?').get(repositoryId);
+  const config = publication ?? (row ? JSON.parse(String(row['body'])).config.publication : undefined);
+  if (config && (digest(config) !== store.record<{publication:string}>('gitConnectivityContext', repositoryId)?.publication || !(config as {remote?:string}).remote || !(config as {branch?:string}).branch)) return null;
+  const clock = policies.get(store)?.clock ?? systemClock, observed = gitObserved.get(store)?.get(repositoryId);
+  return { ...value, freshness: observed !== undefined && clock.mono() - observed <= connectivityPolicy.ttlMs ? 'fresh' : value.observedAt ? 'stale' : 'unknown' };
+}
+export function connectivitySnapshots(store: Journal): Connectivity[] {
+  const policy = policies.get(store) ?? new PeerConnectivity(store);
+  const peers = store.records<{hostId:string;alias:string|null}>('peer').filter(p => p.alias).map(p => policy.snapshot(p.hostId, p.alias!));
+  const git = store.records<Connectivity>('gitConnectivity').flatMap(value => { const current = gitConnectivitySnapshot(store, value.targetId); return current ? [current] : []; });
+  return [...peers, ...git];
 }

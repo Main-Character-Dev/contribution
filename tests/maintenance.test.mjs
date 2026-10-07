@@ -93,7 +93,7 @@ test('maintenance counts asynchronous command work and refuses unresolved effect
 test('an older engine refuses a newer journal without mutating its bytes or restoring a snapshot', () => {
   const root = mkdtempSync(join(tmpdir(), 'ct-newer-db-'));
   try {
-    const journal = new Journal(root); journal.setMeta('acceptedWork', randomUUID()); journal.db.exec('PRAGMA user_version=4'); journal.close();
+    const journal = new Journal(root); journal.setMeta('acceptedWork', randomUUID()); journal.db.exec('PRAGMA user_version=5'); journal.close();
     const path = join(root, 'journal.sqlite'), before = readFileSync(path);
     assert.throws(() => new Journal(root), error => error.code === 'DATABASE_TOO_NEW');
     assert.deepEqual(readFileSync(path), before);

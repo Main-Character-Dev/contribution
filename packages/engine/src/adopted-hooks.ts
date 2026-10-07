@@ -1,3 +1,4 @@
+import { recordGitConnectivity } from './peer-connectivity.js';
 import { existsSync, lstatSync, openSync, closeSync, readSync, fstatSync, constants, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { policyInventory } from '@contribution/adapters';
@@ -128,6 +129,7 @@ export class AdoptedHooks {
       if (code !== 0) throw new Fault('GATE_FAILED', 'The original adopted project gate refused publication.', 5, { exitCode: code });
       requireValue(digest(await this.currentScope(repo)) === digest(invocation.scope), 'STALE_PUSH_SELECTION', 'Source or destination changed while the original gate ran.');
       const remote = await git(repo.path, ['ls-remote', '--exit-code', invocation.scope.destination, invocation.scope.ref], { timeoutMs: 15000 });
+      recordGitConnectivity(this.store, repo.id, invocation.scope.destination, remote);
       requireValue((remote.code === 2 && invocation.remoteBefore === null) || (remote.code === 0 && remote.stdout.split('\t')[0] === invocation.remoteBefore), 'REMOTE_CHANGED', 'The publication destination changed during the original gate.');
       this.validated(repo, args);
       gate = { state: invocation.noRefChanges ? 'not_run' : registration.originalHookDigest ? 'passed' : 'inactive', sourceTip: invocation.scope.tip, exitCode: code, originalPolicy: registration.adapter, adoption: invocation.adoption, evidence };

@@ -108,5 +108,7 @@ export interface Connectivity {
     client: "unknown" | "running" | "stopped" | "login_required";
     target: "unknown" | "visible" | "absent" | "reachable";
     path: "unknown" | "direct" | "relay";
+    observedAt?: string | null;
+    freshness?: "fresh" | "stale" | "unknown";
   };
 }
