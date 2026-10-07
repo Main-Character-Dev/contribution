@@ -851,7 +851,7 @@ export class Engine {
       lease = new LegacyPrimaryLease(repo.commonDir, op.attemptId);
       const scope = await this.workflows.scope(repo);
       const remote = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
-      recordGitConnectivity(this.store, repo.id, scope.destination, remote);
+      recordGitConnectivity(this.store, repo.id, scope.destination, remote, repo.config.publication);
       requireValue(remote.code === 0 || remote.code === 2, 'REMOTE_UNAVAILABLE', 'Cannot observe this external publication destination.', 3);
       const before = remote.code === 2 ? null : remote.stdout.split('\t')[0]!;
       const environment = await this.workflows.adopted.prepare(op, repo, scope, before, lease, true);
@@ -893,7 +893,7 @@ export class Engine {
       } else if (op.kind === 'push') {
         const scope = op.input['scope'] as { destination: string; ref: string; tip: string };
         const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
-        recordGitConnectivity(this.store, repo.id, scope.destination, observed);
+        recordGitConnectivity(this.store, repo.id, scope.destination, observed, repo.config.publication);
         if (observed.code === 0 && observed.stdout.split('\t')[0] === scope.tip) {
           // A crash may precede copying the hook's durable receipt into the
           // outer operation. Remote delivery alone never proves that gate.

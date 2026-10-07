@@ -75,6 +75,7 @@ export class PeerConnectivity {
   }
   nextAttempt(key: string, delay: number): number { const bounded = Math.max(0, Math.min(connectivityPolicy.maxBackoffMs, delay)), wall = this.clock.wall() + bounded; this.retryTimes.set(key, { wall, mono: this.clock.mono() + bounded }); return wall; }
   attemptDue(key: string, wall: number): boolean {
+    if (wall === 0) { this.retryTimes.delete(key); return true; }
     let retained = this.retryTimes.get(key);
     if (!retained || retained.wall !== wall) { retained = { wall, mono: this.clock.mono() + Math.max(0, Math.min(connectivityPolicy.maxBackoffMs, wall - this.clock.wall())) }; this.retryTimes.set(key, retained); }
     return this.clock.mono() >= retained.mono;
@@ -229,12 +230,12 @@ export async function invokeSSH(alias: string, envelope: unknown, options: { sig
 
 /** Git evidence belongs to the exact configured destination, never a helper
  * on a Contribution peer. A missing ref is a successful remote observation. */
-export function recordGitConnectivity(store: Journal, repositoryId: string, destination: string, result: ProcessResult): Connectivity {
+export function recordGitConnectivity(store: Journal, repositoryId: string, destination: string, result: ProcessResult, publication?: unknown): Connectivity {
   const endpointRevision = digest(destination), previous = store.record<Connectivity>('gitConnectivity', repositoryId);
   const clock = policies.get(store)?.clock ?? systemClock;
   const observations = gitObserved.get(store) ?? new Map<string, number>(); gitObserved.set(store, observations); observations.set(repositoryId, clock.mono());
   const repo = store.db.prepare('SELECT body FROM repositories WHERE id=?').get(repositoryId);
-  store.put('gitConnectivityContext', repositoryId, { publication: repo ? digest(JSON.parse(String(repo['body'])).config.publication) : null });
+  store.put('gitConnectivityContext', repositoryId, { publication: publication !== undefined ? digest(publication) : repo ? digest(JSON.parse(String(repo['body'])).config.publication) : null });
   const observedAt = new Date(clock.wall()).toISOString(), ready = [0, 2].includes(result.code) && !result.timedOut && !result.cancelled && !result.outputLimited && result.cleanup?.released !== false;
   const failure = transportFailure(result), facts = failureFacts(failure)!;
   const value: Connectivity = { schemaVersion: 1, targetKind: 'git-remote', targetId: repositoryId, endpointRevision, generation: previous?.endpointRevision === endpointRevision ? previous.generation : (previous?.generation ?? 0) + 1,

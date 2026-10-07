@@ -211,7 +211,7 @@ export class Repositories {
         const destinations = (await gitText(repo.path, ['remote', 'get-url', '--push', '--all', remote])).split('\n');
         requireValue(destinations.length === 1, 'UNSUPPORTED_DESTINATION', 'Publication status requires one push destination.', 3);
         const result = await git(repo.path, ['ls-remote', '--exit-code', destinations[0]!, `refs/heads/${branch}`], { timeoutMs: 15000 });
-        recordGitConnectivity(this.store, repo.id, destinations[0]!, result);
+        recordGitConnectivity(this.store, repo.id, destinations[0]!, result, repo.config.publication);
         observedAt = now();
         if (result.code === 2) { relation = 'unpublished'; action = 'publish'; }
         else if (result.code !== 0 || !/^[a-f0-9]{40,64}\trefs\/heads\//.test(result.stdout)) { relation = 'unknown'; action = 'refresh'; blockedReason = 'REMOTE_OBSERVATION_FAILED'; }

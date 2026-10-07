@@ -258,7 +258,7 @@ export class Workflows {
       env: adoptedEnvironment as NodeJS.ProcessEnv ?? { CONTRIBUTION_OPERATION_ID: op.operationId, CONTRIBUTION_HOOK_TOKEN: hookToken } });
     const gate = this.store.record<ObjectValue>('gate', op.operationId) ?? { state: 'not_run' };
     const observed = await git(repo.path, ['ls-remote', '--exit-code', scope.destination, scope.ref], { timeoutMs: 15000 });
-    recordGitConnectivity(this.store, repo.id, scope.destination, observed);
+    recordGitConnectivity(this.store, repo.id, scope.destination, observed, repo.config.publication);
     const remoteTip = observed.code === 0 ? observed.stdout.split('\t')[0]?.trim() : null;
     if (remoteTip === scope.tip && (!['passed', 'inactive'].includes(String(gate['state'])) || gate['sourceTip'] !== scope.tip)) {
       if (result.code === 0 && /^=\t/m.test(result.stdout) && gate['state'] === 'not_run') return { delivery: 'up_to_date', gate, remoteTip, observedBy: 'git_no_op_after_admission', gitExit: result.code };
@@ -303,7 +303,7 @@ export class Workflows {
       const gate = await this.checks(op, repo, repo.path, signal, true);
       requireValue(digest(await this.scope(repo)) === digest(invocation.scope), 'STALE_PUSH_SELECTION', 'Publication inputs changed during the gate.');
       const currentRemote = await git(repo.path, ['ls-remote', '--exit-code', invocation.scope.destination, invocation.scope.ref], { timeoutMs: 15000 });
-      recordGitConnectivity(this.store, repo.id, invocation.scope.destination, currentRemote);
+      recordGitConnectivity(this.store, repo.id, invocation.scope.destination, currentRemote, repo.config.publication);
       requireValue((currentRemote.code === 2 && !invocation.remoteBefore) || (currentRemote.code === 0 && currentRemote.stdout.split('\t')[0] === invocation.remoteBefore), 'REMOTE_CHANGED', 'The destination advanced during the gate.');
       this.store.put('gate', operationId, gate); return gate;
     } catch (error) {
