@@ -16,29 +16,350 @@ import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { run } from '../packages/engine/dist/process.js';
 import { processLifecycle } from '../packages/engine/dist/resource-process.js';
-const result = overrides => ({ code: 255, stdout: '', stderr: '', signal: null, timedOut: false, cancelled: false, cleanup: { released: false, reason: 'fixture', members: [{pid: 999999, start: 'fixture'}] }, ...overrides });
-function fixture() { const root = mkdtempSync(join(tmpdir(), 'ct-connectivity-repair-')), store = new Journal(root), policy = new PeerConnectivity(store); return { root, store, policy, close() { store.close(); rmSync(root, {recursive:true}); } }; }
-for (const flag of ['timedOut', 'cancelled', 'outputLimited']) test(`unreleased process overrides ${flag} while retaining initiating reason`, () => { const fault = transportFailure(result({[flag]:true})); assert.equal(fault.code, 'PROCESS_RELEASE_UNCONFIRMED'); assert(fault.details.cleanup); assert(fault.details.initiatingReason); assert.equal(fault.retryable,false); });
-test('invalidation retains cleanup failure even when aborted generation is obsolete', async () => { const f=fixture(); try { let reject; const pending=f.policy.execute('host','mini','health',()=>new Promise((_,r)=>reject=r)); await new Promise(setImmediate); f.policy.invalidate('host','mini',true); reject(transportFailure(result({timedOut:true}))); await assert.rejects(pending,{code:'PROCESS_RELEASE_UNCONFIRMED'}); assert.equal(f.policy.snapshot('host','mini').reasonCode,'PROCESS_RELEASE_UNCONFIRMED'); await assert.rejects(f.policy.execute('host','mini','registry.exchange',async()=>({})),{code:'PROCESS_RELEASE_UNCONFIRMED'}); } finally {f.close();} });
-test('all saturated waiters settle during pause and capacity survives resume', async () => { const f=fixture(); try { const releases=[]; const pending=Array.from({length:10},(_,i)=>f.policy.execute('h'+i,'mini'+i,'health',()=>new Promise(r=>releases.push(r)))); const settled=Promise.allSettled(pending); await new Promise(setImmediate); assert.equal(releases.length,4); f.store.setMeta('paused',true); releases.forEach(r=>r({})); const outcomes=await Promise.race([settled,new Promise((_,r)=>setTimeout(()=>r(Error('waiters stranded')),1000))]); assert.equal(outcomes.filter(x=>x.status==='rejected').length,6); f.store.setMeta('paused',false); await f.policy.execute('next','mini','health',async()=>({})); } finally {f.close();} });
-test('maintenance status and stop both block an active health observation', async () => { const f=fixture(); try { const host=randomUUID(); f.store.put('peer',host,{hostId:host,alias:'fixture',version:'0.1.0'}); const engine=new Engine(f.store,{identity:'fixture',distribution:'fixture',root:f.root,node:process.execPath,cli:join(f.root,'cli')}); let finish; engine.peers.transport=()=>new Promise(r=>finish=r); engine.peers.check(host); await new Promise(setImmediate); const request=(command,args={})=>engine.handle({schemaVersion:1,command,args,cwd:f.root}); const begun=await request('maintenance.begin',{requestId:randomUUID()}); const status=await request('maintenance.status'); assert.equal(status.result.ready,false); const stopped=await request('maintenance.stop',{windowId:begun.result.window.id}); assert.equal(stopped.error.code,'MAINTENANCE_NOT_READY'); assert.equal(f.store.getMeta('maintenanceWindow').backup,undefined); finish({hostId:host,version:'0.1.0'}); await engine.peers.settledChecks(); } finally {f.close();} });
-test('host process uses the existing grant owner without repository enrollment', async () => { const f=fixture(); try { const outcome=await run(process.execPath,['-e','process.stdout.write("granted")'],{ownership:f.policy.processOwnership('fixture'),timeoutMs:3000}); assert.equal(outcome.stdout,'granted'); assert.equal(outcome.cleanup.released,true); const rows=processLifecycle(f.store).all(); assert.equal(rows.length,1); assert.equal(rows[0].repositoryId,null); assert.equal(rows[0].operationId,null); assert.equal(rows[0].scopeType,'host'); assert.equal(rows[0].state,'stopped'); assert.equal(f.store.list().length,0); assert.equal(f.store.db.prepare('PRAGMA user_version').get().user_version,4); } finally {f.close();} });
-
-test('full peer tick recovers after backward wall correction without explicit Retry', async () => { const f=fixture(); try { let wall=Date.now()+86400000, mono=0, attempts=0; const host=randomUUID(), repo=randomUUID(); f.store.put('peer',host,{hostId:host,alias:'fixture',version:'0.1.0'}); f.store.put('authority',repo,{phase:'active'}); const op=f.store.admit(randomUUID(),'remote.checks',repo,{destinationHostId:host,checkId:null,fresh:false},'fixture','queued_local'); const peers=new Peers(f.store,{get:async()=>({id:repo,canonicalHostId:host}),all:()=>[]},'fixture',async()=>{attempts++; throw new Fault('PEER_UNAVAILABLE','fixture',3);},{wall:()=>wall,mono:()=>mono,random:()=>.5}); peers.syncRegistry=async()=>{}; await peers.tick(); wall-=86400000; mono+=301000; await peers.tick(); assert.equal(attempts,2); assert.equal(f.store.get(op.operationId).state,'queued_local'); } finally {f.close();} });
-test('registry and receipt retry gates survive clock jumps and restart clamps persisted delay',()=>{const f=fixture(); try { let wall=1000000,mono=0; const clock={wall:()=>wall,mono:()=>mono,random:()=>.5},policy=new PeerConnectivity(f.store,clock); for (const key of ['registry:host','receipt:op']) { const stamp=policy.nextAttempt(key,2000); wall-=86400000; assert.equal(policy.attemptDue(key+':immediate',0),true); assert.equal(policy.attemptDue(key,stamp),false); mono+=2001; assert.equal(policy.attemptDue(key,stamp),true); const restarted=new PeerConnectivity(f.store,clock); assert.equal(restarted.attemptDue(key,stamp),false); mono+=300001; assert.equal(restarted.attemptDue(key,stamp),true); } } finally {f.close();} });
-test('healthy registry and receipt progress before a stalled remote job; later ticks admit new traffic',async()=>{const f=fixture();try { const bad=randomUUID(),good=randomUUID(),repo=randomUUID(); let release; const events=[]; for(const [hostId,alias] of [[bad,'bad'],[good,'good']])f.store.put('peer',hostId,{hostId,alias,version:'0.1.0'}); f.store.put('authority',repo,{phase:'active'});f.store.admit(randomUUID(),'remote.checks',repo,{destinationHostId:bad,checkId:null,fresh:false},'fixture','queued_local');const peers=new Peers(f.store,{get:async()=>({id:repo,canonicalHostId:bad}),all:()=>[]},'fixture',()=>new Promise((_,reject)=>release=()=>reject(new Fault('PEER_UNAVAILABLE','fixture',3)))); peers.syncRegistry=async host=>events.push(host); peers.acknowledgeCompletion=async outbox=>events.push(outbox.operationId);const ack=randomUUID();f.store.put('peerCompletionOutbox',ack,{operationId:ack,hostId:good,state:'pending',nextAttempt:0,retainedAt:new Date().toISOString()});const pending=peers.tick();await new Promise(setImmediate);await new Promise(setImmediate);assert(events.includes(good));assert(events.includes(ack));const newcomer=randomUUID();f.store.put('peer',newcomer,{hostId:newcomer,alias:'new',version:'0.1.0'});await peers.tick();assert(events.includes(newcomer));release();await pending;}finally{f.close();}});
-test('offline diagnostic freshness shares the host projection and provider has an independent clock',async()=>{const f=fixture();try{let mono=0;const policy=new PeerConnectivity(f.store,{wall:Date.now,mono:()=>mono,random:()=>.5}),host=randomUUID();f.store.put('peer',host,{hostId:host,alias:'mini',version:'0.1.0'});await policy.execute(host,'mini','health',async()=>({}));let current=policy.snapshot(host,'mini');policy.provider(host,'mini',{status:'observed',client:'running',target:'reachable',path:'direct'},current.endpointRevision,current.generation);mono+=30001;await policy.execute(host,'mini','health',async()=>({}));current=policy.snapshot(host,'mini');assert.equal(current.freshness,'fresh');assert.equal(current.provider.freshness,'stale');mono+=30001;const report=new Diagnostics(f.store,{all:()=>[]}).snapshot();assert.equal(report.connectivity[0].freshness,'stale');assert.equal(report.connectivity[0].provider.freshness,'stale');assert.equal(report.connectivity[0].target,'peer-target-1');assert.equal(report.connectivity[0].source,'helper');assert(!JSON.stringify(report).includes(host));}finally{f.close();}});
-async function historicalModule(file, commit) { const source=spawnSync('git',['show',`${commit}:${file}`],{encoding:'utf8'}); assert.equal(source.status,0,source.stderr);let js=ts.transpileModule(source.stdout,{compilerOptions:{target:ts.ScriptTarget.ES2023,module:ts.ModuleKind.ESNext}}).outputText; js=js.replace(/from '([^']+)'/g,(_,specifier)=>`from '${specifier.startsWith('.')?pathToFileURL(join(process.cwd(),'packages/engine/dist',specifier)).href:specifier==='@contribution/contracts'?pathToFileURL(join(process.cwd(),'packages/contracts/dist/index.js')).href:specifier}'`);return import('data:text/javascript;base64,'+Buffer.from(js).toString('base64')); }
-test('actual legacy receiver health refusal is negotiated while ordinary exchange remains usable',async()=>{const f=fixture(),caller=fixture();try {const {Peers:Legacy}=await historicalModule('packages/engine/src/peers.ts','b27a8038');const old=new Legacy(f.store,{all:()=>[]},'fixture');f.store.put('peer',caller.store.hostId,{hostId:caller.store.hostId,alias:null,version:'0.1.0'});await assert.rejects(old.receive({fromHostId:caller.store.hostId,expectedHostId:f.store.hostId,compatibility:{version:'0.1.0'},action:'health',body:{}}),{code:'INVALID_REQUEST'});caller.store.put('peer',f.store.hostId,{hostId:f.store.hostId,alias:'legacy',version:'0.1.0',capabilities:[]});const peers=new Peers(caller.store,{all:()=>[]},'fixture',(_,envelope)=>old.receive(envelope));peers.check(f.store.hostId);await peers.settledChecks();assert.equal(peers.connectivity.snapshot(f.store.hostId,'legacy').reasonCode,'PEER_ACTION_UNSUPPORTED');await peers.syncRegistry(f.store.hostId,true);assert.equal(peers.connectivity.snapshot(f.store.hostId,'legacy').state,'ready');}finally{f.close();caller.close();}});
-test('actual v3 Journal refuses v4 host resource semantics before changing retained state',async()=>{const f=fixture();try{f.store.enableHostResources();f.store.setMeta('retained','unchanged');const {Journal:Old}=await historicalModule('packages/engine/src/journal.ts','018d0ce');await assert.rejects(async()=>new Old(f.root),{code:'DATABASE_TOO_NEW'});assert.equal(f.store.getMeta('retained'),'unchanged');}finally{f.close();}});
-
-test('removed or unresolved Git destination cannot present previous fresh endpoint evidence',async()=>{const f=fixture();try{const {repository,commit,git}=await import('./integration/service.mjs');const {mkdirSync}=await import('node:fs');const {Repositories}=await import('../packages/engine/dist/repositories.js');const path=repository(f.root),remote=join(f.root,'remote.git');commit(path);mkdirSync(remote);git(remote,'init','--bare');git(path,'remote','add','origin',remote);const repos=new Repositories(f.store);let repo=await repos.add(path),config=structuredClone(repo.config);config.publication={...config.publication,remote:'origin',branch:'dev'};repo=repos.configure(repo,config,repo.revision,randomUUID());const first=await repos.status(repo,true);assert.equal(first.gitConnectivity.state,'ready');const priorPublication=structuredClone(repo.config.publication);config=structuredClone(repo.config);config.publication.branch='other';repo=repos.configure(repo,config,repo.revision,randomUUID());recordGitConnectivity(f.store,repo.id,remote,{...result({}),code:0,cleanup:{released:true,members:[]}},priorPublication);assert.equal(gitConnectivitySnapshot(f.store,repo.id),null,'A late observation is bound to its original publication context');config=structuredClone(repo.config);config.publication.remote=null;config.publication.branch=null;repo=repos.configure(repo,config,repo.revision,randomUUID());assert.equal((await repos.status(repo,false)).gitConnectivity,null);assert.equal((await repos.status(repo,true)).gitConnectivity,null);config=structuredClone(repo.config);config.publication.remote='missing';config.publication.branch='dev';repo=repos.configure(repo,config,repo.revision,randomUUID());await assert.rejects(repos.status(repo,true));assert.equal(new Diagnostics(f.store,repos).snapshot().connectivity.length,0);}finally{f.close();}});
-for (const edge of ['intent','allocated','grant','dispatch','stopping','finished']) test(`host process crash at ${edge} retains a fenced exact owner before reuse`,async()=>{
- const root=mkdtempSync(join(tmpdir(),'ct-host-crash-')),state=join(root,'state'),marker=join(root,'ran'); let store;
- try { const engine=pathToFileURL(join(process.cwd(),'packages/engine/dist')).href; const target=`require('node:fs').writeFileSync(${JSON.stringify(marker)},'executed');console.log('executed');setTimeout(()=>{},200)`;
- const script=`import {Journal} from '${engine}/journal.js';import {PeerConnectivity} from '${engine}/peer-connectivity.js';import {run} from '${engine}/process.js';const store=new Journal(${JSON.stringify(state)}),policy=new PeerConnectivity(store),owner=policy.processOwnership('fixture');for(const name of ['intent','allocated','grant','stopping','finished']){const original=owner[name];owner[name]=(...args)=>{original(...args);if(name===${JSON.stringify(edge)})process.kill(process.pid,'SIGKILL');};}await run(process.execPath,['-e',${JSON.stringify(target)}],{ownership:owner,timeoutMs:${edge==='stopping'?100:3000},output:()=>{if(${JSON.stringify(edge)}==='dispatch')process.kill(process.pid,'SIGKILL');}});`;
- const crashed=spawnSync(process.execPath,['--input-type=module','-e',script],{stdio:'ignore',timeout:5000});assert.equal(crashed.signal,'SIGKILL');await new Promise(r=>setTimeout(r,400));store=new Journal(state);const policy=new PeerConnectivity(store);const retained=store.records('resource');assert.equal(retained.length,1);assert.equal(retained[0].scopeType,'host');assert.equal(store.db.prepare('PRAGMA user_version').get().user_version,4);
- if(['intent','allocated','grant'].includes(edge)){const {existsSync}=await import('node:fs');assert.equal(existsSync(marker),false,'No target code before the durable grant completes');}
- const observed=await policy.reconcile('fixture','mini');assert.equal(observed.reconciled,edge!=='intent');if(edge==='intent')assert.equal(policy.snapshot('fixture','mini').reasonCode,'PROCESS_RELEASE_UNCONFIRMED');else assert.equal(store.records('resource')[0].state,'stopped');
- }finally{store?.close();rmSync(root,{recursive:true});}
-});
+const result = overrides => ({ code: 255, stdout: '', stderr: '', signal: null, timedOut: false, cancelled: false, cleanup: { released: false, reason: 'fixture', members: [{ pid: 999999, start: 'fixture' }] }, ...overrides });
+function fixture() { const root = mkdtempSync(join(tmpdir(), 'ct-connectivity-repair-')), store = new Journal(root), policy = new PeerConnectivity(store); return { root, store, policy, close() { store.close(); rmSync(root, { recursive: true }); } }; }
+for (const flag of ['timedOut', 'cancelled', 'outputLimited'])
+    test(`unreleased process overrides ${flag} while retaining initiating reason`, () => { const fault = transportFailure(result({ [flag]: true })); assert.equal(fault.code, 'PROCESS_RELEASE_UNCONFIRMED'); assert(fault.details.cleanup); assert(fault.details.initiatingReason); assert.equal(fault.retryable, false); });
+test('invalidation retains cleanup failure even when aborted generation is obsolete', async () => { const f = fixture(); try {
+    let reject;
+    const pending = f.policy.execute('host', 'mini', 'health', () => new Promise((_, r) => reject = r));
+    await new Promise(setImmediate);
+    f.policy.invalidate('host', 'mini', true);
+    reject(transportFailure(result({ timedOut: true })));
+    await assert.rejects(pending, { code: 'PROCESS_RELEASE_UNCONFIRMED' });
+    assert.equal(f.policy.snapshot('host', 'mini').reasonCode, 'PROCESS_RELEASE_UNCONFIRMED');
+    await assert.rejects(f.policy.execute('host', 'mini', 'registry.exchange', async () => ({})), { code: 'PROCESS_RELEASE_UNCONFIRMED' });
+}
+finally {
+    f.close();
+} });
+test('all saturated waiters settle during pause and capacity survives resume', async () => { const f = fixture(); try {
+    const releases = [];
+    const pending = Array.from({ length: 10 }, (_, i) => f.policy.execute('h' + i, 'mini' + i, 'health', () => new Promise(r => releases.push(r))));
+    const settled = Promise.allSettled(pending);
+    await new Promise(setImmediate);
+    assert.equal(releases.length, 4);
+    f.store.setMeta('paused', true);
+    releases.forEach(r => r({}));
+    const outcomes = await Promise.race([settled, new Promise((_, r) => setTimeout(() => r(Error('waiters stranded')), 1000))]);
+    assert.equal(outcomes.filter(x => x.status === 'rejected').length, 6);
+    f.store.setMeta('paused', false);
+    await f.policy.execute('next', 'mini', 'health', async () => ({}));
+}
+finally {
+    f.close();
+} });
+test('maintenance status and stop both block an active health observation', async () => { const f = fixture(); try {
+    const host = randomUUID();
+    f.store.put('peer', host, { hostId: host, alias: 'fixture', version: '0.1.0' });
+    const engine = new Engine(f.store, { identity: 'fixture', distribution: 'fixture', root: f.root, node: process.execPath, cli: join(f.root, 'cli') });
+    let finish;
+    engine.peers.transport = () => new Promise(r => finish = r);
+    engine.peers.check(host);
+    await new Promise(setImmediate);
+    const request = (command, args = {}) => engine.handle({ schemaVersion: 1, command, args, cwd: f.root });
+    const begun = await request('maintenance.begin', { requestId: randomUUID() });
+    const status = await request('maintenance.status');
+    assert.equal(status.result.ready, false);
+    const stopped = await request('maintenance.stop', { windowId: begun.result.window.id });
+    assert.equal(stopped.error.code, 'MAINTENANCE_NOT_READY');
+    assert.equal(f.store.getMeta('maintenanceWindow').backup, undefined);
+    finish({ hostId: host, version: '0.1.0' });
+    await engine.peers.settledChecks();
+}
+finally {
+    f.close();
+} });
+test('host process uses the existing grant owner without repository enrollment', async () => { const f = fixture(); try {
+    const outcome = await run(process.execPath, ['-e', 'process.stdout.write("granted")'], { ownership: f.policy.processOwnership('fixture'), timeoutMs: 3000 });
+    assert.equal(outcome.stdout, 'granted');
+    assert.equal(outcome.cleanup.released, true);
+    const rows = processLifecycle(f.store).all();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].repositoryId, null);
+    assert.equal(rows[0].operationId, null);
+    assert.equal(rows[0].scopeType, 'host');
+    assert.equal(rows[0].state, 'stopped');
+    assert.equal(f.store.list().length, 0);
+    assert.equal(f.store.db.prepare('PRAGMA user_version').get().user_version, 4);
+}
+finally {
+    f.close();
+} });
+test('full peer tick recovers after backward wall correction without explicit Retry', async () => { const f = fixture(); try {
+    let wall = Date.now() + 86400000, mono = 0, attempts = 0;
+    const host = randomUUID(), repo = randomUUID();
+    f.store.put('peer', host, { hostId: host, alias: 'fixture', version: '0.1.0' });
+    f.store.put('authority', repo, { phase: 'active' });
+    const op = f.store.admit(randomUUID(), 'remote.checks', repo, { destinationHostId: host, checkId: null, fresh: false }, 'fixture', 'queued_local');
+    const peers = new Peers(f.store, { get: async () => ({ id: repo, canonicalHostId: host }), all: () => [] }, 'fixture', async () => { attempts++; throw new Fault('PEER_UNAVAILABLE', 'fixture', 3); }, { wall: () => wall, mono: () => mono, random: () => .5 });
+    peers.syncRegistry = async () => { };
+    await peers.tick();
+    wall -= 86400000;
+    mono += 301000;
+    await peers.tick();
+    assert.equal(attempts, 2);
+    assert.equal(f.store.get(op.operationId).state, 'queued_local');
+}
+finally {
+    f.close();
+} });
+test('registry and receipt retry gates survive clock jumps and restart clamps persisted delay', () => { const f = fixture(); try {
+    let wall = 1000000, mono = 0;
+    const clock = { wall: () => wall, mono: () => mono, random: () => .5 }, policy = new PeerConnectivity(f.store, clock);
+    for (const key of ['registry:host', 'receipt:op']) {
+        const stamp = policy.nextAttempt(key, 2000);
+        wall -= 86400000;
+        assert.equal(policy.attemptDue(key + ':immediate', 0), true);
+        assert.equal(policy.attemptDue(key, stamp), false);
+        mono += 2001;
+        assert.equal(policy.attemptDue(key, stamp), true);
+        const restarted = new PeerConnectivity(f.store, clock);
+        assert.equal(restarted.attemptDue(key, stamp), false);
+        mono += 300001;
+        assert.equal(restarted.attemptDue(key, stamp), true);
+    }
+}
+finally {
+    f.close();
+} });
+test('healthy registry and receipt progress before a stalled remote job; later ticks admit new traffic', async () => { const f = fixture(); try {
+    const bad = randomUUID(), good = randomUUID(), repo = randomUUID();
+    let release;
+    const events = [];
+    for (const [hostId, alias] of [[bad, 'bad'], [good, 'good']])
+        f.store.put('peer', hostId, { hostId, alias, version: '0.1.0' });
+    f.store.put('authority', repo, { phase: 'active' });
+    f.store.admit(randomUUID(), 'remote.checks', repo, { destinationHostId: bad, checkId: null, fresh: false }, 'fixture', 'queued_local');
+    const peers = new Peers(f.store, { get: async () => ({ id: repo, canonicalHostId: bad }), all: () => [] }, 'fixture', () => new Promise((_, reject) => release = () => reject(new Fault('PEER_UNAVAILABLE', 'fixture', 3))));
+    peers.syncRegistry = async (host) => events.push(host);
+    peers.acknowledgeCompletion = async (outbox) => events.push(outbox.operationId);
+    const ack = randomUUID();
+    f.store.put('peerCompletionOutbox', ack, { operationId: ack, hostId: good, state: 'pending', nextAttempt: 0, retainedAt: new Date().toISOString() });
+    const pending = peers.tick();
+    await new Promise(setImmediate);
+    await new Promise(setImmediate);
+    assert(events.includes(good));
+    assert(events.includes(ack));
+    const newcomer = randomUUID();
+    f.store.put('peer', newcomer, { hostId: newcomer, alias: 'new', version: '0.1.0' });
+    await peers.tick();
+    assert(events.includes(newcomer));
+    release();
+    await pending;
+}
+finally {
+    f.close();
+} });
+test('offline diagnostic freshness shares the host projection and provider has an independent clock', async () => { const f = fixture(); try {
+    let mono = 0;
+    const policy = new PeerConnectivity(f.store, { wall: Date.now, mono: () => mono, random: () => .5 }), host = randomUUID();
+    f.store.put('peer', host, { hostId: host, alias: 'mini', version: '0.1.0' });
+    await policy.execute(host, 'mini', 'health', async () => ({}));
+    let current = policy.snapshot(host, 'mini');
+    policy.provider(host, 'mini', { status: 'observed', client: 'running', target: 'reachable', path: 'direct' }, current.endpointRevision, current.generation);
+    mono += 30001;
+    await policy.execute(host, 'mini', 'health', async () => ({}));
+    current = policy.snapshot(host, 'mini');
+    assert.equal(current.freshness, 'fresh');
+    assert.equal(current.provider.freshness, 'stale');
+    mono += 30001;
+    const report = new Diagnostics(f.store, { all: () => [] }).snapshot();
+    assert.equal(report.connectivity[0].freshness, 'stale');
+    assert.equal(report.connectivity[0].provider.freshness, 'stale');
+    assert.equal(report.connectivity[0].target, 'peer-target-1');
+    assert.equal(report.connectivity[0].source, 'helper');
+    assert(!JSON.stringify(report).includes(host));
+}
+finally {
+    f.close();
+} });
+async function historicalModule(file, commit) { const source = spawnSync('git', ['show', `${commit}:${file}`], { encoding: 'utf8' }); assert.equal(source.status, 0, source.stderr); let js = ts.transpileModule(source.stdout, { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.ESNext } }).outputText; js = js.replace(/from '([^']+)'/g, (_, specifier) => `from '${specifier.startsWith('.') ? pathToFileURL(join(process.cwd(), 'packages/engine/dist', specifier)).href : specifier === '@contribution/contracts' ? pathToFileURL(join(process.cwd(), 'packages/contracts/dist/index.js')).href : specifier}'`); return import('data:text/javascript;base64,' + Buffer.from(js).toString('base64')); }
+test('actual legacy receiver health refusal is negotiated while ordinary exchange remains usable', async () => { const f = fixture(), caller = fixture(); try {
+    const { Peers: Legacy } = await historicalModule('packages/engine/src/peers.ts', 'b27a8038');
+    const old = new Legacy(f.store, { all: () => [] }, 'fixture');
+    f.store.put('peer', caller.store.hostId, { hostId: caller.store.hostId, alias: null, version: '0.1.0' });
+    await assert.rejects(old.receive({ fromHostId: caller.store.hostId, expectedHostId: f.store.hostId, compatibility: { version: '0.1.0' }, action: 'health', body: {} }), { code: 'INVALID_REQUEST' });
+    caller.store.put('peer', f.store.hostId, { hostId: f.store.hostId, alias: 'legacy', version: '0.1.0', capabilities: [] });
+    const peers = new Peers(caller.store, { all: () => [] }, 'fixture', (_, envelope) => old.receive(envelope));
+    peers.check(f.store.hostId);
+    await peers.settledChecks();
+    assert.equal(peers.connectivity.snapshot(f.store.hostId, 'legacy').reasonCode, 'PEER_ACTION_UNSUPPORTED');
+    await peers.syncRegistry(f.store.hostId, true);
+    assert.equal(peers.connectivity.snapshot(f.store.hostId, 'legacy').state, 'ready');
+}
+finally {
+    f.close();
+    caller.close();
+} });
+test('actual v3 Journal refuses v4 host resource semantics before changing retained state', async () => { const f = fixture(); try {
+    f.store.enableHostResources();
+    f.store.setMeta('retained', 'unchanged');
+    const { Journal: Old } = await historicalModule('packages/engine/src/journal.ts', '018d0ce');
+    await assert.rejects(async () => new Old(f.root), { code: 'DATABASE_TOO_NEW' });
+    assert.equal(f.store.getMeta('retained'), 'unchanged');
+}
+finally {
+    f.close();
+} });
+test('removed or unresolved Git destination cannot present previous fresh endpoint evidence', async () => { const f = fixture(); try {
+    const { repository, commit, git } = await import('./integration/service.mjs');
+    const { mkdirSync } = await import('node:fs');
+    const { Repositories } = await import('../packages/engine/dist/repositories.js');
+    const path = repository(f.root), remote = join(f.root, 'remote.git');
+    commit(path);
+    mkdirSync(remote);
+    git(remote, 'init', '--bare');
+    git(path, 'remote', 'add', 'origin', remote);
+    const repos = new Repositories(f.store);
+    let repo = await repos.add(path), config = structuredClone(repo.config);
+    config.publication = { ...config.publication, remote: 'origin', branch: 'dev' };
+    repo = repos.configure(repo, config, repo.revision, randomUUID());
+    const first = await repos.status(repo, true);
+    assert.equal(first.gitConnectivity.state, 'ready');
+    const priorPublication = structuredClone(repo.config.publication);
+    config = structuredClone(repo.config);
+    config.publication.branch = 'other';
+    repo = repos.configure(repo, config, repo.revision, randomUUID());
+    recordGitConnectivity(f.store, repo.id, remote, { ...result({}), code: 0, cleanup: { released: true, members: [] } }, priorPublication);
+    assert.equal(gitConnectivitySnapshot(f.store, repo.id), null, 'A late observation is bound to its original publication context');
+    config = structuredClone(repo.config);
+    config.publication.remote = null;
+    config.publication.branch = null;
+    repo = repos.configure(repo, config, repo.revision, randomUUID());
+    assert.equal((await repos.status(repo, false)).gitConnectivity, null);
+    assert.equal((await repos.status(repo, true)).gitConnectivity, null);
+    config = structuredClone(repo.config);
+    config.publication.remote = 'missing';
+    config.publication.branch = 'dev';
+    repo = repos.configure(repo, config, repo.revision, randomUUID());
+    await assert.rejects(repos.status(repo, true));
+    assert.equal(new Diagnostics(f.store, repos).snapshot().connectivity.length, 0);
+}
+finally {
+    f.close();
+} });
+for (const edge of ['intent', 'allocated', 'grant', 'dispatch', 'stopping', 'finished'])
+    test(`host process crash at ${edge} retains a fenced exact owner before reuse`, async () => {
+        const root = mkdtempSync(join(tmpdir(), 'ct-host-crash-')), state = join(root, 'state'), marker = join(root, 'ran');
+        let store;
+        try {
+            const engine = pathToFileURL(join(process.cwd(), 'packages/engine/dist')).href;
+            const target = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'executed');console.log('executed');setTimeout(()=>{},200)`;
+            const script = `import {Journal} from '${engine}/journal.js';import {PeerConnectivity} from '${engine}/peer-connectivity.js';import {run} from '${engine}/process.js';const store=new Journal(${JSON.stringify(state)}),policy=new PeerConnectivity(store),owner=policy.processOwnership('fixture');for(const name of ['intent','allocated','grant','stopping','finished']){const original=owner[name];owner[name]=(...args)=>{original(...args);if(name===${JSON.stringify(edge)})process.kill(process.pid,'SIGKILL');};}await run(process.execPath,['-e',${JSON.stringify(target)}],{ownership:owner,timeoutMs:${edge === 'stopping' ? 100 : 3000},output:()=>{if(${JSON.stringify(edge)}==='dispatch')process.kill(process.pid,'SIGKILL');}});`;
+            const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', script], { stdio: 'ignore', timeout: 5000 });
+            assert.equal(crashed.signal, 'SIGKILL');
+            await new Promise(r => setTimeout(r, 400));
+            store = new Journal(state);
+            const policy = new PeerConnectivity(store);
+            const retained = store.records('resource');
+            assert.equal(retained.length, 1);
+            assert.equal(retained[0].scopeType, 'host');
+            assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 4);
+            if (['intent', 'allocated', 'grant'].includes(edge)) {
+                const { existsSync } = await import('node:fs');
+                assert.equal(existsSync(marker), false, 'No target code before the durable grant completes');
+            }
+            const observed = await policy.reconcile('fixture', 'mini');
+            assert.equal(observed.reconciled, edge !== 'intent');
+            if (edge === 'intent')
+                assert.equal(policy.snapshot('fixture', 'mini').reasonCode, 'PROCESS_RELEASE_UNCONFIRMED');
+            else
+                assert.equal(store.records('resource')[0].state, 'stopped');
+        }
+        finally {
+            store?.close();
+            rmSync(root, { recursive: true });
+        }
+    });
+test('diagnostic ownership fences another diagnostic and maintenance without vetoing helper health', async () => { const f = fixture(); try {
+    const host = randomUUID();
+    f.store.put('peer', host, { hostId: host, alias: 'mini', version: '0.1.0', capabilities: ['health-v1'] });
+    const engine = new Engine(f.store, { identity: 'fixture', distribution: 'fixture', root: f.root, node: process.execPath, cli: join(f.root, 'cli') }, async () => ({ hostId: host, version: '0.1.0', capabilities: ['health-v1'] }));
+    engine.peers.connectivity.processOwnership(host, true).intent('/fixture/never-dispatched', [], new Date(Date.now() + 1000).toISOString());
+    engine.peers.check(host);
+    await engine.peers.settledChecks();
+    assert.equal(engine.peers.connectivity.snapshot(host, 'mini').state, 'ready');
+    assert.throws(() => engine.peers.diagnose(host), { code: 'PROCESS_RELEASE_UNCONFIRMED' });
+    assert.equal(engine.maintenance.isReady(engine.maintenance.blockers(0, false, 0)), false);
+}
+finally {
+    f.close();
+} });
+test('capacity survives a journal evidence write failure and rejects an endpoint changed while waiting', async () => { const f = fixture(); try {
+    const release = [];
+    const pending = Array.from({ length: 4 }, (_, i) => f.policy.execute('busy' + i, 'mini' + i, 'health', () => new Promise(r => release.push(r))));
+    await new Promise(setImmediate);
+    let oldDispatched = false;
+    const stale = f.policy.execute('changed', 'old', 'health', async () => { oldDispatched = true; return {}; });
+    const refused = assert.rejects(stale, { code: 'PROBE_CANCELLED' });
+    await new Promise(setImmediate);
+    f.policy.changeEndpoint('changed', 'new');
+    release.forEach(r => r({}));
+    await Promise.all(pending);
+    await refused;
+    assert.equal(oldDispatched, false);
+    const original = f.store.put.bind(f.store);
+    f.store.put = (namespace, key, value) => { if (namespace === 'connectivity' && key === 'write-failure')
+        throw Error('synthetic journal failure'); return original(namespace, key, value); };
+    await assert.rejects(f.policy.execute('write-failure', 'mini', 'health', async () => ({})), /synthetic journal failure/);
+    f.store.put = original;
+    await f.policy.execute('changed', 'new', 'health', async () => ({}));
+    assert.equal(f.policy.snapshot('changed', 'new').state, 'ready');
+    assert.equal(f.policy.running, 0);
+}
+finally {
+    f.close();
+} });
+for (const mode of ['forward', 'backward', 'restart'])
+    test(`full registry and receipt tick uses clamped monotonic retry across ${mode}`, async () => { const f = fixture(); try {
+        const { completionReceipt } = await import('../packages/engine/dist/peer-receipts.js');
+        let wall = Date.now(), mono = 0;
+        const clock = { wall: () => wall, mono: () => mono, random: () => .5 }, host = randomUUID(), repo = randomUUID(), counts = { registry: 0, receipt: 0 };
+        f.store.put('peer', host, { hostId: host, alias: 'mini', version: '0.1.0' });
+        const observed = { schemaVersion: 1, requestStatus: 'completed', operationId: randomUUID(), operationState: 'succeeded', result: { attemptId: randomUUID() }, error: null };
+        const op = f.store.admit(randomUUID(), 'remote.checks', repo, {}, 'fixture');
+        f.store.update(op, { state: 'succeeded', result: { canonicalObservation: observed } });
+        f.store.put('peerCompletionOutbox', op.operationId, { operationId: op.operationId, repositoryId: repo, hostId: host, receipt: completionReceipt(observed), state: 'pending', nextAttempt: 0, retainedAt: new Date(wall).toISOString() });
+        const transport = async (_, envelope) => { const kind = envelope.action === 'registry.exchange' ? 'registry' : 'receipt'; counts[kind]++; if (counts[kind] === 1)
+            throw new Fault('TEMPORARY_BUSINESS_FAILURE', 'fixture', 3, {}, true); return kind === 'registry' ? { hostId: host, version: '0.1.0', catalog: envelope.body.catalog, receivedGeneration: envelope.body.catalog.generation, receivedDigest: envelope.body.catalog.digest } : { hostId: host, version: '0.1.0', acknowledged: true, receipt: envelope.body.receipt }; };
+        let peers = new Peers(f.store, { all: () => [] }, 'fixture', transport, clock);
+        await peers.tick();
+        assert.deepEqual(counts, { registry: 1, receipt: 1 });
+        wall += mode === 'forward' ? 86400000 : -86400000;
+        if (mode === 'restart')
+            peers = new Peers(f.store, { all: () => [] }, 'fixture', transport, clock);
+        mono += 1000;
+        await peers.tick();
+        assert.deepEqual(counts, { registry: 1, receipt: 1 });
+        mono += 300001;
+        await peers.tick();
+        assert.deepEqual(counts, { registry: 2, receipt: 2 });
+        assert.equal(f.store.record('peerCompletionOutbox', op.operationId).state, 'acknowledged');
+        assert.equal(f.store.record('peerRegistrySync', host).state, 'acknowledged');
+    }
+    finally {
+        f.close();
+    } });
+test('notification polling interval ignores forward and backward wall correction', async () => { const f = fixture(); try {
+    let wall = Date.now(), mono = 0, calls = 0;
+    const host = randomUUID(), repo = randomUUID();
+    f.store.put('peer', host, { hostId: host, alias: 'mini', version: '0.1.0' });
+    f.store.put('authority', repo, { peerHostId: host });
+    const engine = new Engine(f.store, { identity: 'fixture', distribution: 'fixture', root: f.root, node: process.execPath, cli: join(f.root, 'cli') }, async () => { calls++; return { hostId: host, version: '0.1.0', notices: [] }; });
+    engine.peers.connectivity = new PeerConnectivity(f.store, { wall: () => wall, mono: () => mono, random: () => .5 });
+    engine.repos.all = () => [{ id: repo, availability: 'both-macs' }];
+    await engine.refreshNotifications();
+    assert.equal(calls, 1);
+    wall += 86400000;
+    mono += 1000;
+    await engine.refreshNotifications();
+    assert.equal(calls, 1);
+    wall -= 172800000;
+    mono += 30001;
+    await engine.refreshNotifications();
+    assert.equal(calls, 2);
+}
+finally {
+    f.close();
+} });
