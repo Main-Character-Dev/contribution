@@ -18,7 +18,8 @@
     "check": "pnpm test && pnpm contracts:types && pnpm check:foundation",
     "native:build": "bash scripts/native-build.sh",
     "native:test": "bash scripts/native-test.sh",
-    "cli": "node packages/cli/dist/main.js"
+    "cli": "node packages/cli/dist/main.js",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

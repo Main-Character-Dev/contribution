@@ -53,3 +53,9 @@ The native package owns the authenticated IPC client and platform integration. W
 ## Evidence limits
 
 Builds and disposable fixtures prove only their recorded boundaries. They do not replace installed-service, two-Mac, signing, update-path or physical-device acceptance. See [VERIFICATION.md](VERIFICATION.md) and [D0_INVENTORY.md](D0_INVENTORY.md).
+
+## Free secret protection
+
+Run `brew install gitleaks` and install the repository hooks with `git config core.hooksPath .githooks`. The hooks scan staged changes before commits and outgoing commit history before pushes; deleted refs skip scanning. Missing tools or unresolved history block the operation.
+
+The standalone `Secret scanning` GitHub workflow runs the checksum-verified Gitleaks 8.30.1 CLI on Linux with read-only permissions and a five-minute timeout. Pull requests and pushes scan introduced commits; manual runs scan reachable history. New local branches scan commits not already known on the destination remote; new hosted branches scan against the default branch when available. It does not execute project code, use the separately licensed Action wrapper, upload reports, or enable paid GitHub security. Actions minutes may apply. Local and hosted output redacts detected values. Real exposed credentials must be rotated; test values require exact, reviewed exceptions.
