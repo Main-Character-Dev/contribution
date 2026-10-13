@@ -78,7 +78,7 @@ export class ResourceLifecycle {
     return { total, unresolved };
   }
   history(after = '', limit = 200): Resource[] {
-    requireValue(typeof after === 'string' && Number.isSafeInteger(limit) && limit > 0 && limit <= 200, 'INVALID_CURSOR', 'Select a bounded resource history page.', 2);
+    requireValue(typeof after === 'string' && (after === '' || validateContractFormat('uuid', after)) && Number.isSafeInteger(limit) && limit > 0 && limit <= 200, 'INVALID_CURSOR', 'Select a bounded resource history page and its issued cursor.', 2);
     return this.store.db.prepare("SELECT body FROM records WHERE namespace='resource' AND key>? ORDER BY key LIMIT ?").all(after, limit).map(row => {
       const value = JSON.parse(String(row['body'])) as Resource; assertContract('resource', value); return value;
     });

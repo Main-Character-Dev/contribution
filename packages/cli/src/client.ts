@@ -90,7 +90,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         'repos runtime --repo ID --node PATH --pnpm PATH', 'repos migration --repo ID [--adapter ID] [--prepare-reporting|--prepare-adoption --request-id UUID]',
         'repos migration --repo ID --list-adoptions', 'repos migration --repo ID --adoption-plan ID [--review-file PATH --review-side before|after --review-offset BYTES]', 'repos migration --repo ID --apply-adoption|--activate-adoption|--rollback-adoption ID --expected-revision REV --request-id UUID',
         'repos migration --repo ID --prepare-existing-adoption --original-tip OID --migration-tip OID --request-id UUID',
-        'service resources [--preview|--reconcile|--scope-token TOKEN --request-id UUID] --json', 'service resource-policy [--file PATH --expected-revision REV --request-id UUID] --json',
+        'service resources [--after CURSOR|--preview|--reconcile|--scope-token TOKEN --request-id UUID] --json', 'service resource-policy [--file PATH --expected-revision REV --request-id UUID] --json',
         'service diagnostics [--run OPERATION] --json', 'service storage-policy [--file PATH --expected-revision REV --request-id UUID] --json', 'hosts sync --host HOST', 'repos resolve PATH --repo ID --host HOST --expected-revision REVISION',
         'service power-policy [--file PATH --expected-revision REV --request-id UUID] --json',
         'devices list|status|apps|authorize|revoke|qualify|prepare|install|launch|logs|test|ui|debug|capture|disconnect|reconcile',
@@ -113,7 +113,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
         if (word === '--state-dir') directory = value; else args[word === '--file' ? 'config' : 'metadata'] = jsonFile(value); continue;
       }
       const key = values[word];
-      if (key) { const value = argv[++index]; if (!value || value.startsWith('--') || key in args) throw new Fault('INVALID_USAGE', `${word} needs one value.`, 2); args[key] = ['tail', 'after', 'durationSeconds', 'maxBytes', 'reviewOffset'].includes(key) ? Number(value) : value; continue; }
+      if (key) { const value = argv[++index]; if (!value || value.startsWith('--') || key in args) throw new Fault('INVALID_USAGE', `${word} needs one value.`, 2); args[key] = ['tail', 'durationSeconds', 'maxBytes', 'reviewOffset'].includes(key) ? Number(value) : value; continue; }
       const flag = flags[word]; if (flag) { if (flag in args) throw new Fault('INVALID_USAGE', `Repeated ${word}.`, 2); args[flag] = true; continue; }
       if (word.startsWith('-') && word !== '--version') throw new Fault('INVALID_USAGE', `Unknown option ${word}.`, 2);
       words.push(word === '--version' ? 'version' : word);
@@ -122,6 +122,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     if (single.has(group)) command = group;
     else if (groups.has(group)) { const action = words.shift(); if (!action) throw new Fault('INVALID_USAGE', `Specify a ${group} action.`, 2); command = `${group}.${action}`; }
     else throw new Fault('INVALID_USAGE', 'Unknown command. Use contribution help.', 2);
+    if (args['after'] !== undefined && command !== 'service.resources') args['after'] = Number(args['after']);
     if (command === 'devices.artifacts') { const action = words.shift(); if (!['list', 'get', 'transfer'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices artifacts list, get or transfer.', 2); command += `.${action}`; }
     if (command === 'devices.evidence') { const action = words.shift(); if (!['record', 'get', 'review'].includes(action ?? '')) throw new Fault('INVALID_USAGE', 'Select devices evidence record, get or review.', 2); command += `.${action}`; }
     if (['repos.add', 'repos.create', 'repos.relocate', 'repos.resolve'].includes(command)) args['path'] = words.shift();

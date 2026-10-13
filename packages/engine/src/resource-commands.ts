@@ -46,7 +46,7 @@ export class ResourceCommands {
       const result = await resources.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId'));
       await resourcesSettled(); return completed(result);
     } else requireValue(Object.keys(args).every(key => key === 'after'), 'INVALID_USAGE', 'Inspect resources without mutation inputs.', 2);
-    const rows = resources.history(typeof args['after'] === 'string' ? args['after'] : ''); return completed({ total: resources.counts().total, limited: rows.length === 200, resources: rows, nextCursor: rows.at(-1)?.resourceId ?? null, policy: resources.policy() });
+    const rows = resources.history(args['after'] === undefined ? '' : string(args['after'], 'after')); return completed({ total: resources.counts().total, limited: rows.length === 200, resources: rows, nextCursor: rows.at(-1)?.resourceId ?? null, policy: resources.policy() });
   }
   private async storage(args: ObjectValue): Promise<Response> {
     const { store, kick } = this.context;
