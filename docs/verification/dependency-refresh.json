@@ -45,6 +45,10 @@
       "outcome": "passed; strict build, compile-time contract proof and 31 tests"
     },
     {
+      "command": "bash scripts/dev.sh check",
+      "outcome": "passed with normal local IPC/process permissions; 481 tests, zero failures; compile-time contract and foundation checks passed"
+    },
+    {
       "command": "bash scripts/dev.sh check:foundation",
       "outcome": "passed; pins, backend dependency hashes, provenance, privacy, requirements and docs"
     },
@@ -91,5 +95,6 @@
     "https://go.dev/dl/?mode=json",
     "https://developer.apple.com/xcode/system-requirements",
     "https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories"
-  ]
+  ],
+  "validatedSourceCommit": "9c4c1318bb8da82fd380a091f67d9bc4161f2899"
 }
