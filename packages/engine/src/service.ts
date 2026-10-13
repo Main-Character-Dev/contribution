@@ -86,7 +86,7 @@ allowed['devices.transfer-host'] = ['repo', 'device', 'fromHost', 'host', 'expec
 allowed['devices.evidence.record'] = ['repo', 'host', 'config', 'requestId'];
 allowed['devices.evidence.get'] = ['repo', 'host', 'evidence'];
 allowed['devices.evidence.review'] = ['repo', 'host', 'evidence', 'expectedRevision', 'requestId'];
-allowed['service.resources'] = ['preview', 'scopeToken', 'requestId', 'reconcile'];
+allowed['service.resources'] = ['preview', 'scopeToken', 'requestId', 'reconcile', 'after'];
 allowed['service.resource-policy'] = ['config', 'expectedRevision', 'requestId'];
 export class Engine {
   readonly resources: ResourceLifecycle;
@@ -407,7 +407,7 @@ export class Engine {
       }
       if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
-        resources: { total: this.resources.all().length, unresolved: this.resources.all().filter(r => r.state === 'unresolved').length },
+        resources: this.resources.counts(),
         backendSessions: BackendSessions.status(this.store),
         storageHold: this.storageHold, power: this.power.status(),
         connectivityHints: this.store.getMeta('connectivityHints') ?? { status: 'unknown', observedAt: null }, connectivityHintReceipt: this.store.getMeta('connectivityHintReceipt') ?? null, maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
@@ -425,8 +425,8 @@ export class Engine {
           const result = await this.resources.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId'));
           for (const [operationId, lease] of this.resourceLeases) if (!this.resources.blockers().some(r => r.operationId === operationId)) { lease.release(); this.resourceLeases.delete(operationId); }
           await this.recoverObservedEffects(); this.kick(); return completed(result);
-        } else requireValue(Object.keys(args).length === 0, 'INVALID_USAGE', 'Inspect resources without mutation inputs.', 2);
-        const rows = this.resources.all(); return completed({ total: rows.length, limited: rows.length > 200, resources: rows.slice(-200), policy: this.resources.policy() });
+        } else requireValue(Object.keys(args).every(key => key === 'after'), 'INVALID_USAGE', 'Inspect resources without mutation inputs.', 2);
+        const rows = this.resources.history(typeof args['after'] === 'string' ? args['after'] : ''); return completed({ total: this.resources.counts().total, limited: rows.length === 200, resources: rows, nextCursor: rows.at(-1)?.resourceId ?? null, policy: this.resources.policy() });
       }
       if (command === 'service.storage') {
         requireValue(args['worktrees'] === undefined || args['worktrees'] === true, 'INVALID_USAGE', 'Use --worktrees to select owned checkout cleanup.', 2);

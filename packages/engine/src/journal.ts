@@ -45,6 +45,15 @@ export class Journal {
       CREATE TABLE events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
       CREATE TABLE records (namespace TEXT NOT NULL, key TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(namespace,key));
       PRAGMA user_version=1;`));
+    // Additive access paths do not change the reader compatibility floor.
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS operations_queued ON operations(sequence) WHERE state='queued';
+      CREATE INDEX IF NOT EXISTS operations_unsettled ON operations(sequence) WHERE state NOT IN ('succeeded','failed','cancelled','interrupted');
+      CREATE INDEX IF NOT EXISTS operations_attempt ON operations(json_extract(body,'$.attemptId'));
+      CREATE INDEX IF NOT EXISTS events_operation ON events(json_extract(body,'$.operationId'),sequence);
+      CREATE INDEX IF NOT EXISTS resource_live ON records(json_extract(body,'$.repositoryId'),key) WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped';
+      CREATE INDEX IF NOT EXISTS resource_request ON records(json_extract(body,'$.requestId')) WHERE namespace='resource';
+    `);
     this.hostId = this.getMeta<string>('hostId') ?? id(); this.setMeta('hostId', this.hostId);
   }
   enableHostResources(): void {
@@ -70,7 +79,9 @@ export class Journal {
   records<T>(namespace: string): T[] { return this.db.prepare('SELECT body FROM records WHERE namespace=?').all(namespace).map(row => JSON.parse(String(row['body'])) as T); }
   put(namespace: string, key: string, value: unknown): void { this.db.prepare('INSERT INTO records VALUES(?,?,?) ON CONFLICT(namespace,key) DO UPDATE SET body=excluded.body').run(namespace, key, canonical(value)); }
   assertRepositoryAvailable(repositoryId: string, enrolling = false): void {
-    requireValue(!this.records<{ repositoryId: string; owner: string; state: string; lifetime: string }>('resource').some(r => r.repositoryId === repositoryId && ['utility', 'borrowed'].includes(r.owner) && ['ephemeral', 'borrowed'].includes(r.lifetime) && ['unresolved', 'stopping', 'intent', 'allocated'].includes(r.state)), 'RESOURCE_RECONCILIATION_REQUIRED', 'A retained resource in this clone needs its owning reconciliation before new work.', 3);
+    requireValue(!this.db.prepare(`SELECT key FROM records WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped'
+      AND json_extract(body,'$.repositoryId')=? AND json_extract(body,'$.owner') IN ('utility','borrowed')
+      AND json_extract(body,'$.lifetime') IN ('ephemeral','borrowed') AND json_extract(body,'$.state') IN ('unresolved','stopping','intent','allocated') LIMIT 1`).get(repositoryId), 'RESOURCE_RECONCILIATION_REQUIRED', 'A retained resource in this clone needs its owning reconciliation before new work.', 3);
     requireValue(!this.records<{ state: string; preview: { resources: { repositoryId: string }[] } }>('resourceCleanup').some(r => r.state === 'stopping' && r.preview.resources.some(x => x.repositoryId === repositoryId)), 'RESOURCE_CLEANUP_PENDING', 'Resume the retained exact resource cleanup before new work in this clone.', 3);
     const bundleCleanup = this.db.prepare(`SELECT r.key FROM records r, json_each(r.body,'$.preview.candidates') c
       WHERE r.namespace='gitBundleCleanup' AND json_extract(r.body,'$.state')='removing'

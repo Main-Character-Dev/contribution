@@ -63,6 +63,30 @@ export class ResourceLifecycle {
     requireValue(rows.length <= 10000, 'RESOURCE_CENSUS_LIMIT', 'Resource census exceeds its bounded inspection limit.', 3);
     for (const row of rows) assertContract('resource', row); return rows;
   }
+  /** Live ownership stays bounded independently of retained, stopped history. */
+  live(repositoryId?: string): Resource[] {
+    const sql = "SELECT body FROM records WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped'";
+    const rows = (repositoryId === undefined ? this.store.db.prepare(sql + ' LIMIT 10001').all() :
+      this.store.db.prepare(sql + " AND json_extract(body,'$.repositoryId')=? LIMIT 10001").all(repositoryId)).map(row => JSON.parse(String(row['body'])) as Resource);
+    requireValue(rows.length <= 10000, 'RESOURCE_CENSUS_LIMIT', 'Live resource census exceeds its bounded inspection limit.', 3);
+    for (const row of rows) assertContract('resource', row); return rows;
+  }
+  counts(): { total: number; unresolved: number } {
+    const total = Number(this.store.db.prepare("SELECT count(*) AS n FROM records WHERE namespace='resource'").get()?.['n']);
+    const unresolved = Number(this.store.db.prepare("SELECT count(*) AS n FROM records WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped' AND json_extract(body,'$.state')='unresolved'").get()?.['n']);
+    return { total, unresolved };
+  }
+  history(after = '', limit = 200): Resource[] {
+    requireValue(typeof after === 'string' && Number.isSafeInteger(limit) && limit > 0 && limit <= 200, 'INVALID_CURSOR', 'Select a bounded resource history page.', 2);
+    return this.store.db.prepare("SELECT body FROM records WHERE namespace='resource' AND key>? ORDER BY key LIMIT ?").all(after, limit).map(row => {
+      const value = JSON.parse(String(row['body'])) as Resource; assertContract('resource', value); return value;
+    });
+  }
+  private byRequest(requestId: string): Resource | undefined {
+    const row = this.store.db.prepare("SELECT body FROM records WHERE namespace='resource' AND json_extract(body,'$.requestId')=?").get(requestId);
+    if (!row) return undefined;
+    const value = JSON.parse(String(row['body'])) as Resource; assertContract('resource', value); return value;
+  }
   get(resourceId: string): Resource {
     const value = this.store.record<Resource>('resource', resourceId);
     requireValue(value, 'RESOURCE_NOT_FOUND', 'Select an exact retained resource.'); assertContract('resource', value); return value;
@@ -78,7 +102,7 @@ export class ResourceLifecycle {
     assertContract('resource-policy', value); requireValue(validateContractFormat('uuid', requestId), 'INVALID_USAGE', 'Policy requires an immutable request UUID.', 2);
     const input = digest({ value, revision }), prior = this.store.record<{ input: string; result: ObjectValue }>('resourcePolicyRequest', requestId);
     if (prior) { requireValue(prior.input === input, 'REQUEST_ID_CONFLICT', 'The policy request has other inputs.'); return prior.result; }
-    requireValue(!this.store.byRequest(requestId) && !this.all().some(r => r.requestId === requestId), 'REQUEST_ID_CONFLICT', 'The request belongs to another owner.');
+    requireValue(!this.store.byRequest(requestId) && !this.byRequest(requestId), 'REQUEST_ID_CONFLICT', 'The request belongs to another owner.');
     requireValue(this.policy().revision === revision, 'REVISION_CONFLICT', 'Resource policy changed.');
     const result = { policy: value, revision: digest(value), requestId };
     this.store.transaction(() => { this.store.setMeta('resourcePolicy', value); this.store.put('resourcePolicyRequest', requestId, { input, result }); }); return result;
@@ -92,9 +116,9 @@ export class ResourceLifecycle {
   begin(op: Pick<Operation, 'operationId' | 'attemptId' | 'repositoryId'> | { operationId: null; attemptId: null; repositoryId: null }, input: ResourceIntent): Resource {
     requireValue(validateContractFormat('uuid', input.requestId), 'INVALID_USAGE', 'Resource intent needs an immutable request UUID.', 2);
     const key = digest({ operationId: op.operationId, attemptId: op.attemptId, input });
-    const prior = this.all().find(r => r.requestId === input.requestId);
+    const prior = this.byRequest(input.requestId);
     if (prior) { requireValue(this.store.record<{ digest: string }>('resourceRequest', input.requestId)?.digest === key, 'REQUEST_ID_CONFLICT', 'The resource request has changed inputs.'); return prior; }
-    const context = this.resourceContext(op.repositoryId), rows = this.all(), { policy } = this.policy();
+    const context = this.resourceContext(op.repositoryId), rows = this.live(), { policy } = this.policy();
     requireValue(!this.store.records<Cleanup>('resourceCleanup').some(c => c.state === 'stopping' && c.preview.resources.some(r => r.scope === input.scope)), 'RESOURCE_CLEANUP_PENDING', 'Resume the exact pending cleanup before admitting this scope.', 3);
     const occupied = rows.filter(r => r.state !== 'stopped' && ['utility', 'borrowed'].includes(r.owner));
     requireValue(!occupied.some(r => r.scope === input.scope && r.hostId === this.store.hostId && r.resourceId !== input.parentId), 'RESOURCE_BUSY', 'This exact resource scope has an unreleased owner.', 4);
@@ -152,9 +176,9 @@ export class ResourceLifecycle {
   transition(expected: Resource, patch: Pick<Partial<Resource>, 'identity' | 'state' | 'pinned' | 'deadlineAt'>): Resource {
     this.assertCurrent(expected); return this.save({ ...expected, ...patch, generation: expected.generation + 1, updatedAt: now() });
   }
-  blockers(repositoryId?: string): Resource[] { return this.all().filter(r => ['utility', 'borrowed'].includes(r.owner) && r.state !== 'stopped' && (!repositoryId || r.repositoryId === repositoryId)); }
+  blockers(repositoryId?: string): Resource[] { return this.live(repositoryId).filter(r => ['utility', 'borrowed'].includes(r.owner)); }
   static pending(store: Journal, repositoryId: string, exceptOperation?: string): boolean {
-    return store.records<Resource>('resource').some(r => r.repositoryId === repositoryId && ['utility', 'borrowed'].includes(r.owner) && r.operationId !== exceptOperation && ['ephemeral', 'borrowed'].includes(r.lifetime) && r.state !== 'stopped');
+    return new ResourceLifecycle(store).live(repositoryId).some(r => ['utility', 'borrowed'].includes(r.owner) && r.operationId !== exceptOperation && ['ephemeral', 'borrowed'].includes(r.lifetime));
   }
   private cleanupOwns(cleanup: Cleanup, expected: Resource): boolean {
     const selected = cleanup.preview.resources.find(r => r.resourceId === expected.resourceId);
@@ -189,7 +213,7 @@ export class ResourceLifecycle {
     let record = this.get(resourceId); if (record.state === 'stopped') return record;
     requireValue(record.owner === 'utility' && !record.pinned && (manual || record.lifetime === 'ephemeral'), 'RESOURCE_PROTECTED', 'Borrowed, native, unknown, pinned or retained resources require their owning action.', 3);
     this.assertCurrent(record);
-    requireValue(!this.all().some(r => r.resourceId !== record.resourceId && r.state !== 'stopped' && (r.dependencies.includes(record.resourceId) || r.parentId === record.resourceId || record.kind === 'simulator' && r.kind === 'simulator' && r.identity?.value['udid'] === record.identity?.value['udid'])), 'RESOURCE_DEPENDENCY_ACTIVE', 'Stop owned dependants before this resource.', 3);
+    requireValue(!this.live().some(r => r.resourceId !== record.resourceId && r.state !== 'stopped' && (r.dependencies.includes(record.resourceId) || r.parentId === record.resourceId || record.kind === 'simulator' && r.kind === 'simulator' && r.identity?.value['udid'] === record.identity?.value['udid'])), 'RESOURCE_DEPENDENCY_ACTIVE', 'Stop owned dependants before this resource.', 3);
     requireValue(record.identity && record.retries < 3 && (!record.retryAfter || Date.now() >= Date.parse(record.retryAfter)), 'RESOURCE_RECONCILIATION_REQUIRED', 'Identity is missing or the bounded recovery budget needs explicit inspection.', 3);
     const adapter = this.adapters.get(`${record.adapter}@${record.adapterVersion}`);
     requireValue(adapter, 'RESOURCE_ADAPTER_UNAVAILABLE', `Use the retained owning action: ${record.stopAction}`, 3);
@@ -221,7 +245,7 @@ export class ResourceLifecycle {
   }
   async reconcile(deadlineMs = 5000, select: (resource: Resource) => boolean = () => true): Promise<void> {
     requireValue(Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= 30000, 'RESOURCE_DEADLINE_INVALID', 'Observation requires a finite total deadline.', 3);
-    const deadline = performance.now() + deadlineMs, pending = this.all().filter(r => select(r) && r.state !== 'stopped' && ['utility', 'borrowed'].includes(r.owner));
+    const deadline = performance.now() + deadlineMs, pending = this.live().filter(r => select(r) && r.state !== 'stopped' && ['utility', 'borrowed'].includes(r.owner));
     // Startup is observation-only. No allocation, repeated start, kill or lease
     // release is inferred from an expired wall clock or missing parent.
     for (const prior of pending) {
@@ -243,7 +267,7 @@ export class ResourceLifecycle {
   }
   async preview(): Promise<ObjectValue> {
     const resources: Resource[] = [], protectedRows: ObjectValue[] = [];
-    for (const record of this.all().filter(r => r.state !== 'stopped')) {
+    for (const record of this.live().filter(r => r.state !== 'stopped')) {
       try {
         this.assertCurrent(record);
         requireValue(record.owner === 'utility' && !record.pinned && record.identity && this.adapters.has(`${record.adapter}@${record.adapterVersion}`), 'RESOURCE_PROTECTED', record.stopAction, 3);
