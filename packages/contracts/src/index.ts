@@ -1,7 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import Ajv2020 from 'ajv/dist/2020.js';
-import addFormats from 'ajv-formats';
-import type { AnySchema, ValidateFunction } from 'ajv';
+import type { ValidateFunction } from 'ajv';
+import * as generated from './validators.generated.js';
 
 export type { Connectivity } from './generated/connectivity.js';
 export type { Response } from './generated/response.js';
@@ -19,26 +17,11 @@ export type { DeviceProfile as DeviceProfileConfiguration } from './generated/de
 export type { ArtifactProvenance } from './generated/artifact-provenance.js';
 export { buildIdentity } from './generated/version.js';
 
-const directory = new URL('../schemas/', import.meta.url);
-// Conditionals use properties without type/required locally; the enclosing schema
-// supplies those. These lint options do not disable any validation keywords.
-const ajv = new Ajv2020.default({ strict: true, strictTypes: false, strictRequired: false, allErrors: true });
-addFormats.default(ajv);
-const schemas = readdirSync(directory).filter(name => name.endsWith('.schema.json')).sort();
-for (const name of schemas) {
-  ajv.addSchema(JSON.parse(readFileSync(new URL(name, directory), 'utf8')) as AnySchema);
-}
-const validators = new Map<string, ValidateFunction>();
-for (const name of schemas) {
-  const schema = JSON.parse(readFileSync(new URL(name, directory), 'utf8')) as { $id: string };
-  const validate = ajv.getSchema(schema.$id);
-  if (!validate) throw new Error(`Missing local schema: ${schema.$id}`);
-  validators.set(name.replace('.schema.json', ''), validate);
-}
-export const schemaNames: readonly string[] = [...validators.keys()];
-
+const functions = generated as unknown as Record<string, ValidateFunction>;
+export const schemaNames: readonly string[] = generated.contractNames;
+const validators = new Map(schemaNames.map((name, index) => [name, functions['contract' + index]!]));
 const formatValidators = new Map(['date-time', 'uuid', 'uri'].map(format =>
-  [format, ajv.compile({ type: 'string', format })] as const));
+  [format, functions['format_' + format.replace('-', '_')]!] as const));
 export function validateContractFormat(format: 'date-time' | 'uuid' | 'uri', value: unknown): boolean {
   const validate = formatValidators.get(format);
   if (!validate) throw new Error(`Unknown contract format: ${format}`);

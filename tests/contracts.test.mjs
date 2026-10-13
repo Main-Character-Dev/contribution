@@ -1,8 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { schemaNames, validateContract, validateContractFormat } from '../packages/contracts/dist/index.js';
 import { example, exampleSchemas, negativeCases } from './fixtures/contracts.mjs';
+
+test('generated validators preserve canonical runtime decisions and errors', () => {
+  const require = createRequire(new URL('../packages/contracts/package.json', import.meta.url));
+  const Ajv = require('ajv/dist/2020.js').default;
+  const ajv = new Ajv({ strict: true, strictTypes: false, strictRequired: false, allErrors: true }); require('ajv-formats')(ajv);
+  const schemas = new Map(schemaNames.map(name => {
+    const schema = JSON.parse(readFileSync(new URL(`../packages/contracts/schemas/${name}.schema.json`, import.meta.url), 'utf8'));
+    ajv.addSchema(schema); return [name, schema.$id];
+  }));
+  const cases = [...Object.entries(exampleSchemas).map(([name, schema]) => ({ schema, value: example(name) })), ...negativeCases(),
+    ...schemaNames.flatMap(schema => [null, {}, [], 1, 'invalid', { schemaVersion: 2 }].map(value => ({ schema, value })))];
+  for (const { schema, value } of cases) {
+    const validate = ajv.getSchema(schemas.get(schema)), valid = validate(value);
+    assert.deepEqual(validateContract(schema, value), { valid, errors: (validate.errors ?? []).map(error => `${error.instancePath}: ${error.message}`) }, schema);
+  }
+});
 
 test('all canonical schemas compile with local references', () => {
   assert.equal(schemaNames.length, 18);

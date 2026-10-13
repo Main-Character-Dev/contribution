@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { compile } from 'json-schema-to-typescript';
@@ -33,6 +34,27 @@ for (const name of names) {
       bannerComment: '/* Generated from canonical JSON Schema. Runtime validation remains required. */',
       $refOptions: { resolve: { http: false, file: resolver } } }));
 }
+// Canonical schemas also produce executable validators. Compilation happens
+// during generation, never in short-lived CLI or peer helper processes.
+const contractRequire = createRequire(new URL('packages/contracts/package.json', root));
+const Ajv = contractRequire('ajv/dist/2020.js').default;
+const standalone = contractRequire('ajv/dist/standalone/index.js').default;
+const addFormats = contractRequire('ajv-formats');
+const ajv = new Ajv({ strict: true, strictTypes: false, strictRequired: false, allErrors: true, code: { source: true, esm: true } });
+addFormats(ajv);
+const exports = {};
+for (const [index, name] of names.entries()) {
+  const schema = JSON.parse(await readFile(new URL(name, schemaDir), 'utf8'));
+  ajv.addSchema(schema); exports['contract' + index] = schema.$id;
+}
+for (const format of ['date-time', 'uuid', 'uri']) {
+  const key = 'format_' + format.replace('-', '_');
+  ajv.addSchema({ $id: key, type: 'string', format }); exports[key] = key;
+}
+outputs.set('packages/contracts/src/validators.generated.ts',
+  '// @ts-nocheck\n// Generated from canonical JSON Schema by Ajv standalone. Do not edit.\n' +
+  'import { createRequire } from "node:module";\nconst require = createRequire(import.meta.url);\n' + standalone(ajv, exports) + '\n' +
+  'export const contractNames = ' + JSON.stringify(names.map(name => name.replace('.schema.json', ''))) + ' as const;\n');
 outputs.set('packages/contracts/src/generated/version.ts', '// Generated from version.json.\nexport const buildIdentity = ' + JSON.stringify(version, null, 2) + ' as const;\n');
 outputs.set('apps/macos/Config/Version.xcconfig', `// Generated from version.json.\nMARKETING_VERSION = ${version.version}\nCURRENT_PROJECT_VERSION = ${version.build}\n`);
 const response = await readJSON('packages/contracts/schemas/response.schema.json');
@@ -54,5 +76,5 @@ for (const [path, content] of outputs) {
 }
 const generated = await readdir(new URL('packages/contracts/src/generated/', root));
 assert.deepEqual(generated.filter(n => n.endsWith('.ts')).sort(), [...outputs.keys()]
-  .filter(n => n.startsWith('packages/contracts/')).map(n => n.split('/').at(-1)).sort(), 'Unexpected generated type files');
+  .filter(n => n.startsWith('packages/contracts/src/generated/')).map(n => n.split('/').at(-1)).sort(), 'Unexpected generated type files');
 console.log(`${process.argv.includes('--check') ? 'Checked' : 'Generated'} ${outputs.size} client/identity files.`);
