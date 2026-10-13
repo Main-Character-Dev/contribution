@@ -511,7 +511,7 @@ export class Peers {
     requireValue(repo.config.integration.adapter === 'generic-v1', 'ADAPTER_MIGRATION_REQUIRED', 'Imported sources need an explicitly adopted repository adapter.', 3);
     file.verify();
     const input = { tip: m.tip, base: m.base, metadata: m.metadata, policy: m.policy, senderHostId: from, incomingRef: incoming };
-    const op = this.store.admit(m.requestId, m.kind === 'submit' ? 'submit' : m.kind, repo.id, input, this.payload, 'queued', operation => {
+    const op = await this.store.admitAsync(m.requestId, m.kind === 'submit' ? 'submit' : m.kind, repo.id, input, this.payload, 'queued', operation => {
       this.store.put('peerOperation', operation.operationId, { from, repositoryId: repo.id }); return {};
     });
     const receipt = { transferId: m.transferId, requestId: m.requestId, sourceTip: m.tip, incomingRef: incoming, response: this.store.response(op), acceptedAt: now() };
@@ -582,7 +582,7 @@ export class Peers {
     await this.repos.current(repo); currentSelection();
     this.store.put('historyCaptureIntent', requestId, { ...selected, bundle });
     const manifest: TransferManifest = { ...m, bundleDigest: bundle.sha256, bytes: bundle.bytes };
-    return this.store.admit(requestId, `transfer.${kind}`, repo.id, { manifest, path, destinationHostId: selected.destinationHostId }, this.payload, 'queued_local');
+    return await this.store.admitAsync(requestId, `transfer.${kind}`, repo.id, { manifest, path, destinationHostId: selected.destinationHostId }, this.payload, 'queued_local');
   }
   async applyHistory(op: Operation, repo: Enrolled): Promise<ObjectValue> {
     if (op.kind === 'seed') this.assertWriter(repo);

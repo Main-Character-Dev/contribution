@@ -2,9 +2,9 @@ import { Worker } from 'node:worker_threads';
 import { Fault } from './core.js';
 
 export type BulkJob = { kind: 'file-digest'; path: string; maxBytes: number; code: string } |
-  { kind: 'app-digest'; path: string } | { kind: 'app-extract'; path: string; destination: string; appName: string };
+  { kind: 'storage-usage'; path: string; maxStateBytes: number } | { kind: 'app-digest'; path: string } | { kind: 'app-extract'; path: string; destination: string; appName: string };
 interface Pending { job: BulkJob; signal?: AbortSignal; resolve: (value: unknown) => void; reject: (error: unknown) => void; removeAbort: () => void }
-const queue: Pending[] = []; let active = 0;
+const queue: Pending[] = [], idle: Worker[] = []; let active = 0;
 /** Computation and owned staging IO only. SQLite and effect authority remain
  * on the service thread. Finite concurrency, queue, memory and time bounds. */
 export function bulkWork<T>(job: BulkJob, signal?: AbortSignal): Promise<T> {
@@ -21,22 +21,24 @@ function pump(): void {
   while (active < 2 && queue.length) {
     const pending = queue.shift()!; pending.removeAbort(); active++;
     let worker: Worker;
-    try { worker = new Worker(new URL('./bulk-worker.js', import.meta.url), { workerData: pending.job, resourceLimits: { maxOldGenerationSizeMb: 256 } }); }
+    try { worker = idle.pop() ?? new Worker(new URL('./bulk-worker.js', import.meta.url), { resourceLimits: { maxOldGenerationSizeMb: 256 } }); worker.ref(); }
     catch { active--; pending.reject(new Fault('BULK_WORK_FAILED', 'The bounded verifier could not start.', 3)); continue; }
     let settled = false;
     const finish = (error: unknown, value?: unknown): void => {
       if (settled) return; settled = true; clearTimeout(timer); pending.signal?.removeEventListener('abort', cancel);
+      worker.removeListener('message', message); worker.removeListener('error', failed); worker.removeListener('exit', exited);
       // Hold capacity until termination, including cancelled staging writes.
-      void worker.terminate().finally(() => { active--; pump(); });
+      if (error) void worker.terminate().finally(() => { active--; pump(); });
+      else { worker.unref(); idle.push(worker); active--; pump(); }
       if (error) pending.reject(error); else pending.resolve(value);
     };
     const cancel = (): void => finish(new Fault('CANCELLED', 'Bulk verification was cancelled; retained staging data needs its owning cleanup.', 130));
     const timer = setTimeout(() => finish(new Fault('BULK_WORK_TIMEOUT', 'Verification exceeded its finite deadline. Retained data remains protected.', 3)), 120000);
-    pending.signal?.addEventListener('abort', cancel, { once: true }); if (pending.signal?.aborted) cancel();
-    worker.once('message', (reply: { value?: unknown; error?: { code: string; message: string; exit: number } }) => {
-      finish(reply.error ? new Fault(reply.error.code, reply.error.message, reply.error.exit) : null, reply.value);
-    });
-    worker.once('error', () => finish(new Fault('BULK_WORK_FAILED', 'The bounded verifier failed. No verified receipt was committed.', 3)));
-    worker.once('exit', () => { if (!settled) finish(new Fault('BULK_WORK_FAILED', 'The verifier ended without evidence.', 3)); });
+    pending.signal?.addEventListener('abort', cancel, { once: true });
+    const message = (reply: { value?: unknown; error?: { code: string; message: string; exit: number } }): void => { finish(reply.error ? new Fault(reply.error.code, reply.error.message, reply.error.exit) : null, reply.value); };
+    const failed = (): void => finish(new Fault('BULK_WORK_FAILED', 'The bounded verifier failed. No verified receipt was committed.', 3));
+    const exited = (): void => { if (!settled) finish(new Fault('BULK_WORK_FAILED', 'The verifier ended without evidence.', 3)); };
+    worker.once('message', message); worker.once('error', failed); worker.once('exit', exited);
+    if (pending.signal?.aborted) cancel(); else worker.postMessage(pending.job);
   }
 }

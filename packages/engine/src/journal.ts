@@ -19,6 +19,7 @@ export interface Operation {
 export class Journal {
   readonly db: DatabaseSync;
   readonly hostId: string;
+  private admissionDepth = 0;
   private cachedLogBytes: number | undefined;
   constructor(readonly directory: string) {
     privateDirectory(directory); privateDirectory(join(directory, 'logs'));
@@ -99,7 +100,7 @@ export class Journal {
   }
   assertAdmissionStorage(kind?: string, repositoryId?: string, input: ObjectValue = {}): void {
     const storage = this.retention(true);
-    new ManagedStorage(this).assertAdmission();
+    if (!this.admissionDepth) new ManagedStorage(this).assertAdmission();
     if (!storage.admissionBlocked) return;
     // A full cap must not prevent the owner from raising that cap. This
     // exception is restricted to one reviewed retention-only control request.
@@ -114,6 +115,21 @@ export class Journal {
       } catch { /* Invalid settings never gain a storage-recovery exception. */ }
     }
     requireValue(recovery, 'STORAGE_PRESSURE', 'Protected logs reached the cap. Raise the cap above current usage with a reviewed retention-only settings change, or release eligible evidence. Other new work remains paused.', 3);
+  }
+  /** A fresh census can authorize only this synchronous admission callback.
+   * It is never reused across awaits, callers, or a timed cache window. */
+  async withAdmission<T>(fn: () => T): Promise<T> {
+    const storage = new ManagedStorage(this); storage.assertUsage(await storage.usageAsync());
+    this.admissionDepth++;
+    try {
+      const result = fn();
+      requireValue(!(result instanceof Promise), 'INVALID_ADMISSION_CALLBACK', 'Admission must commit synchronously after its fresh census.', 3); return result;
+    } finally { this.admissionDepth--; }
+  }
+  async assertAdmissionStorageAsync(): Promise<void> { await this.withAdmission(() => this.assertAdmissionStorage()); }
+  async admitAsync(...args: Parameters<Journal['admit']>): Promise<Operation> {
+    const prior = this.existing(args[0], args[1], args[2], args[3]); if (prior) return prior;
+    return this.withAdmission(() => this.admit(...args));
   }
   admit(requestId: string, kind: string, repositoryId: string, input: ObjectValue, payload: string, state: State = 'queued', initialResult?: (op: Operation) => ObjectValue): Operation {
     const prior = this.existing(requestId, kind, repositoryId, input); if (prior) return prior;
@@ -215,11 +231,11 @@ export class Journal {
   retention(prune = false, observedAt = Date.now()): { totalBytes: number; eligibleBytes: number; protectedBytes: number; maxLogBytes: number; admissionBlocked: boolean; removed: string[]; policy: ObjectValue } {
     const policy = this.getMeta<{ retention?: { rawLogDays: number; summaryDays: number; maxLogBytes: number } }>('settings')?.retention ?? { rawLogDays: 30, summaryDays: 365, maxLogBytes: 2147483648 };
     let totalBytes = 0, eligibleBytes = 0, protectedBytes = 0; const removed: string[] = [];
-    const operations = new Map(this.list(100000).map(op => [`${op.attemptId}.log`, op]));
+    const byAttempt = this.db.prepare("SELECT body FROM operations WHERE json_extract(body,'$.attemptId')=?");
     const settled = (op: Operation | undefined): op is Operation => Boolean(op && !op.pinned && ['succeeded', 'failed', 'cancelled'].includes(op.state) &&
       typeof op.result['completedAt'] === 'string' && Date.parse(op.result['completedAt']) <= observedAt - policy.rawLogDays * 86400000 && !this.peerEvidenceProtected(op));
     for (const name of readdirSync(join(this.directory, 'logs'))) {
-      const path = join(this.directory, 'logs', name), info = lstatSync(path), op = operations.get(name);
+      const path = join(this.directory, 'logs', name), info = lstatSync(path), row = byAttempt.get(name.replace(/\.log$/, '')), op = row ? JSON.parse(String(row['body'])) as Operation : undefined;
       const bytes = info.size; totalBytes += bytes;
       const eligible = info.isFile() && !info.isSymbolicLink() && info.uid === process.getuid?.() && settled(op);
       if (!eligible) { protectedBytes += bytes; continue; }
@@ -229,11 +245,11 @@ export class Journal {
         unlinkSync(path); removed.push(op.attemptId); totalBytes -= bytes; eligibleBytes -= bytes;
       }
     }
-    const byId = new Map([...operations.values()].map(op => [op.operationId, op]));
+    const byId = this.db.prepare('SELECT body FROM operations WHERE id=?');
     // Account for raw text stored in SQLite without loading every log body.
     const remote = this.db.prepare("SELECT key,json_type(body,'$.text') AS text_type,length(CAST(CASE WHEN json_type(body,'$.text')='text' THEN json_extract(body,'$.text') ELSE body END AS BLOB)) AS bytes FROM records WHERE namespace='remoteLog'").all();
     for (const row of remote) {
-      const op = byId.get(String(row['key'])), bytes = Number(row['bytes']); totalBytes += bytes;
+      const operation = byId.get(String(row['key'])), op = operation ? JSON.parse(String(operation['body'])) as Operation : undefined, bytes = Number(row['bytes']); totalBytes += bytes;
       if (row['text_type'] !== 'text' || !settled(op)) { protectedBytes += bytes; continue; }
       eligibleBytes += bytes;
       if (prune) {

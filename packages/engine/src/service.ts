@@ -111,7 +111,7 @@ export class Engine {
   private notificationRefresh = false;
   private notificationRefreshAt = 0;
   private requests = 0;
-  get backgroundBusy(): boolean { return this.notificationRefresh || this.github.busy || this.peers.busy || this.peers.observing || this.maintenance.busy || this.requests > 0; }
+  get backgroundBusy(): boolean { return this.scheduling || this.notificationRefresh || this.github.busy || this.peers.busy || this.peers.observing || this.maintenance.busy || this.requests > 0; }
   constructor(readonly store: Journal, readonly payload: Payload, peerTransport?: PeerTransport, deviceRuntime?: { backend: DeviceBackend; mode: 'observed' | 'fixture'; buildDriver?: DeviceBuildDriver }) {
     this.resources = processLifecycle(store);
     this.power = new WorkPower(store);
@@ -176,13 +176,16 @@ export class Engine {
     if (this.scheduled || this.stopping || !this.store.db.isOpen) return; this.scheduled = true;
     setImmediate(() => { this.scheduled = false; void this.schedule(); });
   }
+  private scheduling = false;
   private async schedule(): Promise<void> {
+    if (this.scheduling) return; this.scheduling = true;
+    try {
     if (this.stopping || !this.store.db.isOpen || this.store.getMeta<boolean>('maintenance')) return;
-    const queue = this.store.queue();
-    if (!queue.length) { this.storageHold = null; return; }
-    try { this.store.assertAdmissionStorage(); this.storageHold = null; }
+    if (!this.store.queue().length) { this.storageHold = null; return; }
+    try { await this.store.assertAdmissionStorageAsync(); this.storageHold = null; }
     catch (error) { this.storageHold = { reason: error instanceof Fault ? error.code : 'STORAGE_INSPECTION_UNAVAILABLE', message: error instanceof Fault ? error.message : 'Storage inspection could not complete. Review storage diagnostics.', observedAt: now() }; }
-    for (const op of queue) {
+    if (this.stopping || !this.store.db.isOpen || this.store.getMeta<boolean>('maintenance')) return;
+    for (const op of this.store.queue()) {
       if (this.store.getMeta<boolean>('paused') && op.kind !== 'settings.apply') continue;
       if (this.storageHold && op.kind !== 'settings.apply') continue;
       if (ResourceLifecycle.pending(this.store, op.repositoryId, op.operationId)) continue;
@@ -194,6 +197,7 @@ export class Engine {
       const controller = new AbortController(); this.active.set(op.operationId, controller); this.activeRepositories.add(op.repositoryId);
       void this.execute(op, controller.signal).finally(() => { this.active.delete(op.operationId); this.activeRepositories.delete(op.repositoryId); this.kick(); });
     }
+    } finally { this.scheduling = false; }
   }
   private async execute(op: Operation, signal: AbortSignal): Promise<void> {
     let lease: Lease | LegacyPrimaryLease | undefined;
@@ -260,10 +264,10 @@ export class Engine {
       else lease?.release();
     }
   }
-  private admit(requestId: unknown, kind: string, repositoryId: string, input: ObjectValue): Response {
+  private async admit(requestId: unknown, kind: string, repositoryId: string, input: ObjectValue): Promise<Response> {
     const identity = string(requestId, 'requestId'), existing = this.store.existing(identity, kind, repositoryId, input);
     if (existing) return this.store.response(existing);
-    const op = this.store.admit(identity, kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
+    const op = await this.store.admitAsync(identity, kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
   }
   private cancel(op: Operation): Response {
     if (op.kind === 'external_gate' && this.externalHooks.has(op.operationId)) throw new Fault('EXTERNAL_CLIENT_OWNS_GATE', 'Cancel this push in its original Git client. Contribution retains its lease until the gate confirms completion or needs reconciliation.', 3);
@@ -505,7 +509,7 @@ export class Engine {
         const remote = this.store.records<{ observedAt: string; notices: Notice[] }>('notificationInbox').filter(entry => Date.parse(entry.observedAt) > Date.now() - 120000).flatMap(entry => entry.notices);
         return completed({ notices: [...milestones.pending(this.store.hostId), ...remote].slice(0, 100) });
       }
-      if (command === 'settings.apply') { assertContract('machine', args['config']); return this.admit(args['requestId'], command, this.store.hostId, { config: args['config'], expectedRevision: string(args['expectedRevision'], 'expectedRevision') }); }
+      if (command === 'settings.apply') { assertContract('machine', args['config']); return await this.admit(args['requestId'], command, this.store.hostId, { config: args['config'], expectedRevision: string(args['expectedRevision'], 'expectedRevision') }); }
       if (command === 'repos.list') return completed({ repositories: this.repos.all(), peerProjects: this.peers.registry.view(), pendingRemovals: new RepositoryRemoval(this.store, this.repos).pending() });
       if (command === 'repos.resolve') {
         const repositoryId = string(args['repo'], 'repo'), expectedRevision = string(args['expectedRevision'], 'expectedRevision');
@@ -521,8 +525,8 @@ export class Engine {
       }
       if (command === 'repos.create') {
         const requestId = string(args['requestId'], 'requestId');
-        if (!this.store.byRequest(requestId)) this.store.assertAdmissionStorage();
-        const repo = await this.repos.create(string(args['path'], 'path'), requestId); return this.admit(requestId, 'initialize', repo.id, { policy: repo.revision });
+        if (!this.store.byRequest(requestId)) await this.store.assertAdmissionStorageAsync();
+        const repo = await this.repos.create(string(args['path'], 'path'), requestId); return await this.admit(requestId, 'initialize', repo.id, { policy: repo.revision });
       }
       if (command === 'runs.list') return completed({ operations: this.store.list().filter(op => !args['repo'] || op.repositoryId === args['repo']) });
       if (command === 'runs.events') return completed({ events: this.store.events(Math.max(0, Number(args['after'] ?? 0)), typeof args['operationId'] === 'string' ? args['operationId'] : undefined) });
@@ -538,7 +542,7 @@ export class Engine {
             }
             const requestId = string(args['requestId'], 'requestId'), input = await this.workflows.adoptedLanding.selectNative(op, repo, string(args['scopeToken'], 'scopeToken'), requestId);
             if (!this.store.byRequest(requestId)) this.workflows.adoptedLanding.assertNativeAdmission(op);
-            return this.admit(requestId, 'native_reconciliation', repo.id, input);
+            return await this.admit(requestId, 'native_reconciliation', repo.id, input);
           }
           requireValue(Object.keys(args).every(key => key === 'operationId'), 'INVALID_REQUEST', 'Native repair options require --resume-native and an explicit preview or reviewed request.', 2);
           if (['artifact_transfer', 'device_transfer'].includes(op.kind) && ['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'resuming_retained_transfer', error: null });
@@ -617,7 +621,7 @@ export class Engine {
           }
           const profile = this.store.record<{ revision: string }>('remoteDeviceProfile', profileKey);
           requireValue(profile, 'DEVICE_PROFILE_OBSERVATION_REQUIRED', 'Observe the selected host’s device profile once before queueing offline work.', 3);
-          const op = this.store.admit(requestId, 'remote.device', repo.id, input, this.payload.identity, 'queued_local', operation => ({ remotePolicyRevision: profile.revision,
+          const op = await this.store.admitAsync(requestId, 'remote.device', repo.id, input, this.payload.identity, 'queued_local', operation => ({ remotePolicyRevision: profile.revision,
             acceptance: { localDurable: true, executionHostAccepted: false, executionHostId: hostId, acceptedAt: operation.createdAt }, executionHostId: hostId }));
           void this.peers.tick(); return this.store.response(op);
         }
@@ -650,14 +654,16 @@ export class Engine {
       if (command === 'devices.evidence.get') return completed(this.devices.inspectEvidence(repo, string(args['evidence'], 'evidence')));
       if (command === 'devices.evidence.review') return completed(this.devices.reviewEvidence(repo, string(args['evidence'], 'evidence'), string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
       if (command === 'devices.transfer-host') {
-        const op = this.deviceOwnership.admit(repo, args, this.payload.identity); this.kick(); return this.store.response(op);
+        const admit = () => this.deviceOwnership.admit(repo, args, this.payload.identity);
+        const op = this.store.byRequest(String(args['requestId'])) ? admit() : await this.store.withAdmission(admit); this.kick(); return this.store.response(op);
       }
       if (command === 'devices.profile') return completed({ ...this.devices.builds.inspect(repo), policyRevision: this.store.record<{ revision: string }>('deviceProfile', repo.id)?.revision ?? null });
       if (command === 'devices.artifacts.list' || command === 'devices.artifacts.get') return completed(this.devices.builds.artifacts(repo, command === 'devices.artifacts.get' ? string(args['artifact'], 'artifact') : undefined));
       if (command === 'devices.artifacts.transfer') {
         requireValue(args['fromHost'] === undefined || args['fromHost'] === this.store.hostId, 'EXECUTION_HOST_ROUTE_REQUIRED', 'Invoke artifact transfer on the selected build/source host service.', 3);
         requireValue(!args['toHost'] || !args['host'] || args['toHost'] === args['host'], 'INVALID_USAGE', 'Destination host selections disagree.', 2);
-        const op = this.artifacts.admit(repo, string(args['artifact'], 'artifact'), string(args['toHost'] ?? args['host'], 'destination host'), string(args['requestId'], 'requestId'), this.payload.identity);
+        const admit = () => this.artifacts.admit(repo, string(args['artifact'], 'artifact'), string(args['toHost'] ?? args['host'], 'destination host'), string(args['requestId'], 'requestId'), this.payload.identity);
+        const op = this.store.byRequest(String(args['requestId'])) ? admit() : await this.store.withAdmission(admit);
         this.kick(); return this.store.response(op);
       }
       if (command === 'devices.status') return this.devices.status(repo, string(args['device'], 'device'), args['refresh'] === true);
@@ -716,7 +722,7 @@ export class Engine {
       }
       if (command === 'repos.initialize') {
         requireValue(args['expectedRevision'] === undefined || args['expectedRevision'] === repo.revision, 'REVISION_CONFLICT', 'Repository configuration changed since initialization was reviewed. Review the current configuration first.', 3);
-        return this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
+        return await this.admit(args['requestId'], 'initialize', repo.id, { policy: repo.revision });
       }
       if (command === 'status') {
         if (repo.canonicalHostId !== this.store.hostId) {
@@ -744,12 +750,12 @@ export class Engine {
             return result['response'] as Response;
           }
           const requestId = string(args['requestId'], 'requestId'), input = { expectedTip: string(args['expectedTip'], 'expectedTip'), scopeToken: string(args['scopeToken'], 'scopeToken'), destinationHostId: repo.canonicalHostId };
-          return this.store.response(this.store.admit(requestId, 'remote.push', repo.id, input, this.payload.identity, 'queued_local'));
+          return this.store.response(await this.store.admitAsync(requestId, 'remote.push', repo.id, input, this.payload.identity, 'queued_local'));
         }
         if (args['preview'] === true) return completed(await this.workflows.preview(repo));
         const requestId = string(args['requestId'], 'requestId');
         const input = await this.workflows.pushInput(repo, string(args['expectedTip'], 'expectedTip'), string(args['scopeToken'], 'scopeToken'), requestId);
-        return this.admit(requestId, 'push', repo.id, input);
+        return await this.admit(requestId, 'push', repo.id, input);
       }
       if (command === 'submit') {
         requireValue(args['resume'] === undefined || args['resume'] === true, 'INVALID_USAGE', 'Use --resume with only the retained repository and request ID.', 2);
@@ -775,7 +781,7 @@ export class Engine {
           // Canonical source selection is frozen by the owner at admission. An
           // unavailable owner cannot silently substitute the local mirror.
           this.store.enableConnectivity();
-          const op = this.store.admit(requestId, 'remote.checks', repo.id, input, this.payload.identity, 'queued_local');
+          const op = await this.store.admitAsync(requestId, 'remote.checks', repo.id, input, this.payload.identity, 'queued_local');
           void this.peers.tick();
           return this.store.response(op);
         }
@@ -793,12 +799,12 @@ export class Engine {
         requireValue(source.commonDir === repo.commonDir, 'SOURCE_OWNERSHIP_REQUIRED', 'Source belongs to a different repository.');
         requireValue(source.tip, 'UNBORN_REPOSITORY', 'Initialize history before checking a committed source.', 3);
         const adoptedCheck = repo.config.validation.adapter === 'generic-v1' ? {} : { adoptedCheck: await this.workflows.adoptedChecks.select(repo, sourcePath, selection.checkId, selection.fresh) };
-        return this.admit(requestId, 'checks', repo.id, { ...selection, selection, sourceTip: source.tip, fingerprint: await inputFingerprint(sourcePath), policy: repo.revision, ...adoptedCheck });
+        return await this.admit(requestId, 'checks', repo.id, { ...selection, selection, sourceTip: source.tip, fingerprint: await inputFingerprint(sourcePath), policy: repo.revision, ...adoptedCheck });
       }
       if (command === 'hook.pre-push') {
         this.peers.assertWriter(repo);
         if (!args['operationId']) {
-          const op = this.store.admit(crypto.randomUUID(), 'external_gate', repo.id, args, this.payload.identity, 'running');
+          const op = await this.store.admitAsync(crypto.randomUUID(), 'external_gate', repo.id, args, this.payload.identity, 'running');
           const controller = new AbortController(); let lease: Lease | undefined;
           try {
             lease = new Lease(repo.commonDir, op.attemptId); this.active.set(op.operationId, controller); this.activeRepositories.add(repo.id);
@@ -842,7 +848,7 @@ export class Engine {
     requireValue(typeof caller['pid'] === 'number' && typeof caller['start'] === 'string', 'HOOK_PROCESS_MISMATCH', 'A live Git hook client is required.');
     const identity = { pid: caller['pid'], start: caller['start'] }, ancestor = gitPushAncestor(identity);
     requireValue(ancestor, 'HOOK_PROCESS_MISMATCH', 'This hook client has no verifiable live Git push ancestor. Use Contribution Push for an unsupported client command shape.');
-    const op = this.store.admit(crypto.randomUUID(), 'external_gate', repo.id, args, this.payload.identity, 'running');
+    const op = await this.store.admitAsync(crypto.randomUUID(), 'external_gate', repo.id, args, this.payload.identity, 'running');
     // Reserve the repository synchronously, before checking policy or contacting
     // the destination, so a concurrent queue tick cannot enter the same writer.
     this.active.set(op.operationId, new AbortController()); this.activeRepositories.add(repo.id);

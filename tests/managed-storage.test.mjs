@@ -16,6 +16,18 @@ function fixture() {
     close: () => { store.close(); rmSync(root, { recursive: true }); } };
 }
 
+test('asynchronous admission counts fresh unknown growth and preserves replay under pressure', async () => {
+  const f = fixture(); try {
+    const first = await f.store.admitAsync(randomUUID(), 'checks', randomUUID(), {}, 'fixture');
+    f.storage.configure({ schemaVersion: 1, maxStateBytes: 1048576 }, f.storage.policy().revision, randomUUID());
+    writeFileSync(join(f.store.directory, 'unknown-growth'), Buffer.alloc(2 * 1024 ** 2));
+    await assert.rejects(f.store.admitAsync(randomUUID(), 'checks', randomUUID(), {}, 'fixture'), { code: 'MANAGED_STORAGE_PRESSURE' });
+    assert.equal((await f.store.admitAsync(first.requestId, first.kind, first.repositoryId, first.input, 'fixture')).operationId, first.operationId);
+    assert.equal((await f.storage.usageAsync()).complete, true);
+    assert.equal((await f.storage.usageAsync()).admissionBlocked, true);
+  } finally { f.close(); }
+});
+
 test('managed census counts all retained categories, unknown files and hard links without traversing external symlinks', () => {
   const f = fixture(); try {
     const external = join(f.root, 'external'); mkdirSync(external); writeFileSync(join(external, 'app-data'), Buffer.alloc(2 * 1024 ** 2));

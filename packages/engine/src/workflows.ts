@@ -72,7 +72,7 @@ export class Workflows {
       return prior;
     }
     const input = { ...supplied, policy: repo.revision };
-    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
+    this.store.assertRepositoryAvailable(repo.id); await this.store.assertAdmissionStorageAsync();
     const pending = this.store.record<{ identity: string; validated?: boolean; commonDir?: string; canonicalSourcePath?: string; canonicalHostId?: string }>('captureIntent', requestId);
     requireValue(!pending || pending.identity === digest({ repositoryId: repo.id, input }), 'REQUEST_ID_CONFLICT', 'This request already retained a different committed source.');
     requireValue(!pending?.canonicalHostId || pending.canonicalHostId === repo.canonicalHostId, 'CAPTURE_AUTHORITY_CHANGED', 'The destination authority changed before admission. Preserve the selected source and reconcile the original request.', 3);
@@ -89,7 +89,7 @@ export class Workflows {
       requireValue(commits.length === 1 || (typeof metadata['integrationMessage'] === 'string' && metadata['integrationMessage'].trim()), 'NEEDS_INPUT', 'A multi-commit task requires an explicit combined integration message.', 2);
     } else if (selected) await this.adoptedLanding.retainedSelection(repo, requestId, sourcePath, tip, base);
     else await this.adoptedLanding.capture(repo, requestId, sourcePath, tip, base, metadata);
-    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
+    this.store.assertRepositoryAvailable(repo.id); await this.store.assertAdmissionStorageAsync();
     const concurrent = this.store.record<{ identity: string }>('captureIntent', requestId);
     requireValue(!this.store.record('historyCaptureIntent', requestId) && (!concurrent || concurrent.identity === digest({ repositoryId: repo.id, input })),
       'REQUEST_ID_CONFLICT', 'This request already selected a different retained source.');
@@ -113,7 +113,7 @@ export class Workflows {
       'POLICY_CHANGED', 'Enrollment or policy changed while capturing source. The original history remains retained.', 3);
     artifact.verify();
     this.store.put('capture', requestId, { retention, bundle, commits, tip, base, bundleDigest, acceptedAt: now() });
-    return this.store.admit(requestId, 'submit', repo.id, input, this.payload.identity, repo.canonicalHostId === this.store.hostId ? 'queued' : 'queued_local');
+    return await this.store.admitAsync(requestId, 'submit', repo.id, input, this.payload.identity, repo.canonicalHostId === this.store.hostId ? 'queued' : 'queued_local');
     } finally { artifact.close(); }
   }
   async initialize(op: Operation, repo: Enrolled): Promise<ObjectValue> {

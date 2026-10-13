@@ -60,7 +60,7 @@ export function gitPushAncestor(caller: { pid: number; start: string }): { pid: 
 }
 export interface ProcessMember { pid: number; start: string }
 export interface ProcessOwnership {
-  intent(executable: string, argv: readonly string[], deadlineAt: string): void;
+  intent(executable: string, argv: readonly string[], deadlineAt: string): void | Promise<void>;
   allocated(pid: number, start: string): void;
   grant(): void;
   members(members: ProcessMember[]): void;
@@ -92,7 +92,7 @@ export async function run(executable: string, argv: readonly string[], options: 
   requireValue(Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 86400000, 'INVALID_PROCESS_DEADLINE', 'Select a finite command deadline no longer than one day.', 2);
   const ownership = typeof options.ownership === 'function' ? options.ownership() : options.ownership;
   const deadline = Date.now() + timeoutMs;
-  ownership?.intent(executable, argv, new Date(deadline).toISOString());
+  await ownership?.intent(executable, argv, new Date(deadline).toISOString());
   const granted = Boolean(ownership);
   return new Promise((resolveResult, reject) => {
     const child = spawn(granted ? process.execPath : executable, granted ? [fileURLToPath(new URL('./resource-process-worker.js', import.meta.url))] : [...argv],

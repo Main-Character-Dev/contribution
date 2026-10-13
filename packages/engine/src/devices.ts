@@ -281,7 +281,7 @@ export class Devices {
     }
     if (['logs', 'screen_capture'].includes(action)) requireValue(Number.isSafeInteger(args['durationSeconds']) && Number(args['durationSeconds']) > 0 && Number(args['durationSeconds']) <= 300, 'CAPTURE_BOUNDS_REQUIRED', 'Select a capture duration between 1 and 300 seconds.', 2);
     if (action === 'logs') requireValue(Number.isSafeInteger(args['maxBytes']) && Number(args['maxBytes']) > 0 && Number(args['maxBytes']) <= 8 * 1024 * 1024, 'CAPTURE_BOUNDS_REQUIRED', 'Bound logs to at most eight MiB.', 2);
-    const op = this.store.admit(requestId, 'device', repo.id, { selection, deviceId, context: observation.context, profileRevision: profile.revision, parameters: args }, this.payload, 'queued', op => {
+    const op = await this.store.admitAsync(requestId, 'device', repo.id, { selection, deviceId, context: observation.context, profileRevision: profile.revision, parameters: args }, this.payload, 'queued', op => {
     const receipt: DeviceOperation = { schemaVersion: 1, recordMode: this.mode, operationId: op.operationId, requestId, repositoryId: repo.id, executionHostId: this.store.hostId, deviceId,
       intent: { operation: action, app: artifact?.provenance.app ?? installed?.app ?? profile.app, artifactRef: artifact ? { artifactId: artifact.provenance.artifactId, sha256: artifact.provenance.artifact.sha256 } : null,
         installedAppRef: typeof args['appRef'] === 'string' ? args['appRef'] : null, sourceCommit: typeof args['sourceTip'] === 'string' ? args['sourceTip'] : artifact?.provenance.source.commit ?? null,

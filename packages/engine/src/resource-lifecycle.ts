@@ -110,6 +110,10 @@ export class ResourceLifecycle {
   private resourceContext(repositoryId: string | null): ResourceContext {
     return repositoryId === null ? { clone: digest({ directory: realpathSync(this.store.directory), hostId: this.store.hostId }), revision: 'host-scope-v1' } : this.context(repositoryId);
   }
+  async beginAsync(op: Parameters<ResourceLifecycle['begin']>[0], input: ResourceIntent): Promise<Resource> {
+    if (this.byRequest(input.requestId)) return this.begin(op, input);
+    return this.store.withAdmission(() => this.begin(op, input));
+  }
   beginHost(input: ResourceIntent): Resource {
     return this.begin({ operationId: null, attemptId: null, repositoryId: null }, input);
   }

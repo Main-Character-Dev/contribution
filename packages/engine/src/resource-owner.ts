@@ -39,7 +39,7 @@ export class NamedOwnerAdapter implements ResourceAdapter {
 export async function withNamedOwner<T>(lifecycle: ResourceLifecycle, op: Operation, adapter: NamedOwnerAdapter,
   input: { scope: string; reason: string; stopAction: string; lifetime: 'ephemeral' | 'interactive' | 'persistent'; borrowedIdentity?: ResourceIdentity; dependencies?: string[] },
   execute: (resource: Resource, signal: AbortSignal) => Promise<T>, signal = new AbortController().signal): Promise<{ value?: T; error?: unknown; resource: Resource }> {
-  let resource = lifecycle.begin(op, { requestId: id(), kind: adapter.owner.kind, owner: input.borrowedIdentity ? 'borrowed' : 'utility', lifetime: input.borrowedIdentity ? 'borrowed' : input.lifetime,
+  let resource = await lifecycle.beginAsync(op, { requestId: id(), kind: adapter.owner.kind, owner: input.borrowedIdentity ? 'borrowed' : 'utility', lifetime: input.borrowedIdentity ? 'borrowed' : input.lifetime,
     adapter: adapter.id, adapterVersion: adapter.version, scope: input.scope, reason: input.reason, stopAction: input.stopAction, dependencies: input.dependencies ?? [] });
   let value: T | undefined, error: unknown;
   try {

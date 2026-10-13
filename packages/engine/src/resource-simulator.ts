@@ -71,7 +71,7 @@ export class SimulatorResourceAdapter implements ResourceAdapter {
 export async function withSimulator<T>(lifecycle: ResourceLifecycle, op: Operation, selection: { udid: string; runtime: string; lifetime?: 'ephemeral' | 'interactive'; parentId?: string; timeoutMs?: number },
   adapter: SimulatorResourceAdapter, execute: (resource: Resource, signal: AbortSignal) => Promise<T>, signal = new AbortController().signal): Promise<{ value?: T; error?: unknown; resource: Resource; admissionReleased: boolean }> {
   requireValue(/^[A-Za-z0-9-]{8,128}$/.test(selection.udid) && selection.runtime.length > 0, 'SIMULATOR_IDENTITY_REQUIRED', 'Select an exact UDID/runtime before admission.', 2);
-  let resource = lifecycle.begin(op, { requestId: id(), kind: 'simulator', owner: selection.parentId ? 'borrowed' : 'utility', lifetime: selection.parentId ? 'borrowed' : selection.lifetime ?? 'ephemeral',
+  let resource = await lifecycle.beginAsync(op, { requestId: id(), kind: 'simulator', owner: selection.parentId ? 'borrowed' : 'utility', lifetime: selection.parentId ? 'borrowed' : selection.lifetime ?? 'ephemeral',
     adapter: adapter.id, adapterVersion: adapter.version, scope: `simulator:${selection.udid}:${id()}`, reason: 'Selected native workflow', stopAction: 'Stop the named native session through its owning repository adapter', ...(selection.parentId ? { parentId: selection.parentId } : {}) });
   let lease: SimulatorLease | undefined, value: T | undefined, error: unknown, admissionReleased = false;
   try {

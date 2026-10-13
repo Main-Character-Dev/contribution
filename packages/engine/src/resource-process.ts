@@ -38,10 +38,10 @@ export const processResourceAdapter: ResourceAdapter = {
 export function ownedProcess(lifecycle: ResourceLifecycle, op: Operation | null, dependencies: string[] = [], kind: 'process' | 'server' = 'process', hostScope?: string): ProcessOwnership {
   let resource: Resource;
   return {
-    intent(executable, argv, deadlineAt) {
+    async intent(executable, argv, deadlineAt) {
       const input = { requestId: id(), kind, owner: 'utility', lifetime: 'ephemeral', adapter: processResourceAdapter.id, adapterVersion: processResourceAdapter.version, deadlineAt,
         dependencies, scope: hostScope ?? `process:${id()}`, reason: `Accepted command ${digest({ executable, argv })}`, stopAction: op ? 'contribution service resources --preview' : 'contribution hosts reconcile' } as const;
-      resource = op ? lifecycle.begin(op, input) : lifecycle.beginHost(input);
+      resource = await lifecycle.beginAsync(op ?? { operationId: null, attemptId: null, repositoryId: null }, input);
     },
     allocated(pid, start) {
       resource = lifecycle.allocate(resource, { type: 'process', value: { pid, start, group: pid, boot: bootIdentity(), members: JSON.stringify([{ pid, start }]) } });

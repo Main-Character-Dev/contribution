@@ -54,7 +54,7 @@ export class WorktreeHistory {
   async retain(attemptId: string, primary: string, commonDir: string, head: string): Promise<HistoryReceipt> {
     const existing = this.store.record<HistoryReceipt>('worktreeHistory', attemptId);
     if (existing) { requireValue(existing.head === head, 'HISTORY_SELECTION_CHANGED', 'The archive selects other history.', 3); await this.verify(existing); return existing; }
-    this.store.assertAdmissionStorage();
+    await this.store.assertAdmissionStorageAsync();
     const root = join(realpathSync(this.store.directory), 'worktree-history'); privateDirectory(root);
     const parent = join(root, attemptId); privateDirectory(parent);
     const directory = join(parent, 'archive.git'), restoreDirectory = join(parent, 'restore.git');
@@ -79,7 +79,7 @@ export class WorktreeHistory {
     // Disable all transfer endpoints; recovery never depends on their existence.
     for (const path of [directory, restoreDirectory]) if ((await git(path, ['config', '--get-regexp', '^remote\\.origin\\.'], options)).code === 0) await gitText(path, ['config', '--remove-section', 'remote.origin'], options);
     const archive = this.inventory(directory), restore = this.inventory(restoreDirectory);
-    this.store.assertAdmissionStorage();
+    await this.store.assertAdmissionStorageAsync();
     const receipt: HistoryReceipt = { attemptId, head, directory, restoreDirectory, ...restored, archiveDigest: archive.digest, restoreDigest: restore.digest, bytes: archive.bytes + restore.bytes, verifiedAt: now() };
     this.store.put('worktreeHistory', attemptId, receipt); await this.verify(receipt); return receipt;
   }

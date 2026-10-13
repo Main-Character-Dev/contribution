@@ -47,7 +47,7 @@ async function produce(store: Journal, requestId: string, identity: string, sour
     const start = processIdentity(record.owner.pid);
     requireValue(start && start !== record.owner.start, 'BUNDLE_PRODUCER_ACTIVE', 'The retained bundle writer may still be active. Reconcile its owner before retrying.', 3);
   }
-  store.assertAdmissionStorage(); privateDirectory(dirname(path));
+  await store.assertAdmissionStorageAsync(); privateDirectory(dirname(path));
   const start = processIdentity(process.pid); requireValue(start, 'PROCESS_IDENTITY_UNAVAILABLE', 'Cannot retain the bundle writer identity.', 3);
   record = { id: id(), identity, path, partial: join(dirname(path), `${id()}.partial`), parent: realpathSync(dirname(path)), owner: { pid: process.pid, start }, state: 'writing' };
   save(record);

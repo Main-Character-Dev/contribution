@@ -5,6 +5,7 @@ import type { StoragePolicy } from '@contribution/contracts';
 import type { Journal } from './journal.js';
 import { digest, now, requireValue } from './core.js';
 import type { ObjectValue } from './core.js';
+import { bulkWork } from './bulk-work.js';
 
 export interface ManagedUsage {
   observedAt: string; logicalBytes: number; entries: number; complete: boolean; reason: string | null;
@@ -35,7 +36,26 @@ export class ManagedStorage {
     return result;
   }
   usage(limits: { entries: number; depth: number; milliseconds: number } = { entries: 200000, depth: 32, milliseconds: 2000 }): ManagedUsage {
-    const { policy } = this.policy(), started = performance.now(), categories = new Map<string, { category: string; logicalBytes: number; entries: number }>();
+    return managedStorageCensus(this.store.directory, this.policy().policy.maxStateBytes, limits);
+  }
+  async usageAsync(): Promise<ManagedUsage> {
+    const { policy } = this.policy();
+    const usage = await bulkWork<ManagedUsage>({ kind: 'storage-usage', path: this.store.directory, maxStateBytes: policy.maxStateBytes });
+    requireValue(this.policy().policy.maxStateBytes === policy.maxStateBytes, 'REVISION_CONFLICT', 'Managed-data policy changed during its census.', 3); return usage;
+  }
+  assertUsage(usage: ManagedUsage): void {
+    requireValue(usage.complete, usage.reason ?? 'STORAGE_CENSUS_UNAVAILABLE', 'Managed-data usage could not be fully inspected. Preserve the state and review storage diagnostics before new work.', 3);
+    requireValue(!usage.admissionBlocked, 'MANAGED_STORAGE_PRESSURE', 'Contribution-managed data reached its cap. Review eligible output for cleanup or raise the managed-data limit; protected records remain preserved.', 3);
+  }
+  assertAdmission(): void {
+    this.assertUsage(this.usage());
+  }
+}
+
+/** Shared bounded reader; workers receive a path/policy, never a Journal. */
+export function managedStorageCensus(directory: string, maxStateBytes: number,
+  limits: { entries: number; depth: number; milliseconds: number } = { entries: 200000, depth: 32, milliseconds: 2000 }): ManagedUsage {
+    const policy = { maxStateBytes }, started = performance.now(), categories = new Map<string, { category: string; logicalBytes: number; entries: number }>();
     let bytes = 0, entries = 0, reason: string | null = null;
     const stop = (value: string): void => { reason ??= value; };
     const categoryFor = (name: string): string => Object.hasOwn(directories, name) ? directories[name]! : (/^journal\.sqlite(?:-(?:wal|shm))?$/.test(name) ? 'journal' : 'other_private_state');
@@ -64,18 +84,12 @@ export class ManagedStorage {
       } catch { stop('STORAGE_CENSUS_UNAVAILABLE'); }
     };
     try {
-      const original = lstatSync(this.store.directory);
+      const original = lstatSync(directory);
       if (!original.isDirectory() || original.isSymbolicLink() || original.uid !== process.getuid?.()) stop('UNSAFE_STATE_DIRECTORY');
-      else visit(realpathSync(this.store.directory), 'other_private_state', 0);
+      else visit(realpathSync(directory), 'other_private_state', 0);
     } catch { stop('STORAGE_CENSUS_UNAVAILABLE'); }
     return { observedAt: now(), logicalBytes: bytes, entries, complete: reason === null, reason, maxStateBytes: policy.maxStateBytes,
       admissionBlocked: reason !== null || bytes >= policy.maxStateBytes, categories: [...categories.values()].sort((a, b) => a.category.localeCompare(b.category)),
       scope: 'private_contribution_support_directory', accounting: 'logical_sizes_including_directory_and_link_entries',
       excluded: ['source repositories and their Git object stores', 'external link targets', 'user-selected external exports', 'application bundles outside the support directory'] };
-  }
-  assertAdmission(): void {
-    const usage = this.usage();
-    requireValue(usage.complete, usage.reason ?? 'STORAGE_CENSUS_UNAVAILABLE', 'Managed-data usage could not be fully inspected. Preserve the state and review storage diagnostics before new work.', 3);
-    requireValue(!usage.admissionBlocked, 'MANAGED_STORAGE_PRESSURE', 'Contribution-managed data reached its cap. Review eligible output for cleanup or raise the managed-data limit; protected records remain preserved.', 3);
-  }
 }
