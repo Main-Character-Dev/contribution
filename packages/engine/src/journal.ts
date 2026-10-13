@@ -51,6 +51,7 @@ export class Journal {
       CREATE INDEX IF NOT EXISTS operations_queued ON operations(sequence) WHERE state='queued';
       CREATE INDEX IF NOT EXISTS operations_unsettled ON operations(sequence) WHERE state NOT IN ('succeeded','failed','cancelled','interrupted');
       CREATE INDEX IF NOT EXISTS operations_attempt ON operations(json_extract(body,'$.attemptId'));
+      CREATE INDEX IF NOT EXISTS native_reconciliation_pending ON operations(json_extract(body,'$.input.sourceOperationId')) WHERE json_extract(body,'$.kind')='native_reconciliation' AND state!='succeeded' AND (state NOT IN ('failed','cancelled') OR json_extract(body,'$.effectDispatched')=1);
       CREATE INDEX IF NOT EXISTS events_operation ON events(json_extract(body,'$.operationId'),sequence);
       CREATE INDEX IF NOT EXISTS resource_ownership ON records(json_extract(body,'$.repositoryId'),key) WHERE namespace='resource' AND json_extract(body,'$.state') IS NOT 'stopped';
       CREATE INDEX IF NOT EXISTS resource_request ON records(json_extract(body,'$.requestId')) WHERE namespace='resource';

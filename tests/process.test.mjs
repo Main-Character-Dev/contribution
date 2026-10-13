@@ -1,6 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { run, sharedProcessCensus } from '../packages/engine/dist/process.js';
+
+test('a failed census retries fresh within its bound and repeated empty or malformed output never proves absence', async t => {
+  const original = childProcess.execFile; let mode = 'once', calls = 0;
+  t.mock.method(childProcess, 'execFile', (file, args, options, callback) => {
+    if (file === '/bin/ps' && args[0] === '-axo') {
+      calls++;
+      if (mode !== 'once' || calls === 1) { queueMicrotask(() => callback(mode === 'once' ? new Error('EAGAIN') : null, mode === 'malformed' ? 'incomplete process row' : '', '')); return; }
+    }
+    return original(file, args, options, callback);
+  }); syncBuiltinESMExports();
+  try {
+    assert((await sharedProcessCensus()).some(row => row.pid === process.pid)); assert.equal(calls, 2);
+    for (mode of ['empty','malformed']) { calls = 0; assert.equal(await sharedProcessCensus(), null); assert.equal(calls, 2); }
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+});
 
 test('concurrent process observation shares a fresh census and leaves timers responsive', async () => {
   const first = sharedProcessCensus(); assert.equal(first, sharedProcessCensus());

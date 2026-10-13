@@ -187,8 +187,7 @@ export class AdoptedLanding {
       'WORKER_STILL_ACTIVE', 'The retained worker must stop before native reconciliation can be reviewed or resumed.', 3);
   }
   assertNativeAdmission(op: Operation, repairOperationId?: string): void {
-    requireValue(!this.store.list(100000).some(other => other.operationId !== repairOperationId && other.kind === 'native_reconciliation' && other.input['sourceOperationId'] === op.operationId &&
-      other.state !== 'succeeded' && (!['failed', 'cancelled'].includes(other.state) || other.effectDispatched)),
+    requireValue(!this.store.db.prepare("SELECT id FROM operations INDEXED BY native_reconciliation_pending WHERE json_extract(body,'$.kind')='native_reconciliation' AND state!='succeeded' AND (state NOT IN ('failed','cancelled') OR json_extract(body,'$.effectDispatched')=1) AND json_extract(body,'$.input.sourceOperationId')=? AND (? IS NULL OR id!=?) LIMIT 1").get(op.operationId, repairOperationId ?? null, repairOperationId ?? null),
       'NATIVE_RECONCILIATION_PENDING', 'Observe the retained native repair before admitting another attempt.', 3);
   }
   private async nativeScope(op: Operation, repo: Enrolled, repairOperationId?: string, options: RunOptions = {}): Promise<ObjectValue> {

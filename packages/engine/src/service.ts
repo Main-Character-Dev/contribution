@@ -264,10 +264,13 @@ export class Engine {
       else lease?.release();
     }
   }
-  private async admit(requestId: unknown, kind: string, repositoryId: string, input: ObjectValue): Promise<Response> {
+  private async admit(requestId: unknown, kind: string, repositoryId: string, input: ObjectValue, guard?: () => void): Promise<Response> {
     const identity = string(requestId, 'requestId'), existing = this.store.existing(identity, kind, repositoryId, input);
     if (existing) return this.store.response(existing);
-    const op = await this.store.admitAsync(identity, kind, repositoryId, input, this.payload.identity); this.kick(); return this.store.response(op);
+    const op = await this.store.withAdmission(() => {
+      if (!this.store.existing(identity, kind, repositoryId, input)) guard?.();
+      return this.store.admit(identity, kind, repositoryId, input, this.payload.identity);
+    }); this.kick(); return this.store.response(op);
   }
   private cancel(op: Operation): Response {
     if (op.kind === 'external_gate' && this.externalHooks.has(op.operationId)) throw new Fault('EXTERNAL_CLIENT_OWNS_GATE', 'Cancel this push in its original Git client. Contribution retains its lease until the gate confirms completion or needs reconciliation.', 3);
@@ -490,8 +493,7 @@ export class Engine {
               return completed(await this.workflows.adoptedLanding.previewNative(op, repo));
             }
             const requestId = string(args['requestId'], 'requestId'), input = await this.workflows.adoptedLanding.selectNative(op, repo, string(args['scopeToken'], 'scopeToken'), requestId);
-            if (!this.store.byRequest(requestId)) this.workflows.adoptedLanding.assertNativeAdmission(op);
-            return await this.admit(requestId, 'native_reconciliation', repo.id, input);
+            return await this.admit(requestId, 'native_reconciliation', repo.id, input, () => this.workflows.adoptedLanding.assertNativeAdmission(op));
           }
           requireValue(Object.keys(args).every(key => key === 'operationId'), 'INVALID_REQUEST', 'Native repair options require --resume-native and an explicit preview or reviewed request.', 2);
           if (['artifact_transfer', 'device_transfer'].includes(op.kind) && ['waiting', 'interrupted', 'outcome_unknown'].includes(op.state)) this.store.update(op, { state: 'queued', stage: 'resuming_retained_transfer', error: null });

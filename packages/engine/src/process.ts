@@ -239,8 +239,8 @@ export function processCensus(): CensusMember[] | null {
 /** Concurrent runners share a fresh asynchronous census. No observation is
  * cached after completion, and signaling still verifies each exact PID/start. */
 let censusFlight: Promise<CensusMember[] | null> | undefined;
-function inspectProcess(args: string[]): Promise<string | null> {
-  return new Promise(resolve => execFile('/bin/ps', args, { encoding: 'utf8', timeout: 2000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout)));
+function inspectProcess(args: string[], timeout = 2000): Promise<string | null> {
+  return new Promise(resolve => execFile('/bin/ps', args, { encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout)));
 }
 export async function processIdentityAsync(pid: number): Promise<string | null> {
   if (!Number.isSafeInteger(pid) || pid < 1) return null;
@@ -248,15 +248,22 @@ export async function processIdentityAsync(pid: number): Promise<string | null> 
 }
 export function sharedProcessCensus(): Promise<CensusMember[] | null> {
   if (censusFlight) return censusFlight;
-  const flight = inspectProcess(['-axo', 'pid=,ppid=,pgid=,stat=,lstart=']).then(output => {
-    if (output === null) return null;
-    const rows: CensusMember[] = [];
-    for (const line of output.split('\n').filter(x => x.trim())) {
-      const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line); if (!match) return null;
-      if (!match[4]!.startsWith('Z')) rows.push({ pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), start: match[5]!.trim() });
+  const flight = (async () => {
+    // One transient failed/incomplete ps response gets another fresh snapshot
+    // within the original total deadline. Neither response is guessed empty.
+    const deadline = performance.now() + 2000;
+    for (let attempt = 0; attempt < 2 && performance.now() < deadline; attempt++) {
+      const output = await inspectProcess(['-axo', 'pid=,ppid=,pgid=,stat=,lstart='], Math.max(1, Math.floor(deadline - performance.now())));
+      if (output === null) continue;
+      const rows: CensusMember[] = []; let valid = true;
+      for (const line of output.split('\n').filter(x => x.trim())) {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line); if (!match) { valid = false; break; }
+        if (!match[4]!.startsWith('Z')) rows.push({ pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), start: match[5]!.trim() });
+      }
+      if (valid && rows.length > 0) return rows;
     }
-    return rows;
-  }).finally(() => { if (censusFlight === flight) censusFlight = undefined; });
+    return null;
+  })().finally(() => { if (censusFlight === flight) censusFlight = undefined; });
   censusFlight = flight; return flight;
 }
 export function executable(name: string): string {
