@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-13",
+  "status": "single_mac_development_pilot_completed_background_registration_unqualified",
+  "authorization": "Owner authorized the disposable installed-app performance pilot, then closed second-host work because no second Mac exists.",
+  "source": {
+    "nativeRuntimeCommit": "d4459a4dc1d48045fefdc46afa0115f4e9ad9c77",
+    "engineRuntimeCommit": "ded58ad44afab24505f8c6da1c6bf0829dbf82ba",
+    "guiBinarySHA256": "645817fc52858ec0962c3296be65008bb11030bdf08475ebf27014e5f7bc63b6",
+    "cliBinarySHA256": "0faa9eb1f7ed79e5373af85a30e790a5c4b4d5f286e172e45c4e05bb2efa64b4",
+    "manifestSHA256": "4a0ee6c550a991bcc3c9bdbddbb32b5be2c0d799181df7513a1013a590861798",
+    "payloadIdentity": "4cc78ca581917d59cad592d3c25ae37a371e40f87b9de29f339c3747db820312"
+  },
+  "context": {
+    "hostRole": "Local development Mac",
+    "cpu": "Apple M4 Max",
+    "architecture": "arm64",
+    "macOS": "27.0.1",
+    "node": "24.21.0",
+    "build": "Debug",
+    "distribution": "unsigned-development",
+    "installation": "User Applications directory",
+    "service": "Temporary foreground native bundled helper; normal private user state and authenticated IPC",
+    "repository": "One disposable generic repository with 8 MiB synthetic random content; no publication destination",
+    "check": "One explicit Python command, 20-second maximum; eight flushed timestamped lines at 730 ms intervals after a four-second selection allowance"
+  },
+  "measurements": {
+    "metric": "Emission to observed installed GUI text availability",
+    "method": "Existing Accessibility permission; bounded 35-second watcher polling actual AXTextArea values with a 20 ms requested delay between traversals. Traversal and observer overhead are included; this is not pixel-render timing.",
+    "samplesMilliseconds": [
+      283.57,
+      51.62,
+      372.68,
+      161.83,
+      460.29,
+      244,
+      59.06,
+      335.85
+    ],
+    "medianMilliseconds": 263.78,
+    "minimumMilliseconds": 51.62,
+    "maximumMilliseconds": 460.29,
+    "observedLines": 8,
+    "allBelowOneSecond": true,
+    "realSSHThroughput": "not_run_no_second_mac"
+  },
+  "repairs": [
+    {
+      "commit": "eecf9a45408de1cc39b6191f40f4b03ceab7c203",
+      "finding": "Case-insensitive packaged CLI name overwrote GUI executable.",
+      "change": "Distinct ContributionCLI target and install/sign paths, packaging GUI-hash preservation, native link target and GUI-preservation regression."
+    },
+    {
+      "commit": "591d6d6236aed849c3d09a6c82c10d50edc13220",
+      "finding": "Relocated GUI could not resolve the bundled Sparkle framework.",
+      "change": "Bundle-relative framework runpath in Debug/Release; native artifact validation requires it."
+    },
+    {
+      "commit": "d4459a4dc1d48045fefdc46afa0115f4e9ad9c77",
+      "finding": "Native Run local checks selected the home-directory IPC context.",
+      "change": "Pass the selected enrolled repository source path; service ownership verification unchanged."
+    }
+  ],
+  "checks": [
+    {
+      "command": "bash scripts/package-app.sh NEW_ABSOLUTE_APP_PATH",
+      "result": "passed",
+      "notes": "Final native build, pinned framework/runtime payload, generated drift and GUI hash preservation; installed app opened outside the build checkout."
+    },
+    {
+      "command": "bash scripts/dev.sh native:test",
+      "result": "passed",
+      "tests": 26,
+      "notes": "CLI filename/target and GUI preservation regression included; later UI source selection compiled in final package and verified through actual installed GUI."
+    },
+    {
+      "command": "Installed GUI: Run local checks",
+      "result": "passed",
+      "notes": "Explicit disposable source admitted, eight lines observed, completed check succeeded."
+    },
+    {
+      "command": "Installed CLI: service pause; service restart --when-idle; service status; exact checks.run replay; service resume",
+      "result": "passed",
+      "notes": "Pause survived restart; same worker PID/payload and same completed operation/request returned; no check rerun."
+    },
+    {
+      "command": "Installed CLI: submit exact source/base/tip/request; runs get; exact submit replay",
+      "result": "passed",
+      "notes": "One completed captured task landed into the disposable integration branch. Same operation and landed commit replayed. Landing validation not_run; publication not_requested."
+    },
+    {
+      "command": "Installed CLI: service storage --worktrees --preview",
+      "result": "passed_protection_observed",
+      "notes": "One recent generated candidate remained WORKTREE_PROTECTED under minimumAgeDays 30; no retention bypass or generated candidate deletion."
+    },
+    {
+      "command": "Installed CLI: repos remove; repos list; service status",
+      "result": "passed",
+      "notes": "Zero enrollments, no pending removal, active=0, queued=0, unresolved resources=0; history and retained records preserved."
+    },
+    {
+      "command": "git worktree remove EXACT_CLEAN_DISPOSABLE_SOURCE",
+      "result": "passed",
+      "notes": "Verified expected HEAD and clean status; preserved source branch and captured history."
+    },
+    {
+      "command": "Installed GUI: Remove owned CLI link; Quit Contribution; verified native parent SIGTERM drain",
+      "result": "passed",
+      "notes": "Owned link removed; native parent and engine exited normally; socket and lock absent; discovery record/journal retained."
+    },
+    {
+      "command": "bash -n scripts/package-app.sh; Python AST parse of changed packaging validators; git diff --check",
+      "result": "passed"
+    }
+  ],
+  "backgroundRegistration": {
+    "command": "Installed GUI: Register bundled service",
+    "result": "refused",
+    "observedError": "Codesigning failure loading plist: dev.contribution.service.plist code: -67056",
+    "qualification": "No launchd/login/background acceptance. No Developer ID identity or Keychain signing material was used."
+  },
+  "investigation": [
+    "The initial synthetic policy requested unsupported generic built-ins; the service refused before the check started. The waiting attempt was explicitly cancelled and the disposable policy was reviewed to select the implemented explicit check.",
+    "No prior local Contribution app, CLI link, user service state or second-Mac SSH alias was present."
+  ],
+  "cleanup": {
+    "temporaryServiceStopped": true,
+    "cliPilotLinkRemoved": true,
+    "disposableEnrollmentRemoved": true,
+    "sourceWorktreeRemoved": true,
+    "generatedCandidate": "Retained and protected by the existing 30-day policy",
+    "retained": "Installed development app, synthetic primary history, captured bundle/ref, private journal and proof; no live project touched"
+  },
+  "limits": [
+    "No second Mac, real SSH/VPN negotiation or throughput measurement.",
+    "Debug unsigned development GUI; foreground helper rather than successfully registered launchd service.",
+    "Eight text-availability samples; no baseline GUI pixel, frame-pacing, idle-wakeup, battery or production-percentile claim.",
+    "No expired generated-output removal: protection was validated instead.",
+    "No live project enrollment, publication, release signing, phone operation or acceptance-ledger promotion."
+  ],
+  "privateEvidence": "Raw app captures, process metadata, journals and synthetic repositories are retained outside Git; this record contains only sanitized aggregate proof.",
+  "worktree": "No native archival attachment is exposed; source checkout retained intact."
+}

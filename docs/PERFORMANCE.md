@@ -87,6 +87,57 @@ The [verification receipt](verification/performance-improvements.json) records
 exact source identities and aggregate measurements.
 
 Real SSH negotiation, RTT/fsync throughput, macOS interaction profiling,
-installed lifecycle and physical devices remain in the existing handoff.
-Next, run a bounded disposable repository pilot to measure interaction latency
-and transfer throughput on the actual installed hosts.
+signed background lifecycle and physical devices remain incomplete. The owner
+confirmed that no second Mac exists and closed two-host work from this pilot.
+
+## Single-Mac installed development pilot — October 13, 2026
+
+The owner authorized a bounded disposable repository pilot. A fresh unsigned
+development app with the verified immutable engine payload was installed in the
+user Applications directory. The installed GUI, native CLI and native helper
+used the normal private user-service endpoint. Background registration through
+the app was attempted but macOS rejected its code signature (`-67056`). A
+temporary foreground run of the verified bundled helper enabled the local
+measurements; this does not qualify launchd registration, login or unattended
+operation.
+
+Eight flushed timestamped lines from the disposable configured check reached
+the installed GUI text view in **263.78 ms median**, **460.29 ms maximum**
+(51.62 ms minimum). Accessibility polling observed actual text availability;
+the sample includes observer overhead and does not measure raster presentation,
+frame pacing, idle wakeups or battery. All eight observations were below the
+one-second local log target. The check completed successfully from the native
+Run local checks action.
+
+The pilot found three independently reproduced installation/UI defects:
+
+- A CLI called `contribution` overwrote the GUI executable `Contribution` on
+  the case-insensitive filesystem. The bundled CLI is now `ContributionCLI`,
+  and packaging checks that the GUI hash remains unchanged.
+- The GUI lacked a bundle-relative framework search path and could not load
+  its included Sparkle framework after relocation. Both configurations now
+  include that path, and artifact verification requires it.
+- Run local checks omitted the selected repository path, causing the service
+  to inspect the app's home-directory context. The action now sends the exact
+  enrolled local source; the service still verifies its ownership.
+
+The native build/package checks and all 26 platform tests passed. The pilot
+also proved one committed task capture and local landing, retained exact
+request replay without another landing, idle exec restart with preserved pause
+and completed evidence, and normal resource release. The initial synthetic
+policy's unsupported built-ins were refused; that waiting attempt was cancelled
+and the reviewed disposable policy selected the implemented explicit check.
+Generic landing reports `validation: not_run` and `publication: not_requested`;
+the separate successful check does not convert that receipt into a gate pass.
+
+The disposable enrollment and clean source worktree were removed using their
+normal owning operations. The pilot CLI link was removed and both the temporary
+helper and worker exited, leaving no service socket/lock or active/unresolved
+work. Source history, journal evidence, the installed development app and the
+generated candidate remain retained. The candidate is protected by the normal
+30-day policy; cleanup eligibility was reviewed without overriding it.
+
+The [pilot receipt](verification/single-mac-performance-pilot.json) records
+exact code/payload hashes, aggregate observations and the remaining local
+signing prerequisite. No SSH host pairing, publication, hardware operation or
+live-project enrollment occurred. No two-host throughput result is claimed.

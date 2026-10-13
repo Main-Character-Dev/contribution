@@ -529,3 +529,23 @@ Swift tests passed. [Performance proof](PERFORMANCE.md) and its
 [receipt](verification/performance-improvements.json) record source identities,
 local synthetic results and the separate installed/two-host/device proof still
 required. No live installation, enrollment, push or hardware change occurred.
+
+## Single-Mac performance pilot — October 13, 2026
+
+The owner authorized the disposable installed-app pilot and then closed
+two-host work after confirming that no second Mac exists. The local pilot
+found and repaired a case-insensitive GUI/CLI filename collision, missing
+bundle-relative Sparkle resolution and native local checks omitting their
+selected source path. Packaging preserves the GUI hash and verifies its
+framework search path. The native installation regression and all 26 platform
+tests passed; the installed GUI completed its disposable check.
+
+Eight emitted lines reached the GUI text view in 263.78 ms median and 460.29 ms
+maximum. Capture/landing/replay, pause-preserving idle restart, empty enrollment
+after removal and normal temporary-helper drain were observed. The generated
+candidate remains protected under the existing retention policy. macOS refused
+background registration with a code-signing failure, so the pilot used a
+temporary verified bundled helper and does not establish launchd/login proof.
+The [pilot receipt](verification/single-mac-performance-pilot.json) records
+exact source and payload identities. No real project, remote host, publication
+or physical device was used; no acceptance-ledger state was promoted.

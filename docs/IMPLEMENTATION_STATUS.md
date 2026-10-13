@@ -6,7 +6,10 @@ The [checkpoint history](IMPLEMENTATION_HISTORY.md) retains previous source iden
 
 [Performance implementation and proof](PERFORMANCE.md) records the approved
 engine, helper and native refresh changes, synthetic measurements and complete
-check receipt. Installed and physical acceptance remain incomplete.
+check receipt. The [single-Mac development pilot](verification/single-mac-performance-pilot.json)
+measured installed GUI text latency and verified local capture, landing, replay
+and temporary-helper drain. Signed background registration was refused by
+macOS; installed lifecycle and physical acceptance remain incomplete.
 
 | Capability and owner | Implemented behavior | Remaining qualification or gap |
 |---|---|---|
