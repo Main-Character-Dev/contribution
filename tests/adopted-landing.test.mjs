@@ -1,3 +1,4 @@
+import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -100,8 +101,8 @@ export async function reconcileLandedCandidate({cwd,candidateSha,planCommand}){
   writeFileSync(join(path, '.git/fixture-candidate'), JSON.stringify({ sha: sourceTip, worktree_path: git(sourcePath, 'rev-parse', '--show-toplevel'), task_id: 'original-task', required_ui_test_selectors: ['required-selector'], supersedes: [base], objective_id: 'original-objective', review_epoch: 4 }));
   const args = { repo: repo.id, requestId: randomUUID(), sourcePath, sourceTip, base, metadata: { schemaVersion: 1 } };
   const call = (command, args) => engine.dispatch({ schemaVersion: 1, command, args, cwd: path });
-  const wait = async id => { const deadline = Date.now() + 12000; while (Date.now() < deadline) { const op = store.get(id); if (!['running','queued'].includes(op.state)) return op; await new Promise(r => setTimeout(r, 15)); } throw Error('fixture deadline'); };
-  return { root, store, engine, path, repo, args, call, wait, cleanup: async () => { engine.stopping = true; while (engine.active.size) await new Promise(r => setTimeout(r, 15)); store.close(); rmSync(root, { recursive: true }); } };
+  const wait = id => waitOperation(() => store.get(id), `Original landing ${id}`);
+  return { root, store, engine, path, repo, args, call, wait, cleanup: async () => { await drainEngines(engine); store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('all adopted families run the original native landing and receipt/source guards without publication or outer lease', async () => {

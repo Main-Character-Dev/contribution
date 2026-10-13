@@ -8,6 +8,7 @@ import { digest, id, now, requireValue, Fault } from './core.js';
 import type { ObjectValue } from './core.js';
 import type { Enrolled } from './repositories.js';
 import { readStableFile } from './bounded-file.js';
+import { configureReviewedPolicy } from './reviewed-policy.js';
 
 export type ResourceIdentity = NonNullable<Resource['identity']>;
 export interface ResourceContext { clone: string; revision: string }
@@ -75,13 +76,11 @@ export class ResourceLifecycle {
     assertContract('resource-policy', policy); return { policy, revision: digest(policy) };
   }
   configure(value: unknown, revision: string, requestId: string): ObjectValue {
-    assertContract('resource-policy', value); requireValue(validateContractFormat('uuid', requestId), 'INVALID_USAGE', 'Policy requires an immutable request UUID.', 2);
-    const input = digest({ value, revision }), prior = this.store.record<{ input: string; result: ObjectValue }>('resourcePolicyRequest', requestId);
-    if (prior) { requireValue(prior.input === input, 'REQUEST_ID_CONFLICT', 'The policy request has other inputs.'); return prior.result; }
-    requireValue(!this.store.byRequest(requestId) && !this.all().some(r => r.requestId === requestId), 'REQUEST_ID_CONFLICT', 'The request belongs to another owner.');
-    requireValue(this.policy().revision === revision, 'REVISION_CONFLICT', 'Resource policy changed.');
-    const result = { policy: value, revision: digest(value), requestId };
-    this.store.transaction(() => { this.store.setMeta('resourcePolicy', value); this.store.put('resourcePolicyRequest', requestId, { input, result }); }); return result;
+    return configureReviewedPolicy(this.store, value, revision, requestId, {
+      contract: 'resource-policy', metadata: 'resourcePolicy', requests: 'resourcePolicyRequest', digestField: 'input', selection: { value, revision }, currentRevision: () => this.policy().revision,
+      ownerAvailable: () => !this.all().some(r => r.requestId === requestId),
+      messages: { uuid: 'Policy requires an immutable request UUID.', replay: 'The policy request has other inputs.', owner: 'The request belongs to another owner.', revision: 'Resource policy changed.' }
+    });
   }
   private resourceContext(repositoryId: string | null): ResourceContext {
     return repositoryId === null ? { clone: digest({ directory: realpathSync(this.store.directory), hostId: this.store.hostId }), revision: 'host-scope-v1' } : this.context(repositoryId);

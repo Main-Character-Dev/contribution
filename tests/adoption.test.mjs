@@ -1,3 +1,4 @@
+import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync, rmSync } from 'node:fs';
@@ -45,7 +46,7 @@ async function fixture(adapter = 'maincharacter-v1') {
     const call = (command, args = {}) => engine.dispatch({ schemaVersion: 1, command, args: { repo: repo.id, ...args }, cwd: path });
     const prepare = async () => { const request = { adapter, prepareAdoption: true, requestId: randomUUID() }; const result = await call('repos.migration', request); assert.equal(result.error, null, JSON.stringify(result)); return { request, plan: result.result }; };
     const change = (key, plan, expectedRevision = repo.revision, requestId = randomUUID()) => call('repos.migration', { [key]: plan.proposalId, expectedRevision, requestId });
-    return { root, store, engine, path, repo, guard, dispatcher, count, call, prepare, change, cleanup: async () => { engine.stopping = true; while (engine.active.size) await new Promise(r => setTimeout(r, 20)); await new Promise(r => server.close(r)); store.close(); rmSync(root, { recursive: true }); } };
+    return { root, store, engine, path, repo, guard, dispatcher, count, call, prepare, change, cleanup: async () => { await drainEngines(engine); await new Promise(r => server.close(r)); store.close(); rmSync(root, { recursive: true }); } };
   } catch (error) { engine.stopping = true; await new Promise(r => server.close(r)); store.close(); rmSync(root, { recursive: true }); throw error; }
 }
 
@@ -95,8 +96,7 @@ test('all four adoption proposals preserve hook ownership and require committed 
       assert.deepEqual((await f.change('applyAdoption', plan, f.repo.revision, applyId)).result, applied.result);
       const preview = await f.call('push', { preview: true }); assert.equal(preview.error, null, JSON.stringify(preview));
       const admission = await f.call('push', { requestId: randomUUID(), expectedTip: preview.result.expectedTip, scopeToken: preview.result.scopeToken }); assert.equal(admission.error, null);
-      const deadline = Date.now() + 12000; let op;
-      do { op = f.store.get(admission.operationId); if (!['queued', 'running'].includes(op.state)) break; await new Promise(r => setTimeout(r, 20)); } while (Date.now() < deadline);
+      const op = await waitOperation(() => f.store.get(admission.operationId), `Adoption publication ${admission.operationId}`);
       assert.equal(op.state, 'succeeded', JSON.stringify(op)); assert.equal(op.result.gate.state, adapter === 'glassalpha-v1' ? 'inactive' : 'passed');
       assert.equal(existsSync(f.count), adapter !== 'glassalpha-v1'); if (existsSync(f.count)) assert.equal(readFileSync(f.count, 'utf8'), 'gate\n');
     } finally { await f.cleanup(); }

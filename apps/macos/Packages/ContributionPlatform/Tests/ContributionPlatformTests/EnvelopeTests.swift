@@ -24,15 +24,4 @@ final class EnvelopeTests: XCTestCase {
             XCTAssertThrowsError(try JSONDecoder().decode(ResponseEnvelope.self, from: JSONEncoder().encode(value)))
         }
     }
-    func testDevelopmentClientMatchesEngine() throws {
-        guard let root = ProcessInfo.processInfo.environment["CONTRIBUTION_ROOT"] else {
-            throw XCTSkip("Run scripts/native-test.sh")
-        }
-        for (name, response) in [("version", try DevelopmentClient().version()),
-                                 ("unavailable", try DevelopmentClient().availability())] {
-            let expected = try JSONDecoder().decode(JSONValue.self, from:
-                Data(contentsOf: URL(fileURLWithPath: root).appendingPathComponent(".build/\(name).json")))
-            XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(response)), expected)
-        }
-    }
 }

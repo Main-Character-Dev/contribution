@@ -1,3 +1,4 @@
+import { ResourceCommands } from './resource-commands.js';
 import { recordGitConnectivity } from './peer-connectivity.js';
 import { ResourceLifecycle } from './resource-lifecycle.js';
 import { processLifecycle } from './resource-process.js';
@@ -35,9 +36,6 @@ import type { Notice } from './notifications.js';
 import { Maintenance } from './maintenance.js';
 import { BackendSessions } from './backend-sessions.js';
 import { resourceHealth } from './resource-health.js';
-import { StorageRetention } from './storage.js';
-import { OwnedWorktrees } from './owned-worktrees.js';
-import { GitBundleRetention } from './git-bundle-retention.js';
 import { RepositoryRemoval } from './repository-removal.js';
 import { Diagnostics } from './diagnostics.js';
 import { ManagedStorage } from './managed-storage.js';
@@ -46,10 +44,7 @@ import { WorkPower } from './power.js';
 export interface Request { schemaVersion: 1; command: string; args: ObjectValue; cwd: string }
 const allowed: Record<string, string[]> = {
   'version': [], 'doctor': [], 'service.status': [], 'service.pause': [], 'service.resume': [], 'service.restart': ['whenIdle'],
-  'service.storage': ['preview', 'scopeToken', 'requestId', 'worktrees', 'bundles'],
   'service.diagnostics': ['operationId'],
-  'service.storage-policy': ['config', 'expectedRevision', 'requestId'],
-  'service.power-policy': ['config', 'expectedRevision', 'requestId'],
   'maintenance.begin': ['requestId'], 'maintenance.status': [], 'maintenance.stop': ['windowId'],
   'maintenance.resume': ['windowId', 'observedPayload', 'outcome'],
   'repos.list': [], 'repos.discover': ['root'], 'repos.add': ['path', 'profile', 'availability', 'config'], 'repos.create': ['path', 'requestId'],
@@ -86,10 +81,9 @@ allowed['devices.transfer-host'] = ['repo', 'device', 'fromHost', 'host', 'expec
 allowed['devices.evidence.record'] = ['repo', 'host', 'config', 'requestId'];
 allowed['devices.evidence.get'] = ['repo', 'host', 'evidence'];
 allowed['devices.evidence.review'] = ['repo', 'host', 'evidence', 'expectedRevision', 'requestId'];
-allowed['service.resources'] = ['preview', 'scopeToken', 'requestId', 'reconcile'];
-allowed['service.resource-policy'] = ['config', 'expectedRevision', 'requestId'];
 export class Engine {
   readonly resources: ResourceLifecycle;
+  private readonly resourceCommands: ResourceCommands;
   private readonly resourceLeases = new Map<string, Lease | LegacyPrimaryLease>();
   readonly repos: Repositories;
   readonly workflows: Workflows;
@@ -116,6 +110,10 @@ export class Engine {
     this.resources = processLifecycle(store);
     this.power = new WorkPower(store);
     this.maintenance = new Maintenance(store, payload.identity);
+    this.resourceCommands = new ResourceCommands({ store, resources: this.resources, power: this.power, kick: () => this.kick(), refreshPower: () => this.refreshPower(), resourcesSettled: async () => {
+      for (const [operationId, lease] of this.resourceLeases) if (!this.resources.blockers().some(r => r.operationId === operationId)) { lease.release(); this.resourceLeases.delete(operationId); }
+      await this.recoverObservedEffects(); this.kick();
+    } });
     BackendSessions.recover(store);
     this.repos = new Repositories(store); this.adoptions = new Adoptions(store, this.repos); this.workflows = new Workflows(store, this.repos, payload); this.github = new GitHubMonitor(store);
     this.peers = new Peers(store, this.repos, payload.identity, peerTransport);
@@ -352,23 +350,7 @@ export class Engine {
             argv: ['contribution', 'repos', 'remove', '--repo', removal.repository.id, '--json'] }];
         }
       }
-      if (command === 'service.resources' && response.error && typeof args?.['requestId'] === 'string') {
-        const requestId = args['requestId'], retained = this.store.record<{ state: string; preview: { token: string } }>('resourceCleanup', requestId);
-        if (retained?.state === 'stopping' && retained.preview.token === args['scopeToken']) {
-          response.result = { ...response.result, requestRetained: true, requestId, scopeToken: retained.preview.token };
-          response.error.nextActions = [{ id: 'resume-resources', label: 'Resolve the retained condition and resume this exact cleanup', argv: ['contribution', 'service', 'resources', '--scope-token', retained.preview.token, '--request-id', requestId, '--json'] }];
-        }
-      }
-      if (command === 'service.storage' && response.error && typeof args?.['requestId'] === 'string') {
-        const worktrees = args['worktrees'] === true, bundles = args['bundles'] === true, requestId = args['requestId'];
-        const retained = this.store.record<{ state: string; token?: string; preview?: { token: string } }>(worktrees ? 'worktreeCleanup' : bundles ? 'gitBundleCleanup' : 'storageCleanup', requestId);
-        const token = retained?.token ?? retained?.preview?.token;
-        if (retained?.state === 'removing' && token) {
-          response.result = { ...response.result, requestRetained: true, requestId, scopeToken: token, worktrees, bundles };
-          response.error.nextActions = [{ id: 'resume-cleanup', label: 'Resume the same reviewed cleanup after resolving the reported condition', argv: ['contribution', 'service', 'storage',
-            ...(worktrees ? ['--worktrees'] : bundles ? ['--bundles'] : []), '--scope-token', token, '--request-id', requestId, '--json'] }];
-        }
-      }
+      if (response.error && args && typeof args === 'object' && !Array.isArray(args)) this.resourceCommands.handlers[String(command)]?.retainedFailure?.(args, response);
       return response;
     } finally { if (!lifecycle) this.requests--; }
   }
@@ -377,7 +359,7 @@ export class Engine {
       const input = object(value); requireValue(input['schemaVersion'] === 1, 'SCHEMA_UNSUPPORTED', 'Only request schema version 1 is supported.', 2);
       requireValue(Object.keys(input).every(key => ['schemaVersion', 'command', 'args', 'cwd'].includes(key)), 'INVALID_REQUEST', 'Unexpected request fields.', 2);
       const command = string(input['command'], 'command'), args = object(input['args']), cwd = string(input['cwd'], 'cwd');
-      const fields = allowed[command]; requireValue(fields, 'OPERATION_UNSUPPORTED', 'This command is not available in this payload.', 3);
+      const handler = this.resourceCommands.handlers[command], fields = handler?.fields ?? allowed[command]; requireValue(fields, 'OPERATION_UNSUPPORTED', 'This command is not available in this payload.', 3);
       requireValue(Object.keys(args).every(key => fields.includes(key)), 'INVALID_USAGE', 'Unsupported argument combination.', 2);
       requireValue(!this.maintenance.busy || ['version', 'service.status', 'maintenance.status'].includes(command), 'MAINTENANCE_BUSY', 'The final update checkpoint is being saved. Wait for it to finish.', 4);
       requireValue(!this.stopping || ['version', 'service.status', 'maintenance.status'].includes(command), 'SERVICE_STOPPING', 'The service is stopping. Reconnect after the maintenance window is reconciled.', 3);
@@ -387,9 +369,10 @@ export class Engine {
           Object.keys(args).every(key => ['repo', 'listAdoptions', 'adoptionPlan', 'reviewFile', 'reviewSide', 'reviewOffset'].includes(key));
         // An existing managed Git child must finish its gate so the active job
         // can drain. A new external push cannot start inside this window.
-        requireValue(reads.includes(command) || (command === 'service.resources' && !args['scopeToken']) || (command === 'service.resource-policy' && args['config'] === undefined) || migrationRead || (['service.storage-policy', 'service.power-policy'].includes(command) && args['config'] === undefined) || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
+        requireValue(reads.includes(command) || handler?.maintenanceAllowed(args) || migrationRead || (['hook.pre-push', 'hook.borrow', 'hook.release-borrow', 'hook.adopted.begin', 'hook.adopted.finish'].includes(command) && typeof args['operationId'] === 'string' && this.active.has(args['operationId'])),
           'SERVICE_MAINTENANCE', 'An update maintenance window is held. Existing work is draining and queued work remains retained.', 3);
       }
+      if (handler) return await handler.handle(args);
       if (command === 'maintenance.begin') return completed({ window: this.maintenance.begin(string(args['requestId'], 'requestId')) });
       if (command === 'maintenance.status') {
         const blockers = this.maintenance.blockers(this.active.size, this.notificationRefresh || this.github.busy || this.peers.busy || this.peers.observing || this.maintenance.busy, this.requests);
@@ -412,42 +395,6 @@ export class Engine {
         storageHold: this.storageHold, power: this.power.status(),
         connectivityHints: this.store.getMeta('connectivityHints') ?? { status: 'unknown', observedAt: null }, connectivityHintReceipt: this.store.getMeta('connectivityHintReceipt') ?? null, maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
         active: this.active.size, queued: this.store.queue().length, hostId: this.store.hostId, remoteDevicesEnabled: this.settings().remoteDevices?.enabled ?? false, payload: this.payload.identity, processId: process.pid });
-      if (command === 'service.resource-policy') {
-        if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read policy without mutation arguments.', 2); return completed(this.resources.policy()); }
-        return completed(this.resources.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')));
-      }
-      if (command === 'service.resources') {
-        if (args['preview'] === true) { requireValue(args['scopeToken'] === undefined && args['requestId'] === undefined && args['reconcile'] === undefined, 'INVALID_USAGE', 'Preview has no mutation inputs.', 2); return completed(await this.resources.preview()); }
-        if (args['reconcile'] === true) { requireValue(Object.keys(args).length === 1, 'INVALID_USAGE', 'Observation uses only --reconcile.', 2); await this.resources.reconcile();
-          for (const [operationId, lease] of this.resourceLeases) if (!this.resources.blockers().some(r => r.operationId === operationId)) { lease.release(); this.resourceLeases.delete(operationId); }
-          await this.recoverObservedEffects(); this.kick(); }
-        else if (args['scopeToken'] !== undefined) {
-          const result = await this.resources.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId'));
-          for (const [operationId, lease] of this.resourceLeases) if (!this.resources.blockers().some(r => r.operationId === operationId)) { lease.release(); this.resourceLeases.delete(operationId); }
-          await this.recoverObservedEffects(); this.kick(); return completed(result);
-        } else requireValue(Object.keys(args).length === 0, 'INVALID_USAGE', 'Inspect resources without mutation inputs.', 2);
-        const rows = this.resources.all(); return completed({ total: rows.length, limited: rows.length > 200, resources: rows.slice(-200), policy: this.resources.policy() });
-      }
-      if (command === 'service.storage') {
-        requireValue(args['worktrees'] === undefined || args['worktrees'] === true, 'INVALID_USAGE', 'Use --worktrees to select owned checkout cleanup.', 2);
-        requireValue((args['bundles'] === undefined || args['bundles'] === true) && !(args['worktrees'] && args['bundles']), 'INVALID_USAGE', 'Select one cleanup category: generated output, --worktrees or --bundles.', 2);
-        const storage = args['worktrees'] === true ? new OwnedWorktrees(this.store) : args['bundles'] === true ? new GitBundleRetention(this.store) : new StorageRetention(this.store);
-        if (args['preview'] === true) {
-          requireValue(args['scopeToken'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Preview and cleanup are separate requests.', 2);
-          return completed(await storage.preview());
-        }
-        requireValue(args['preview'] === undefined, 'INVALID_USAGE', 'Use --preview or select its scope token and a request UUID.', 2);
-        const result = await storage.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId')); this.kick(); return completed(result);
-      }
-      if (command === 'service.storage-policy') {
-        const storage = new ManagedStorage(this.store);
-        if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read storage policy without mutation arguments.', 2); return completed({ ...storage.policy(), usage: storage.usage() }); }
-        const result = storage.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')); this.kick(); return completed(result);
-      }
-      if (command === 'service.power-policy') {
-        if (args['config'] === undefined) { requireValue(args['expectedRevision'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Read power preference without mutation arguments.', 2); return completed(this.power.status()); }
-        const result = this.power.configure(args['config'], string(args['expectedRevision'], 'expectedRevision'), string(args['requestId'], 'requestId')); this.refreshPower(); return completed(result);
-      }
       if (command === 'doctor') return completed({ hostId: this.store.hostId, service: 'running', payloadVerified: true, distribution: this.payload.distribution,
         resourceHealth: await resourceHealth(this.resources), peerProcessRelease: this.store.records('peerProcessRelease').slice(0, 100), database: { version: Number(this.store.db.prepare('PRAGMA user_version').get()?.['user_version']), journalMode: 'wal', synchronous: 'full' }, storage: this.store.retention(), repositories: this.repos.all().map(repo => ({ repositoryId: repo.id, pathExists: existsSync(repo.path), adapter: repo.config.integration.adapter })),
         managedStorage: new ManagedStorage(this.store).usage(),

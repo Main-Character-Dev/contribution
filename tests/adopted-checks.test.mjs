@@ -1,3 +1,4 @@
+import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -27,8 +28,8 @@ async function fixture(adapter, mode='') {
   const pnpm=join(root,'pnpm');writeFileSync(pnpm,'#!/bin/sh\nprintf "11.23.0\\n"\n',{mode:0o700});store.put('projectRuntimeSelection',repo.id,{node:process.execPath,pnpm,nodeVersion:process.version.slice(1),pnpmVersion:'11.23.0',pinsDigest:projectPins(path).inputs});
   const source=join(root,'task');git(path,'worktree','add','--detach',source,'HEAD');
   const call=(args)=>engine.dispatch({schemaVersion:1,command:'checks.run',args:{repo:repo.id,requestId:randomUUID(),sourcePath:source,...args},cwd:path});
-  const wait=async id=>{const deadline=Date.now()+10000;while(Date.now()<deadline){const op=store.get(id);if(!['running','queued'].includes(op.state))return op;await new Promise(r=>setTimeout(r,15));}throw Error('check deadline');};
-  return{root,path,repo,source,program,store,engine,call,wait,invocation:()=>JSON.parse(readFileSync(join(repo.commonDir,'check-invocation'))),cleanup:async()=>{engine.stopping=true;while(engine.active.size)await new Promise(r=>setTimeout(r,15));store.close();rmSync(root,{recursive:true});}};
+  const wait = id => waitOperation(() => store.get(id), `Original check ${id}`);
+  return{root,path,repo,source,program,store,engine,call,wait,invocation:()=>JSON.parse(readFileSync(join(repo.commonDir,'check-invocation'))),cleanup:async()=>{await drainEngines(engine);store.close();rmSync(root,{recursive:true});}};
 }
 
 test('all four adopted runners use the selected task and retain local completion separately from gate proof',async()=>{

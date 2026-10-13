@@ -1,3 +1,4 @@
+import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync, renameSync, symlinkSync, linkSync } from 'node:fs';
@@ -44,9 +45,9 @@ async function fixture() {
     engine.store.put('deviceBuildProfile', config.repositoryId, { config: { eligibleDeviceRefs: provenance.signing.eligibleDeviceRefs }, revision: 'fixture-project-policy' });
   }
   const args = { repo: config.repositoryId, artifact: provenance.artifactId, toHost: hosts.mini.store.hostId, requestId: randomUUID() };
-  const wait = async (name, operationId) => { const deadline = Date.now() + 5000; while (Date.now() < deadline) { const result = await call(name, 'runs.get', { operationId }); if (!['queued', 'running'].includes(result.operationState)) return result; await new Promise(r => setTimeout(r, 10)); } throw Error('transfer timeout'); };
+  const wait = (name, operationId) => waitOperation(() => call(name, 'runs.get', { operationId }), `Artifact transfer ${operationId}`);
   return { root, hosts, call, args, wait, calls, phoneCalls, provenance, path, appPath, lose: action => { lose = action; }, intercept: fn => { intercept = fn; },
-    cleanup: async () => { for (const engine of Object.values(hosts)) engine.stopping = true; while (Object.values(hosts).some(engine => engine.active.size)) await new Promise(r => setTimeout(r, 10)); for (const engine of Object.values(hosts)) engine.store.close(); rmSync(root, { recursive: true }); } };
+    cleanup: async () => { await drainEngines(Object.values(hosts)); for (const engine of Object.values(hosts)) engine.store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('paired artifact transfer retains exact bytes/provenance independently of Git owner and never invokes the phone', async () => {

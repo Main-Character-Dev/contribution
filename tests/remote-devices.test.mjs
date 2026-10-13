@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { drainEngines, waitFor, waitOperation } from './fixtures/lifecycle.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -47,18 +48,11 @@ async function setup() {
     engine.store.put('deviceArtifact', artifact.artifactId, { provenance: artifact, path, appPath: join(root, 'fixture.app') });
   }
   const args = { repo: config.repositoryId, host: hosts.laptop.store.hostId, device, artifact: artifact.artifactId, requestId: randomUUID() };
-  const wait = async (host, operationId) => {
-    const deadline = Date.now() + 8000;
-    while (Date.now() < deadline) {
-      for (const engine of Object.values(hosts)) { for (const op of engine.store.unsettled().filter(op => op.state === 'queued_local')) engine.store.update(op, { result: { ...op.result, nextPeerAttempt: 0 } }); await engine.peers.tick(); }
-      const result = await call(host, 'runs.get', { operationId }); if (!['queued', 'running', 'queued_local'].includes(result.operationState)) return result;
-      await new Promise(r => setTimeout(r, 10));
-    }
-    throw Error('remote device operation timeout');
-  };
+  const wait = (host, operationId) => waitOperation(() => call(host, 'runs.get', { operationId }), `Remote device ${operationId}`, { pending: ['queued', 'running', 'queued_local'], advance: async () => {
+    for (const engine of Object.values(hosts)) { for (const op of engine.store.unsettled().filter(op => op.state === 'queued_local')) engine.store.update(op, { result: { ...op.result, nextPeerAttempt: 0 } }); await engine.peers.tick(); }
+  } });
   return { root, hosts, calls, call, args, wait, offline: value => { offline = value; }, lose: () => { lost = true; }, uncertain: value => { uncertain = value; }, cleanup: async () => {
-    for (const engine of Object.values(hosts)) engine.stopping = true;
-    while (Object.values(hosts).some(engine => engine.active.size || engine.peers.busy)) await new Promise(r => setTimeout(r, 10));
+    await drainEngines(Object.values(hosts));
     for (const engine of Object.values(hosts)) engine.store.close(); rmSync(root, { recursive: true });
   } };
 }
@@ -137,7 +131,7 @@ test('cancelling uncertain admission fences a missing remote request instead of 
   const f = await setup(); try {
     await f.call('mini', 'devices.profile', { repo: f.args.repo, host: f.args.host }); f.offline(true);
     const accepted = await f.call('mini', 'devices.install', f.args);
-    while (f.hosts.mini.peers.busy) await new Promise(r => setTimeout(r, 10));
+    await waitFor(() => !f.hosts.mini.peers.busy, 'Remote peer observation');
     assert.equal(f.hosts.mini.store.get(accepted.operationId).result.transferAttempted, true);
     await f.call('mini', 'runs.cancel', { operationId: accepted.operationId }); f.offline(false);
     const result = await f.wait('mini', accepted.operationId); assert.equal(result.operationState, 'cancelled', JSON.stringify(result));
@@ -151,7 +145,7 @@ test('cancellation after a lost acceptance reply finds and cancels the existing 
   const f = await setup(); try {
     await f.call('laptop', 'service.pause'); f.lose();
     const accepted = await f.call('mini', 'devices.install', f.args);
-    while (f.hosts.mini.peers.busy) await new Promise(r => setTimeout(r, 10));
+    await waitFor(() => !f.hosts.mini.peers.busy, 'Remote peer observation');
     assert.equal(f.hosts.laptop.store.list().filter(op => op.kind === 'device').length, 1);
     assert.equal(f.hosts.mini.store.get(accepted.operationId).result.remoteOperationId, undefined);
     await f.call('mini', 'runs.cancel', { operationId: accepted.operationId });

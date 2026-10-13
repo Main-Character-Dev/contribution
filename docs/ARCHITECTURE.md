@@ -38,6 +38,15 @@ Node 24 is the selected LTS line based on the [official release schedule](https:
 
 ## Boundaries that must survive implementation
 
+The engine retains shared request/lifecycle gates and scheduling. Resource,
+storage and power commands live in `packages/engine/src/resource-commands.ts`;
+each registered handler owns its allowed fields, maintenance read predicate,
+execution and retained failure context. Their policy owners share only the
+reviewed transaction mechanics in `reviewed-policy.ts`, preserving each owner's
+persisted digest selection, namespace and collision guards. Immutable file reads
+share descriptor identity verification while keeping small-buffer and chunked
+artifact policies distinct.
+
 - **One writer:** the installed service owns admission, scheduling, SQLite, events, subprocess supervision, and retries. The Swift helper registers it through supported macOS mechanisms; it does not introduce another scheduler.
 - **Frozen requests:** bind source, destination, policy, caller authority, and request identity before durable acceptance. Reusing an ID with changed meaning is a conflict.
 - **Non-atomic effects:** Git, remote delivery, device actions, files, and SQLite cannot commit atomically. Retain intent, observed effects, and uncertainty; reconcile before repeating mutations.

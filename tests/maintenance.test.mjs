@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { within } from './fixtures/lifecycle.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID, createHash } from 'node:crypto';
 import { readFileSync, mkdtempSync, rmSync, statSync, cpSync, writeFileSync } from 'node:fs';
@@ -45,11 +46,7 @@ test('stop checkpoints a private verified backup, exits the helper and retains t
     const db = new DatabaseSync(receipt.path, { readOnly: true });
     assert.equal(db.prepare('SELECT id FROM operations').get().id, accepted.operationId); db.close();
     // Observe process exit, not just socket disconnection, before any relaunch.
-    for (let i = 0; i < 150; i++) {
-      let alive = true; try { process.kill(f.pid(), 0); } catch { alive = false; }
-      if (!alive) break;
-      assert.ok(i < 149, 'helper did not stop'); await new Promise(r => setTimeout(r, 20));
-    }
+    await within(f.exited(), 'Maintenance helper exit');
     const replacement = join(f.root, 'replacement'); cpSync(f.payload, replacement, { recursive: true });
     const manifestPath = join(replacement, 'manifest.json'), manifest = JSON.parse(readFileSync(manifestPath));
     const versionPath = join(replacement, 'version.json'), version = JSON.parse(readFileSync(versionPath));

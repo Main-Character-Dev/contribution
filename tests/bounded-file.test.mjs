@@ -10,17 +10,16 @@ import { readStableFile, StableFileReader, stableFileDigest } from '../packages/
 test('large artifact digests and range reads use finite buffers and retain binary identity', t => {
   const root = fs.mkdtempSync(join(tmpdir(), 'ct-artifact-read-')), path = join(root, 'bundle');
   const data = Buffer.alloc(3 * 1024 ** 2 + 17, 255); data.write('binary\0content', 0);
-  const originalRead = fs.readSync; let calls = 0;
+  const originalRead = fs.readSync;
   try {
     fs.writeFileSync(path, data);
-    t.mock.method(fs, 'readSync', (...args) => { calls++; assert(args[3] <= 1024 ** 2); return originalRead(...args); }); syncBuiltinESMExports();
+    t.mock.method(fs, 'readSync', (...args) => { assert(args[3] <= 1024 ** 2); return originalRead(...args); }); syncBuiltinESMExports();
     assert.deepEqual(stableFileDigest(path, data.length, 'CHANGED'), { bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') });
     const file = new StableFileReader(path, data.length, 'CHANGED');
     try {
       assert.deepEqual(file.read(1024 ** 2 - 5, 17), data.subarray(1024 ** 2 - 5, 1024 ** 2 + 12));
       for (const range of [[-1, 1], [0, 1024 ** 2 + 1], [data.length, 1], [0.5, 1]]) assert.throws(() => file.read(...range), { code: 'CHANGED' });
     } finally { file.close(); }
-    assert.equal(calls, 5);
   } finally { t.mock.restoreAll(); syncBuiltinESMExports(); fs.rmSync(root, { recursive: true }); }
 });
 

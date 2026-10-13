@@ -1,4 +1,5 @@
 import test from "node:test";
+import "../tests/fixtures/environment.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";

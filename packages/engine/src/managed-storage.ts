@@ -1,6 +1,7 @@
 import { lstatSync, opendirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { assertContract, validateContractFormat } from '@contribution/contracts';
+import { assertContract } from '@contribution/contracts';
+import { configureReviewedPolicy } from './reviewed-policy.js';
 import type { StoragePolicy } from '@contribution/contracts';
 import type { Journal } from './journal.js';
 import { digest, now, requireValue } from './core.js';
@@ -24,15 +25,10 @@ export class ManagedStorage {
     assertContract('storage-policy', policy); return { policy, revision: digest(policy) };
   }
   configure(config: unknown, expectedRevision: string, requestId: string): ObjectValue {
-    assertContract('storage-policy', config);
-    requireValue(validateContractFormat('uuid', requestId), 'INVALID_USAGE', 'Use an immutable request UUID for the storage policy.', 2);
-    const inputDigest = digest({ config, expectedRevision }), prior = this.store.record<{ digest: string; result: ObjectValue }>('managedStoragePolicyRequest', requestId);
-    if (prior) { requireValue(prior.digest === inputDigest, 'REQUEST_ID_CONFLICT', 'This storage policy request already identifies a different review.'); return prior.result; }
-    requireValue(!this.store.byRequest(requestId), 'REQUEST_ID_CONFLICT', 'This request already identifies an operation.');
-    requireValue(this.policy().revision === expectedRevision, 'REVISION_CONFLICT', 'Managed-data policy changed since it was reviewed.');
-    const result = { policy: config, revision: digest(config), requestId };
-    this.store.transaction(() => { this.store.setMeta('managedStoragePolicy', config); this.store.put('managedStoragePolicyRequest', requestId, { digest: inputDigest, result }); });
-    return result;
+    return configureReviewedPolicy(this.store, config, expectedRevision, requestId, {
+      contract: 'storage-policy', metadata: 'managedStoragePolicy', requests: 'managedStoragePolicyRequest', digestField: 'digest', selection: { config, expectedRevision }, currentRevision: () => this.policy().revision,
+      messages: { uuid: 'Use an immutable request UUID for the storage policy.', replay: 'This storage policy request already identifies a different review.', owner: 'This request already identifies an operation.', revision: 'Managed-data policy changed since it was reviewed.' }
+    });
   }
   usage(limits: { entries: number; depth: number; milliseconds: number } = { entries: 200000, depth: 32, milliseconds: 2000 }): ManagedUsage {
     const { policy } = this.policy(), started = performance.now(), categories = new Map<string, { category: string; logicalBytes: number; entries: number }>();

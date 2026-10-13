@@ -1,3 +1,4 @@
+import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -44,14 +45,10 @@ async function deviceFixture() {
   journal.put('deviceArtifact', artifact.artifactId, { provenance: artifact, path: artifactPath, appPath: join(root, 'fixture.app') });
   const args = { repo: repo.id, host: journal.hostId, device, artifact: artifact.artifactId, requestId: randomUUID() };
   const call = (command, input = args) => engine.dispatch({ schemaVersion: 1, command, args: input, cwd: path });
-  const wait = async operationId => {
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) { const response = await call('runs.get', { operationId }); if (!['queued', 'running'].includes(response.operationState)) return response; await new Promise(resolve => setTimeout(resolve, 20)); }
-    throw new Error('Device fixture did not finish');
-  };
+  const wait = operationId => waitOperation(() => call('runs.get', { operationId }), `Device operation ${operationId}`);
   return { root, journal, engine, repo, profile, backend, observation, context, device, args, calls, call, wait, artifactPath,
     behavior: fn => { behavior = fn; }, reconciliation: fn => { reconcile = fn; },
-    cleanup: async () => { engine.stopping = true; while (engine.active.size) await new Promise(resolve => setTimeout(resolve, 20)); journal.close(); rmSync(root, { recursive: true }); } };
+    cleanup: async () => { await drainEngines(engine); journal.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('install success and launch failure remain independent through the shared service scheduler', async () => {
