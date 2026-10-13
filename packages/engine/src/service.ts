@@ -123,7 +123,9 @@ export class Engine {
     this.peers.prepareFence = repo => this.workflows.ensureHook(repo);
     this.peers.dispatchLocal = (command, args) => this.dispatch({ schemaVersion: 1, command, args, cwd: this.store.directory });
     this.devices = new Devices(store, deviceRuntime?.backend ?? new CoreDeviceBackend(store), payload.identity, deviceRuntime?.mode ?? 'observed', deviceRuntime?.buildDriver, this.workflows.adopted);
-    this.artifacts = new DeviceArtifactTransfers(store, deviceRuntime?.mode ?? 'observed', (host, action, body) => this.peers.call(host, action, body));
+    this.artifacts = new DeviceArtifactTransfers(store, deviceRuntime?.mode ?? 'observed', Object.assign(
+      async (host: string, action: string, body: ObjectValue) => (await this.peers.callTransfer(host, action, [body]))[0]!,
+      { chunks: (host: string, action: string, bodies: ObjectValue[]) => this.peers.callTransfer(host, action, bodies) }));
     this.peers.receiveArtifact = (repo, from, action, body) => this.artifacts.receive(repo, from, action, body);
     this.deviceOwnership = new DeviceOwnershipTransfers(store, this.devices, (host, action, body) => this.peers.call(host, action, body));
     this.peers.receiveDeviceOwnership = (repo, from, release) => this.deviceOwnership.receive(repo, from, release);

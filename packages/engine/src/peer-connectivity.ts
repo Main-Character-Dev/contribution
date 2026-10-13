@@ -92,9 +92,9 @@ export class PeerConnectivity {
   private owned = new Set<string>();
   processOwnership(host: string, diagnostic = false): ProcessOwnership {
     const scope = `connectivity:${diagnostic ? 'diagnostic' : 'peer'}:${host}`, owner = ownedProcess(processLifecycle(this.store), null, [], 'process', scope);
-    return { ...owner, intent: (...args) => { owner.intent(...args); this.owned.add(scope); }, finished: result => { try { owner.finished(result); } finally { this.owned.delete(scope); } }, uncertain: reason => { try { owner.uncertain(reason); } finally { this.owned.delete(scope); } } };
+    return { ...owner, intent: async (...args) => { await owner.intent(...args); this.owned.add(scope); }, finished: result => { try { owner.finished(result); } finally { this.owned.delete(scope); } }, uncertain: reason => { try { owner.uncertain(reason); } finally { this.owned.delete(scope); } } };
   }
-  private retainedProcesses(host: string) { return this.store.records<import('@contribution/contracts').Resource>('resource').filter(r => r.scopeType === 'host' && r.scope === `connectivity:peer:${host}` && r.state !== 'stopped'); }
+  private retainedProcesses(host: string) { return processLifecycle(this.store).live().filter(r => r.scopeType === 'host' && r.scope === `connectivity:peer:${host}` && r.state !== 'stopped'); }
   constructor(readonly store: Journal, readonly clock: ConnectivityClock = systemClock) { policies.set(store, this); }
   snapshot(hostId: string, alias: string): Connectivity {
     const revision = digest(alias), saved = this.store.record<Connectivity>('connectivity', hostId);
@@ -103,7 +103,7 @@ export class PeerConnectivity {
     if (!this.generation.has(hostId) || !this.observed.has(hostId) || this.clock.mono() - (this.observed.get(hostId) ?? 0) > connectivityPolicy.ttlMs) base.freshness = base.observedAt ? 'stale' : 'unknown';
     base.provider = { ...base.provider, observedAt: base.provider.observedAt ?? null, freshness: base.provider.observedAt ? this.providerObserved.has(hostId) && this.clock.mono() - this.providerObserved.get(hostId)! <= connectivityPolicy.ttlMs ? 'fresh' : 'stale' : 'unknown' };
     if (this.controllers.has(hostId)) base.state = 'checking';
-    if (this.retainedProcesses(hostId).length && !this.controllers.has(hostId) || this.store.record<{ absenceConfirmed: boolean }>('peerProcessRelease', hostId)?.absenceConfirmed === false) { base.state = 'requires_action'; base.reasonCode = 'PROCESS_RELEASE_UNCONFIRMED'; base.stage = 'connection'; base.retryable = false; base.nextRetryAt = null; base.actions = ['reconcile', 'diagnostics']; }
+    if (this.retainedProcesses(hostId).length && !this.controllers.has(hostId) && !this.owned.has(`connectivity:peer:${hostId}`) || this.store.record<{ absenceConfirmed: boolean }>('peerProcessRelease', hostId)?.absenceConfirmed === false) { base.state = 'requires_action'; base.reasonCode = 'PROCESS_RELEASE_UNCONFIRMED'; base.stage = 'connection'; base.retryable = false; base.nextRetryAt = null; base.actions = ['reconcile', 'diagnostics']; }
     assertContract('connectivity', base); return base;
   }
   private save(value: Connectivity): void { assertContract('connectivity', value); this.store.enableConnectivity(); this.store.put('connectivity', value.targetId, value); }

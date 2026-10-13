@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import type { Writable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, rmdirSync, openSync, closeSync } from 'node:fs';
 import { join, resolve, delimiter, basename } from 'node:path';
@@ -71,6 +72,7 @@ export interface ProcessOwnership {
 }
 export interface ProcessResult { cleanup?: { released: boolean; reason: string | null; members: ProcessMember[] };  code: number; actualExitCode?: number | null; signal: string | null; stdout: string; stderr: string; timedOut: boolean; cancelled: boolean; outputLimited?: boolean }
 export interface RunOptions { ownership?: ProcessOwnership | (() => ProcessOwnership); cwd?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer; timeoutMs?: number; maxBytes?: number; terminationGraceMs?: number;
+  inputStream?: (stream: Writable) => void; outputLineBytes?: number;
   /** Grant a waiting wrapper its input only after its exact process identity
    * has been retained. A throwing callback closes input and stops the wrapper. */
   inputAfterStarted?: (pid: number, start: string) => string | Buffer;
@@ -83,6 +85,8 @@ export async function run(executable: string, argv: readonly string[], options: 
   requireValue(!options.stdoutSink || (Number.isSafeInteger(options.stdoutSink.maxBytes) && options.stdoutSink.maxBytes >= 0 && options.stdoutSink.maxBytes <= 4 * 1024 ** 3),
     'INVALID_OUTPUT_BOUND', 'Binary process output requires a finite byte limit.', 2);
   requireValue(!options.inputAfterStarted || options.input === undefined, 'INVALID_PROCESS_INPUT', 'Select ordinary input or a retained-process grant, never both.', 2);
+  requireValue(!options.inputStream || options.input === undefined && !options.inputAfterStarted, 'INVALID_PROCESS_INPUT', 'Streaming input requires its own bounded producer.', 2);
+  requireValue(options.outputLineBytes === undefined || Number.isSafeInteger(options.outputLineBytes) && options.outputLineBytes > 0 && options.outputLineBytes <= 2 * 1024 ** 2, 'INVALID_OUTPUT_BOUND', 'Output lines require a finite limit.', 2);
   if (options.signal?.aborted) throw new Fault('CANCELLED', 'Operation cancelled before dispatch.', 130);
   const environment: NodeJS.ProcessEnv = { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_OPTIONAL_LOCKS: '0' };
   // A caller's Git repository/index overrides must never retarget the service.
@@ -93,6 +97,10 @@ export async function run(executable: string, argv: readonly string[], options: 
   const ownership = typeof options.ownership === 'function' ? options.ownership() : options.ownership;
   const deadline = Date.now() + timeoutMs;
   await ownership?.intent(executable, argv, new Date(deadline).toISOString());
+  if (options.signal?.aborted) {
+    const result: ProcessResult = { code: 130, signal: null, stdout: '', stderr: '', timedOut: false, cancelled: true, cleanup: { released: true, reason: null, members: [] } };
+    ownership?.finished(result); return result;
+  }
   const granted = Boolean(ownership);
   return new Promise((resolveResult, reject) => {
     const child = spawn(granted ? process.execPath : executable, granted ? [fileURLToPath(new URL('./resource-process-worker.js', import.meta.url))] : [...argv],
@@ -102,7 +110,7 @@ export async function run(executable: string, argv: readonly string[], options: 
     let callbackFailure: 'OUTPUT_SINK_FAILED' | 'PROCESS_OBSERVER_FAILED' | undefined;
     let drainTimer: NodeJS.Timeout | undefined, killTimer: NodeJS.Timeout | undefined, finalTimer: NodeJS.Timeout | undefined;
     const unknown = new Map<number, string>(); let unknownLive = false;
-    const known = new Map<number, string>(), pending = { stdout: '', stderr: '' };
+    const known = new Map<number, string>(), pending = { stdout: '', stderr: '' }, decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') };
     const maxBytes = options.maxBytes ?? 4 * 1024 * 1024;
     const retain = async (): Promise<ProcessMember[] | null> => {
       const census = await sharedProcessCensus(); if (settled) return null; if (!census) { identityUnknown = true; return null; }
@@ -188,7 +196,7 @@ export async function run(executable: string, argv: readonly string[], options: 
             requireValue(Buffer.byteLength(grant) <= 1024 * 1024, 'PROCESS_GRANT_TOO_LARGE', 'Private execution grant exceeds its bound.', 2);
             (child.stdio[3] as Writable).end(grant);
           }
-          child.stdin!.end(input);
+          if (options.inputStream) options.inputStream(child.stdin!); else child.stdin!.end(input);
         }
       } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; child.stdin?.end(); (child.stdio[3] as Writable | null)?.end(); stop(); }
     });
@@ -204,10 +212,10 @@ export async function run(executable: string, argv: readonly string[], options: 
         try { options.stdoutSink.write(data); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); } return;
       }
       bytes += data.length; if (bytes > maxBytes) { stop(); return; }
-      const text = data.toString('utf8'); if (channel === 'stdout') stdout += text; else stderr += text;
+      const text = decoders[channel].write(data); if (channel === 'stdout') stdout += text; else stderr += text;
       pending[channel] += text; const newline = pending[channel].lastIndexOf('\n');
       if (newline >= 0) { emit(pending[channel].slice(0, newline + 1)); pending[channel] = pending[channel].slice(newline + 1); }
-      if (pending[channel].length > 65536) pending[channel] = '[oversized log line omitted]\n';
+      if (Buffer.byteLength(pending[channel]) > (options.outputLineBytes ?? 65536)) { if (options.inputStream) { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); } else pending[channel] = '[oversized log line omitted]\n'; }
     };
     child.stdout!.on('data', (data: Buffer) => collect('stdout', data)); child.stderr!.on('data', (data: Buffer) => collect('stderr', data));
     child.stdin!.on('error', () => { /* child can finish without consuming stdin */ });

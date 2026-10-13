@@ -15,7 +15,9 @@ import { StableFileReader } from './bounded-file.js';
 import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './incoming-file.js';
 import type { IncomingFileIdentity } from './incoming-file.js';
 
-type PeerCall = (hostId: string, action: string, body: ObjectValue) => Promise<ObjectValue>;
+type PeerCall = ((hostId: string, action: string, body: ObjectValue) => Promise<ObjectValue>) & {
+  chunks?: (hostId: string, action: string, bodies: ObjectValue[]) => Promise<ObjectValue[]>;
+};
 interface Manifest { schemaVersion: 1; transferId: string; requestId: string; repositoryId: string; senderHostId: string; receiverHostId: string; provenance: ArtifactProvenance; appName: string; appDigest: string }
 interface Incoming { manifest: Manifest; directory: string; path: string; policy: string; fileIdentity?: IncomingFileIdentity; accepted?: ObjectValue }
 const CHUNK = 256 * 1024, CAPACITY = 4 * 1024 ** 3;
@@ -58,10 +60,13 @@ export class DeviceArtifactTransfers {
     if (response['accepted']) return this.confirm(m, object(response['accepted']));
     let offset = Number(response['offset']); requireValue(Number.isSafeInteger(offset) && offset >= 0 && offset <= expected.bytes, 'PEER_PROTOCOL_ERROR', 'The receiver returned an invalid retained byte offset.', 3);
     while (offset < expected.bytes) {
-      check(); const data = file.read(offset, Math.min(CHUNK, expected.bytes - offset));
-      response = await this.call(m.receiverHostId, 'artifact.chunk', { ...body, offset, data: data.toString('base64') });
-      requireValue(response['offset'] === offset + data.length, 'PEER_PROTOCOL_ERROR', 'The receiver did not acknowledge the exact immutable chunk.', 3);
-      offset += data.length; this.store.log(op, `[artifact transfer] ${offset}/${expected.bytes} bytes acknowledged\n`);
+      check(); const chunks: ObjectValue[] = [], ends: number[] = []; let next = offset;
+      for (let count = 0; count < (this.call.chunks ? 4 : 1) && next < expected.bytes; count++) {
+        const data = file.read(next, Math.min(CHUNK, expected.bytes - next)); chunks.push({ ...body, offset: next, data: data.toString('base64') }); next += data.length; ends.push(next);
+      }
+      const replies = this.call.chunks ? await this.call.chunks(m.receiverHostId, 'artifact.chunk', chunks) : [await this.call(m.receiverHostId, 'artifact.chunk', chunks[0]!)];
+      requireValue(replies.length === chunks.length && replies.every((reply, index) => reply['offset'] === ends[index]), 'PEER_PROTOCOL_ERROR', 'The receiver did not acknowledge the exact immutable window.', 3);
+      offset = next; this.store.log(op, `[artifact transfer] ${offset}/${expected.bytes} bytes acknowledged\n`);
       const latest = this.store.get(op.operationId); this.store.update(latest, { stage: 'transferring_artifact', result: { ...latest.result, acknowledgedBytes: offset } });
     }
     check(); file.verify();

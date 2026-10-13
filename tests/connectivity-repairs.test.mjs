@@ -246,9 +246,9 @@ for (const edge of ['intent', 'allocated', 'grant', 'dispatch', 'stopping', 'fin
         try {
             const engine = pathToFileURL(join(process.cwd(), 'packages/engine/dist')).href;
             const target = `require('node:fs').writeFileSync(${JSON.stringify(marker)},'executed');console.log('executed');setTimeout(()=>{},200)`;
-            const script = `import {Journal} from '${engine}/journal.js';import {PeerConnectivity} from '${engine}/peer-connectivity.js';import {run} from '${engine}/process.js';const store=new Journal(${JSON.stringify(state)}),policy=new PeerConnectivity(store),owner=policy.processOwnership('fixture');for(const name of ['intent','allocated','grant','stopping','finished']){const original=owner[name];owner[name]=(...args)=>{original(...args);if(name===${JSON.stringify(edge)})process.kill(process.pid,'SIGKILL');};}await run(process.execPath,['-e',${JSON.stringify(target)}],{ownership:owner,timeoutMs:${edge === 'stopping' ? 100 : 3000},output:()=>{if(${JSON.stringify(edge)}==='dispatch')process.kill(process.pid,'SIGKILL');}});`;
-            const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', script], { stdio: 'ignore', timeout: 5000 });
-            assert.equal(crashed.signal, 'SIGKILL');
+            const script = `import {Journal} from '${engine}/journal.js';import {PeerConnectivity} from '${engine}/peer-connectivity.js';import {run} from '${engine}/process.js';const store=new Journal(${JSON.stringify(state)}),policy=new PeerConnectivity(store),owner=policy.processOwnership('fixture');for(const name of ['intent','allocated','grant','stopping','finished']){const original=owner[name];owner[name]=name==='intent'?async(...args)=>{await original(...args);if(name===${JSON.stringify(edge)})process.kill(process.pid,'SIGKILL');}:(...args)=>{original(...args);if(name===${JSON.stringify(edge)})process.kill(process.pid,'SIGKILL');};}await run(process.execPath,['-e',${JSON.stringify(target)}],{ownership:owner,timeoutMs:${edge === 'stopping' ? 100 : 3000},output:()=>{if(${JSON.stringify(edge)}==='dispatch')process.kill(process.pid,'SIGKILL');}});`;
+            const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 5000 });
+            assert.equal(crashed.signal, 'SIGKILL', crashed.stderr);
             await new Promise(r => setTimeout(r, 400));
             store = new Journal(state);
             const policy = new PeerConnectivity(store);
@@ -276,7 +276,7 @@ test('diagnostic ownership fences another diagnostic and maintenance without vet
     const host = randomUUID();
     f.store.put('peer', host, { hostId: host, alias: 'mini', version: '0.1.0', capabilities: ['health-v1'] });
     const engine = new Engine(f.store, { identity: 'fixture', distribution: 'fixture', root: f.root, node: process.execPath, cli: join(f.root, 'cli') }, async () => ({ hostId: host, version: '0.1.0', capabilities: ['health-v1'] }));
-    engine.peers.connectivity.processOwnership(host, true).intent('/fixture/never-dispatched', [], new Date(Date.now() + 1000).toISOString());
+    await engine.peers.connectivity.processOwnership(host, true).intent('/fixture/never-dispatched', [], new Date(Date.now() + 1000).toISOString());
     engine.peers.check(host);
     await engine.peers.settledChecks();
     assert.equal(engine.peers.connectivity.snapshot(host, 'mini').state, 'ready');

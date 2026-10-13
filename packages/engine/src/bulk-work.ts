@@ -21,16 +21,15 @@ function pump(): void {
   while (active < 2 && queue.length) {
     const pending = queue.shift()!; pending.removeAbort(); active++;
     let worker: Worker;
-    try { worker = idle.pop() ?? new Worker(new URL('./bulk-worker.js', import.meta.url), { resourceLimits: { maxOldGenerationSizeMb: 256 } }); worker.ref(); }
+    try { worker = idle.pop() ?? new Worker(new URL('./bulk-worker.js', import.meta.url), { execArgv: [], resourceLimits: { maxOldGenerationSizeMb: 256 } }); worker.ref(); }
     catch { active--; pending.reject(new Fault('BULK_WORK_FAILED', 'The bounded verifier could not start.', 3)); continue; }
     let settled = false;
     const finish = (error: unknown, value?: unknown): void => {
       if (settled) return; settled = true; clearTimeout(timer); pending.signal?.removeEventListener('abort', cancel);
       worker.removeListener('message', message); worker.removeListener('error', failed); worker.removeListener('exit', exited);
       // Hold capacity until termination, including cancelled staging writes.
-      if (error) void worker.terminate().finally(() => { active--; pump(); });
-      else { worker.unref(); idle.push(worker); active--; pump(); }
-      if (error) pending.reject(error); else pending.resolve(value);
+      if (error) void worker.terminate().then(() => { active--; pump(); pending.reject(error); }, () => { active--; pump(); pending.reject(error); });
+      else { worker.unref(); idle.push(worker); active--; pump(); pending.resolve(value); }
     };
     const cancel = (): void => finish(new Fault('CANCELLED', 'Bulk verification was cancelled; retained staging data needs its owning cleanup.', 130));
     const timer = setTimeout(() => finish(new Fault('BULK_WORK_TIMEOUT', 'Verification exceeded its finite deadline. Retained data remains protected.', 3)), 120000);

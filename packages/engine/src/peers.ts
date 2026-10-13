@@ -16,6 +16,7 @@ import { Milestones } from './notifications.js';
 import { ProjectRegistry } from './project-registry.js';
 import type { ProjectCatalog } from './project-registry.js';
 import { StableFileReader, stableFileDigestAsync } from './bounded-file.js';
+import { PeerSession } from './peer-session.js';
 import { createBoundedBundle, MAX_GIT_BUNDLE } from './git-bundle.js';
 import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './incoming-file.js';
 import type { IncomingFileIdentity } from './incoming-file.js';
@@ -24,7 +25,9 @@ import type { CompletionReceipt, CompletionOutbox } from './peer-receipts.js';
 import { assertRepositorySettled } from './repository-idle.js';
 
 export interface Peer { hostId: string; alias: string | null; version: string; observedAt: string; capabilities?: string[] }
-export type PeerTransport = (alias: string, envelope: ObjectValue, options?: { signal?: AbortSignal; health?: boolean; ownership?: import('./process.js').ProcessOwnership }) => Promise<ObjectValue>;
+type TransportOptions = { signal?: AbortSignal; health?: boolean; ownership?: import('./process.js').ProcessOwnership };
+export interface TransferSession { readonly closed: boolean; readonly drained?: boolean; requestMany(envelopes: ObjectValue[], signal?: AbortSignal): Promise<ObjectValue[]>; close(): Promise<void> }
+export type PeerTransport = ((alias: string, envelope: ObjectValue, options?: TransportOptions) => Promise<ObjectValue>) & { openSession?: (alias: string, options: TransportOptions) => TransferSession };
 export interface TransferManifest {
   schemaVersion: 1; transferId: string; requestId: string; repositoryId: string; senderHostId: string;
   kind: 'submit' | 'seed' | 'mirror'; branch: string; tip: string; base: string | null; metadata: ObjectValue;
@@ -48,7 +51,7 @@ export function compatiblePeer(hello: ObjectValue): boolean {
   if (hello['protocolVersion'] === undefined) return hello['version'] === buildIdentity.version;
   return hello['protocolVersion'] === 1 && hello['requestSchemaVersion'] === 1 && Boolean(local && remote && local[1] === remote[1] && local[2] === remote[2] && Math.abs(Number(local[3]) - Number(remote[3])) <= 1);
 }
-const peerHello = (): ObjectValue => ({ version: buildIdentity.version, protocolVersion: 1, requestSchemaVersion: 1, capabilities: ['health-v1', 'lookup-request-v1'] });
+const peerHello = (): ObjectValue => ({ version: buildIdentity.version, protocolVersion: 1, requestSchemaVersion: 1, capabilities: ['health-v1', 'lookup-request-v1', 'stdio-session-v1'] });
 function uuid(value: unknown, field: string): string { const result = string(value, field); requireValue(validateContractFormat('uuid', result), 'INVALID_ID', `${field} must be a UUID.`, 2); return result; }
 function sync(path: string): void { const fd = openSync(path, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); } }
 export async function sshTransport(alias: string, envelope: ObjectValue, options: { signal?: AbortSignal; health?: boolean; ownership?: import('./process.js').ProcessOwnership } = {}): Promise<ObjectValue> {
@@ -61,8 +64,33 @@ export async function sshTransport(alias: string, envelope: ObjectValue, options
   if (result.code !== 0) throw transportFailure(result);
   return object(response.result);
 }
+sshTransport.openSession = (alias: string, options: TransportOptions): TransferSession => new PeerSession(alias, options.ownership);
 
 export class Peers {
+  private sessions = new Map<string, { alias: string; session: TransferSession }>();
+  async closeTransfer(hostId: string): Promise<void> {
+    const selected = this.sessions.get(hostId); if (!selected) return;
+    await selected.session.close(); if (this.sessions.get(hostId) === selected) this.sessions.delete(hostId);
+  }
+  async callTransfer(hostId: string, action: string, bodies: ObjectValue[]): Promise<ObjectValue[]> {
+    requireValue(bodies.length > 0 && bodies.length <= 4 && ['transfer.begin','transfer.chunk','transfer.finish','artifact.begin','artifact.chunk','artifact.finish'].includes(action) && (action.endsWith('.chunk') || bodies.length === 1), 'INVALID_TRANSFER', 'Select a finite transfer window.', 2);
+    const peer = this.store.record<Peer>('peer', hostId);
+    if (!peer?.capabilities?.includes('stdio-session-v1') || !this.transport.openSession) {
+      const replies: ObjectValue[] = []; for (const body of bodies) replies.push(await this.call(hostId, action, body)); return replies;
+    }
+    requireValue(peer.alias, 'PEER_ROUTE_REQUIRED', 'Select the paired SSH destination.', 3); const alias = peer.alias;
+    return this.connectivity.execute(hostId, alias, action, async signal => {
+      let selected = this.sessions.get(hostId);
+      if (selected && (selected.alias !== alias || selected.session.closed)) { await this.closeTransfer(hostId); selected = undefined; }
+      if (!selected) { selected = { alias, session: this.transport.openSession!(alias, { ownership: this.connectivity.processOwnership(hostId) }) }; this.sessions.set(hostId, selected); }
+      try {
+        const replies = await selected.session.requestMany(bodies.map(body => ({ fromHostId: this.store.hostId, expectedHostId: hostId, compatibility: peerHello(), action, body })), signal);
+        requireValue(replies.length === bodies.length && replies.every(reply => reply['hostId'] === hostId && compatiblePeer(reply)), 'PEER_IDENTITY_CHANGED', 'Transfer session no longer identifies the compatible paired host.', 3);
+        if (action.endsWith('.finish') || replies[0]?.['accepted']) await this.closeTransfer(hostId);
+        return replies;
+      } catch (error) { await this.closeTransfer(hostId); throw error; }
+    });
+  }
   readonly registry: ProjectRegistry;
   readonly connectivity: PeerConnectivity;
   private checks = new Map<string, Promise<unknown>>();
@@ -77,7 +105,7 @@ export class Peers {
     return Array.from({ length: count }, (_, i) => values[(start + i) % values.length]!);
   }
   private scheduled = new Map<string, Promise<void>>();
-  get busy(): boolean { return this.activeTicks > 0; }
+  get busy(): boolean { return this.activeTicks > 0 || [...this.sessions.values()].some(({ session }) => !(session.drained ?? session.closed)); }
   private schedule(key: string, fn: () => Promise<void>): Promise<void> {
     const existing = this.scheduled.get(key); if (existing) return Promise.resolve();
     const pending = Promise.resolve().then(fn); this.scheduled.set(key, pending);
@@ -103,6 +131,9 @@ export class Peers {
     const prior = this.store.record<import('@contribution/contracts').Connectivity>('connectivity', hostId);
     if (prior && prior.endpointRevision !== digest(alias)) this.connectivity.changeEndpoint(hostId, alias);
     return this.connectivity.execute(hostId, alias, action, async signal => {
+      // Release a standing transfer owner before an ordinary control RPC.
+      // The shared host queue gives controls a turn between finite windows.
+      await this.closeTransfer(hostId);
       if (action === 'health' && peer.capabilities && !peer.capabilities.includes('health-v1')) throw new Fault('PEER_ACTION_UNSUPPORTED', 'This peer does not advertise read-only health. Update it or observe an ordinary exchange.', 3);
       let result: ObjectValue;
       try { result = await this.transport(alias, { fromHostId: this.store.hostId, expectedHostId: hostId, compatibility: peerHello(), action, body }, { signal, health: action === 'health', ownership: this.connectivity.processOwnership(hostId) }); } catch (error) {
@@ -523,17 +554,24 @@ export class Peers {
     const file = new StableFileReader(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
     try {
     requireValue(file.size === manifest.bytes && await file.digestAsync() === manifest.bundleDigest, 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
-    const begin = await this.call(hostId, 'transfer.begin', { repositoryId: manifest.repositoryId, manifest });
+    const begin = (await this.callTransfer(hostId, 'transfer.begin', [{ repositoryId: manifest.repositoryId, manifest }]))[0]!;
     if (begin['accepted']) return object(begin['accepted']);
     let offset = Number(begin['offset']); file.verify();
     requireValue(Number.isSafeInteger(offset) && offset >= 0 && offset <= file.size, 'PEER_PROTOCOL_ERROR', 'Peer returned an invalid transfer offset.');
     while (offset < file.size) {
-      const chunk = file.read(offset, Math.min(CHUNK, file.size - offset));
-      const result = await this.call(hostId, 'transfer.chunk', { repositoryId: manifest.repositoryId, transferId: manifest.transferId, offset, data: chunk.toString('base64') });
-      requireValue(result['offset'] === offset + chunk.length, 'PEER_PROTOCOL_ERROR', 'Peer did not retain the exact chunk.'); offset += chunk.length;
+      const chunks: ObjectValue[] = []; let next = offset;
+      for (let count = 0; count < 4 && next < file.size; count++) {
+        const chunk = file.read(next, Math.min(CHUNK, file.size - next));
+        chunks.push({ repositoryId: manifest.repositoryId, transferId: manifest.transferId, offset: next, data: chunk.toString('base64') }); next += chunk.length;
+      }
+      const replies = await this.callTransfer(hostId, 'transfer.chunk', chunks);
+      for (let index = 0; index < chunks.length; index++) {
+        const end = Number(chunks[index]!['offset']) + Buffer.from(String(chunks[index]!['data']), 'base64').length;
+        requireValue(replies[index]!['offset'] === end, 'PEER_PROTOCOL_ERROR', 'Peer did not retain the exact chunk.'); offset = end;
+      }
     }
     file.verify();
-    return await this.call(hostId, 'transfer.finish', { repositoryId: manifest.repositoryId, transferId: manifest.transferId });
+    return (await this.callTransfer(hostId, 'transfer.finish', [{ repositoryId: manifest.repositoryId, transferId: manifest.transferId }]))[0]!;
     } finally { file.close(); }
   }
   async captureHistory(repo: Enrolled, kind: 'seed' | 'mirror', requestId: string): Promise<Operation> {

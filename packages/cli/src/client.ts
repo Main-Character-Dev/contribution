@@ -47,7 +47,29 @@ function render(response: Response, json: boolean): string {
 export async function runCommand(argv: readonly string[], write: (text: string) => void = text => process.stdout.write(text)): Promise<number> {
   let json = argv.includes('--json'), jsonl = argv.includes('--jsonl'), directory = defaultStateDirectory(), wait = false, follow = false;
   try {
+    if (argv[0] === 'peer' && argv[1] === '--stdio-session' && argv.length === 2) {
+      json = true;
+      let buffer = Buffer.alloc(0), bytes = 0, frames = 0;
+      const timer = setTimeout(() => process.stdin.destroy(), 300000);
+      try {
+        for await (const chunk of process.stdin) {
+          const data = Buffer.from(chunk); bytes += data.length;
+          requireSession(bytes <= 2 * 1024 ** 3, 'Peer session exceeds its total byte bound.');
+          buffer = Buffer.concat([buffer, data]);
+          for (let newline = buffer.indexOf(10); newline >= 0; newline = buffer.indexOf(10)) {
+            requireSession(newline < 1024 ** 2 && ++frames <= 8192, 'Peer session frame or count exceeds its bound.');
+            const envelope = object(JSON.parse(buffer.subarray(0, newline).toString('utf8'))); buffer = buffer.subarray(newline + 1);
+            requireSession(['transfer.begin','transfer.chunk','transfer.finish','artifact.begin','artifact.chunk','artifact.finish'].includes(String(envelope['action'])), 'Peer sessions accept bounded transfer traffic only.');
+            const response = await request(directory, { schemaVersion: 1, command: 'peer.exchange', args: { envelope }, cwd: process.cwd() }, 45000);
+            write(render(response, true));
+          }
+          requireSession(buffer.length <= 1024 ** 2, 'Incomplete peer session frame exceeds one MiB.');
+        }
+        requireSession(buffer.length === 0, 'Peer session ended with an incomplete frame.'); return 0;
+      } finally { clearTimeout(timer); }
+    }
     if (argv[0] === 'peer' && argv[1] === '--stdio' && argv.length === 2) {
+      json = true;
       const chunks: Buffer[] = []; let bytes = 0;
       for await (const chunk of process.stdin) { const data = Buffer.from(chunk); bytes += data.length; if (bytes > 1024 * 1024) throw new Fault('FRAME_TOO_LARGE', 'Peer request exceeds one MiB.', 2); chunks.push(data); }
       const response = await request(directory, { schemaVersion: 1, command: 'peer.exchange', args: { envelope: object(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }, cwd: process.cwd() }, 45000);
@@ -160,3 +182,4 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
     write(render(response, json)); return exitCode(response);
   } catch (error) { const response = rejected(error); write(render(response, json)); return exitCode(response); }
 }
+function requireSession(condition: boolean, message: string): asserts condition { if (!condition) throw new Fault('INVALID_PEER_SESSION', message, 2); }
