@@ -2,7 +2,7 @@ import type { Resource } from '@contribution/contracts';
 import type { Journal, Operation } from './journal.js';
 import { ResourceLifecycle, bootIdentity } from './resource-lifecycle.js';
 import type { ResourceAdapter, ResourceIdentity } from './resource-lifecycle.js';
-import { processCensus, processIdentity } from './process.js';
+import { sharedProcessCensus, processIdentityAsync } from './process.js';
 import type { ProcessMember, ProcessOwnership, ProcessResult } from './process.js';
 import { digest, id, requireValue } from './core.js';
 
@@ -14,7 +14,7 @@ function members(resource: Resource): ProcessMember[] {
 export const processResourceAdapter: ResourceAdapter = {
   id: 'owned-process', version: 2,
   async observe(resource): Promise<ResourceIdentity | 'absent' | 'unknown'> {
-    const known = members(resource), census = processCensus(); if (!census) return 'unknown';
+    const known = members(resource), census = await sharedProcessCensus(); if (!census) return 'unknown';
     const uncertain = JSON.parse(String(resource.identity!.value['unconfirmed'] ?? '[]')) as ProcessMember[];
     if (!Array.isArray(uncertain) || uncertain.length > 64 || uncertain.some(m => !Number.isSafeInteger(m.pid) || m.pid < 1 || typeof m.start !== 'string' || !m.start)) return 'unknown';
     if (census.some(p => uncertain.some(m => m.pid === p.pid && m.start === p.start))) return 'unknown';
@@ -25,13 +25,13 @@ export const processResourceAdapter: ResourceAdapter = {
   },
   async stop(resource, guard, signal): Promise<void> {
     const known = members(resource);
-    const terminate = (name: 'SIGTERM' | 'SIGKILL'): void => {
-      for (const member of known) { guard(); if (processIdentity(member.pid) === member.start) try { process.kill(member.pid, name); } catch { /* confirm through observation */ } }
+    const terminate = async (name: 'SIGTERM' | 'SIGKILL'): Promise<void> => {
+      for (const member of known) { const start = await processIdentityAsync(member.pid); guard(); if (start === member.start) try { process.kill(member.pid, name); } catch { /* confirm through observation */ } }
     };
-    guard(); terminate('SIGTERM');
+    guard(); await terminate('SIGTERM');
     const grace = performance.now() + 1500;
     while (!signal.aborted && performance.now() < grace) { if (await this.observe(resource, signal) === 'absent') return; await new Promise(resolve => setTimeout(resolve, 50)); }
-    guard(); terminate('SIGKILL');
+    guard(); await terminate('SIGKILL');
     while (!signal.aborted) { if (await this.observe(resource, signal) === 'absent') return; await new Promise(resolve => setTimeout(resolve, 50)); }
   }
 };

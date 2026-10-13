@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import type { Writable } from 'node:stream';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFile, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, lstatSync, unlinkSync, rmdirSync, openSync, closeSync } from 'node:fs';
 import { join, resolve, delimiter, basename } from 'node:path';
 import { Fault, id, requireValue } from './core.js';
@@ -104,15 +104,15 @@ export async function run(executable: string, argv: readonly string[], options: 
     const unknown = new Map<number, string>(); let unknownLive = false;
     const known = new Map<number, string>(), pending = { stdout: '', stderr: '' };
     const maxBytes = options.maxBytes ?? 4 * 1024 * 1024;
-    const retain = (): ProcessMember[] | null => {
-      const census = processCensus(); if (!census) { identityUnknown = true; return null; }
-      let changed = false;
+    const retain = async (): Promise<ProcessMember[] | null> => {
+      const census = await sharedProcessCensus(); if (settled) return null; if (!census) { identityUnknown = true; return null; }
+      let changed = false; const indexed = new Map(census.map(row => [row.pid, row]));
       // Membership is acquired only from exact ancestry while a retained parent
       // exists, or the still-owned detached group while the leader is live.
       for (let depth = 0; depth < 32; depth++) {
         let added = false;
-        for (const row of census) if (!known.has(row.pid) && ((known.get(row.parent) && census.some(p => p.pid === row.parent && p.start === known.get(row.parent))) ||
-          (!exited && row.group === child.pid && census.some(p => p.pid === child.pid && p.start === known.get(child.pid!))))) {
+        for (const row of census) if (!known.has(row.pid) && ((known.get(row.parent) && indexed.get(row.parent)?.start === known.get(row.parent)) ||
+          (!exited && row.group === child.pid && indexed.get(child.pid!)?.start === known.get(child.pid!)))) {
           known.set(row.pid, row.start); changed = added = true;
         }
         if (!added) break;
@@ -127,9 +127,9 @@ export async function run(executable: string, argv: readonly string[], options: 
       if (changed) { try { ownership?.members([...known].map(([pid, start]) => ({ pid, start }))); } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; identityUnknown = true; } }
       return census.filter(r => known.get(r.pid) === r.start).map(r => ({ pid: r.pid, start: r.start }));
     };
-    const signalOwned = (signal: 'SIGTERM' | 'SIGKILL'): void => {
-      const members = retain();
-      if (members) for (const member of members) if (processIdentity(member.pid) === member.start) {
+    const signalOwned = async (signal: 'SIGTERM' | 'SIGKILL'): Promise<void> => {
+      const members = await retain();
+      if (members) for (const member of members) if (await processIdentityAsync(member.pid) === member.start && !settled) {
         try { process.kill(member.pid, signal); } catch { /* exit is verified separately */ }
       }
       // Before grant an unreaped direct wrapper cannot be a reused PID. This
@@ -149,16 +149,18 @@ export async function run(executable: string, argv: readonly string[], options: 
         reject(new Fault(callbackFailure, 'Retaining process output or execution ownership failed. Inspect the retained cleanup result.', 5, { actualExitCode: exitCode, cleanup: result.cleanup })); }
       else resolveResult(result);
     };
-    const check = (): void => {
-      if (settled) return; const members = retain();
+    let checking = false;
+    const check = async (): Promise<void> => {
+      if (settled || checking) return; checking = true;
+      const members = await retain(); checking = false; if (settled) return;
       if (exited && streamsClosed && members && members.length === 0 && !unknownLive) finish(!identityUnknown, identityUnknown ? 'PROCESS_IDENTITY_UNCONFIRMED' : null);
       else if (exited && !stopped) stop();
     };
     const stop = (): void => {
       if (stopped || settled) return; stopped = true;
       try { ownership?.stopping(); } catch { callbackFailure = 'PROCESS_OBSERVER_FAILED'; }
-      signalOwned('SIGTERM');
-      killTimer = setTimeout(() => { signalOwned('SIGKILL'); check(); }, options.terminationGraceMs ?? 1500);
+      void signalOwned('SIGTERM');
+      killTimer = setTimeout(() => { void signalOwned('SIGKILL').then(check); }, options.terminationGraceMs ?? 1500);
       finalTimer = setTimeout(() => finish(false, 'PROCESS_RELEASE_UNCONFIRMED'), (options.terminationGraceMs ?? 1500) + 2500);
     };
     const cancel = (): void => { cancelled = true; stop(); };
@@ -166,10 +168,10 @@ export async function run(executable: string, argv: readonly string[], options: 
     const poll = setInterval(check, 200);
     options.signal?.addEventListener('abort', cancel, { once: true });
     const emit = (text: string): void => { if (callbackFailure) return; try { options.output?.(text); } catch { callbackFailure = 'OUTPUT_SINK_FAILED'; stop(); } };
-    child.once('spawn', () => {
+    child.once('spawn', async () => {
       try {
         if (child.pid) {
-          const start = processIdentity(child.pid); if (start) known.set(child.pid, start);
+          const start = await processIdentityAsync(child.pid); if (settled) return; if (start) known.set(child.pid, start);
           if (granted) {
             requireValue(start && !stopped && !options.signal?.aborted, 'PROCESS_IDENTITY_UNAVAILABLE', 'Retain the waiting process before execution.', 3);
             ownership!.allocated(child.pid, start);
@@ -225,6 +227,29 @@ export function processCensus(): CensusMember[] | null {
     }
     return rows;
   } catch { return null; }
+}
+/** Concurrent runners share a fresh asynchronous census. No observation is
+ * cached after completion, and signaling still verifies each exact PID/start. */
+let censusFlight: Promise<CensusMember[] | null> | undefined;
+function inspectProcess(args: string[]): Promise<string | null> {
+  return new Promise(resolve => execFile('/bin/ps', args, { encoding: 'utf8', timeout: 2000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout)));
+}
+export async function processIdentityAsync(pid: number): Promise<string | null> {
+  if (!Number.isSafeInteger(pid) || pid < 1) return null;
+  return (await inspectProcess(['-p', String(pid), '-o', 'lstart=']))?.trim() || null;
+}
+export function sharedProcessCensus(): Promise<CensusMember[] | null> {
+  if (censusFlight) return censusFlight;
+  const flight = inspectProcess(['-axo', 'pid=,ppid=,pgid=,stat=,lstart=']).then(output => {
+    if (output === null) return null;
+    const rows: CensusMember[] = [];
+    for (const line of output.split('\n').filter(x => x.trim())) {
+      const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line); if (!match) return null;
+      if (!match[4]!.startsWith('Z')) rows.push({ pid: Number(match[1]), parent: Number(match[2]), group: Number(match[3]), start: match[5]!.trim() });
+    }
+    return rows;
+  }).finally(() => { if (censusFlight === flight) censusFlight = undefined; });
+  censusFlight = flight; return flight;
 }
 export function executable(name: string): string {
   if (name.startsWith('/')) { requireValue(existsSync(name), 'EXECUTABLE_UNAVAILABLE', `Missing executable ${name}.`, 3); return name; }

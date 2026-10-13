@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import type { ObjectValue } from './core.js';
 import { now } from './core.js';
 import type { ResourceLifecycle } from './resource-lifecycle.js';
-import { processCensus } from './process.js';
+import { sharedProcessCensus } from './process.js';
 /** A bounded on-demand sample, not another polling daemon. RSS is not summed
  * and neither load nor free memory is a claim about a process causing pressure. */
 export async function resourceHealth(resources: ResourceLifecycle): Promise<ObjectValue> {
@@ -20,7 +20,7 @@ export async function resourceHealth(resources: ResourceLifecycle): Promise<Obje
     try { pressure = execFileSync('/usr/sbin/sysctl', ['-n', 'kern.memorystatus_vm_pressure_level'], { encoding: 'utf8', timeout: 1000, maxBuffer: 4096 }).trim(); } catch { /* unknown */ }
     try { swap = execFileSync('/usr/sbin/sysctl', ['-n', 'vm.swapusage'], { encoding: 'utf8', timeout: 1000, maxBuffer: 4096 }).trim(); } catch { /* unknown */ }
   }
-  const processes = processCensus(), rows = resources.live();
+  const processes = await sharedProcessCensus(), rows = resources.live();
   return { observedAt: now(), sampleMilliseconds: Math.round(performance.now() - started), cpuBusyPercent: total > 0 && idle >= 0 && total >= idle ? 100 * (total - idle) / total : null,
     loadAverage: loadavg(), processCount: processes?.length ?? null, memory: { totalBytes: totalmem(), freeBytes: freemem(), pressureNativeValue: pressure, swapNativeValue: swap, interpretation: 'native observation; no summed RSS or attribution' },
     disk, resources: { retained: rows.filter(r => r.state !== 'stopped').length, unresolved: rows.filter(r => r.state === 'unresolved').length, recordedDevices: new Set(rows.filter(r => r.kind === 'simulator' && r.state !== 'stopped').map(r => r.identity?.value['udid']).filter(Boolean)).size, deviceScope: 'retained records only; physical/simulator global census unavailable' } };

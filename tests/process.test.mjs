@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { run } from '../packages/engine/dist/process.js';
+import { run, sharedProcessCensus } from '../packages/engine/dist/process.js';
+
+test('concurrent process observation shares a fresh census and leaves timers responsive', async () => {
+  const first = sharedProcessCensus(); assert.equal(first, sharedProcessCensus());
+  assert(Array.isArray(await first)); assert.notEqual(first, sharedProcessCensus());
+  let pulses = 0; const timer = setInterval(() => pulses++, 10);
+  try {
+    const results = await Promise.all(Array.from({ length: 3 }, () => run('/bin/sleep', ['1'], { timeoutMs: 4000 })));
+    assert(results.every(result => result.code === 0 && result.cleanup.released));
+    assert(pulses >= 60, `Only ${pulses} timer pulses during concurrent command monitoring`);
+  } finally { clearInterval(timer); }
+});
 
 test('cancellation terminates a resistant descendant after its shell leader exits', { timeout: 10000 }, async () => {
   const controller = new AbortController(); let timer;
