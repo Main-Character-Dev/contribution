@@ -80,7 +80,7 @@ export class Journal {
   records<T>(namespace: string): T[] { return this.db.prepare('SELECT body FROM records WHERE namespace=?').all(namespace).map(row => JSON.parse(String(row['body'])) as T); }
   put(namespace: string, key: string, value: unknown): void { this.db.prepare('INSERT INTO records VALUES(?,?,?) ON CONFLICT(namespace,key) DO UPDATE SET body=excluded.body').run(namespace, key, canonical(value)); }
   assertRepositoryAvailable(repositoryId: string, enrolling = false): void {
-    requireValue(!this.db.prepare(`SELECT key FROM records WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped'
+    requireValue(!this.db.prepare(`SELECT key FROM records INDEXED BY resource_live WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped'
       AND json_extract(body,'$.repositoryId')=? AND json_extract(body,'$.owner') IN ('utility','borrowed')
       AND json_extract(body,'$.lifetime') IN ('ephemeral','borrowed') AND json_extract(body,'$.state') IN ('unresolved','stopping','intent','allocated') LIMIT 1`).get(repositoryId), 'RESOURCE_RECONCILIATION_REQUIRED', 'A retained resource in this clone needs its owning reconciliation before new work.', 3);
     requireValue(!this.records<{ state: string; preview: { resources: { repositoryId: string }[] } }>('resourceCleanup').some(r => r.state === 'stopping' && r.preview.resources.some(x => x.repositoryId === repositoryId)), 'RESOURCE_CLEANUP_PENDING', 'Resume the retained exact resource cleanup before new work in this clone.', 3);

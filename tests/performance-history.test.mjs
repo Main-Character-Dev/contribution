@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
 import { ResourceLifecycle } from '../packages/engine/dist/resource-lifecycle.js';
 
-test('stopped history cannot fence admission, replay, live ownership or paged inspection', () => {
+test('stopped history cannot fence admission, replay, live ownership or paged inspection', t => {
   const root = mkdtempSync(join(tmpdir(), 'ct-perf-history-')), store = new Journal(root);
   try {
     const lifecycle = new ResourceLifecycle(store, () => ({ clone: 'fixture', revision: '1' }), () => 'boot');
@@ -22,6 +22,13 @@ test('stopped history cannot fence admission, replay, live ownership or paged in
     const first = lifecycle.history(), next = lifecycle.history(first.at(-1).resourceId);
     assert(!next.some(r => first.some(previous => previous.resourceId === r.resourceId)));
     assert.equal(next.length, 200);
+    const prepare = store.db.prepare.bind(store.db), selectedQueries = [];
+    const observe = t.mock.method(store.db, 'prepare', sql => { selectedQueries.push(sql); return prepare(sql); });
+    lifecycle.live(); lifecycle.counts();
+    observe.mock.restore();
+    const liveQueries = selectedQueries.filter(sql => sql.includes("$.state") && sql.includes("FROM records"));
+    assert.equal(liveQueries.length, 2);
+    for (const sql of liveQueries) assert.match(JSON.stringify(prepare('EXPLAIN QUERY PLAN ' + sql).all()), /USING INDEX resource_live/);
     const fresh = lifecycle.begin(op, { ...input, requestId: randomUUID() });
     assert.deepEqual(lifecycle.blockers(), [fresh]);
     assert.equal(ResourceLifecycle.pending(store, op.repositoryId), true);
