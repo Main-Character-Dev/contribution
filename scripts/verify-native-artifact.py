@@ -18,6 +18,7 @@ binary = app / "Contents/MacOS/Contribution"
 assert subprocess.check_output(["lipo", "-archs", str(binary)], text=True).strip() == "arm64"
 load = subprocess.check_output(["otool", "-l", str(binary)], text=True)
 assert "minos 14.0" in load
+assert re.search(r'cmd LC_RPATH\s+cmdsize \d+\s+path @executable_path/\.\./Frameworks \(offset \d+\)', load), 'GUI must resolve bundled frameworks independently of the build checkout'
 allowed = {"Contents/Info.plist", "Contents/PkgInfo", "Contents/MacOS/Contribution", "Contents/Resources/Sparkle-LICENSE.txt"}
 pin = json.loads((root / 'config/sparkle.json').read_text())
 archive = root / '.build/swift-cache/artifacts' / re.sub(r'[^A-Za-z0-9_]', '_', pin['url'])
