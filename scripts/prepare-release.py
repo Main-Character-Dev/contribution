@@ -78,7 +78,7 @@ def main():
     for relative in ['XPCServices/Downloader.xpc', 'XPCServices/Installer.xpc', 'Autoupdate', 'Updater.app']:
         sign(fw / relative)
     sign(app / 'Contents/Frameworks/Sparkle.framework')
-    sign(app / 'Contents/Library/ContributionService'); sign(app / 'Contents/MacOS/contribution')
+    sign(app / 'Contents/Library/ContributionService'); sign(app / 'Contents/MacOS/ContributionCLI')
     sign(app)
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', '--verbose=2', app)
     run(payload / 'runtime/node', payload / 'node_modules/@contribution/cli/dist/main.js', 'version', '--json')

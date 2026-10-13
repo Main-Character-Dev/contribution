@@ -5,7 +5,7 @@ public struct CLIInstallation: Sendable {
     public let bundle: URL
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, bundle: URL = Bundle.main.bundleURL) { self.home = home; self.bundle = bundle }
     public var destination: URL { home.appendingPathComponent(".local/bin/contribution") }
-    private var target: URL { bundle.appendingPathComponent("Contents/MacOS/contribution") }
+    private var target: URL { bundle.appendingPathComponent("Contents/MacOS/ContributionCLI") }
     private var receipt: URL { home.appendingPathComponent("Library/Application Support/Contribution/cli-installation.json") }
     private func error(_ reason: String) -> NSError { NSError(domain: "Contribution.Installation", code: 1, userInfo: [NSLocalizedDescriptionKey: reason]) }
     public var status: String {
