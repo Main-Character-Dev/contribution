@@ -14,6 +14,7 @@ import { repository, git } from './integration/service.mjs';
 
 async function fixture(adapter = 'maincharacter-v1', mode = '') {
   const root = mkdtempSync(join(tmpdir(), 'ct-adopted-land-')), store = new Journal(join(root, 'state')), engine = new Engine(store, { identity: 'fixture', node: process.execPath, cli: 'unused' });
+  const engines = [engine];
   const path = repository(root), policy = adoptionPolicies.find(value => value.id === adapter);
   for (const file of policy.policyFiles) { mkdirSync(join(path, file, '..'), { recursive: true }); writeFileSync(join(path, file), '// synthetic original policy\n'); }
   writeFileSync(join(path, '.nvmrc'), process.version.slice(1) + '\n'); writeFileSync(join(path, 'package.json'), JSON.stringify({ name: policy.packageName, type: 'module', packageManager: 'pnpm@11.23.0' }));
@@ -102,7 +103,9 @@ export async function reconcileLandedCandidate({cwd,candidateSha,planCommand}){
   const args = { repo: repo.id, requestId: randomUUID(), sourcePath, sourceTip, base, metadata: { schemaVersion: 1 } };
   const call = (command, args) => engine.dispatch({ schemaVersion: 1, command, args, cwd: path });
   const wait = id => waitOperation(() => store.get(id), `Original landing ${id}`);
-  return { root, store, engine, path, repo, args, call, wait, cleanup: async () => { await drainEngines(engine); store.close(); rmSync(root, { recursive: true }); } };
+  return { root, store, engine, path, repo, args, call, wait,
+    restart: () => { const restarted = new Engine(store, engine.payload); engines.push(restarted); return restarted; },
+    cleanup: async () => { await drainEngines(engines); store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('all adopted families run the original native landing and receipt/source guards without publication or outer lease', async () => {
@@ -204,7 +207,7 @@ test('native receipt delivery survives exit loss and restart observes it without
     const repair=await f.wait(accepted.operationId);assert.equal(repair.state,'succeeded',JSON.stringify(repair));assert.equal(repair.result.workerExit,21);
     // Simulate interruption after native receipt delivery but before the journal completion.
     f.store.update(repair,{state:'running',stage:'original_native_reconciliation'});f.store.update(f.store.get(source.operationId),{state:'outcome_unknown',stage:'reconciliation_required'});
-    const restarted=new Engine(f.store,f.engine.payload);assert.equal(f.store.get(repair.operationId).state,'outcome_unknown');
+    const restarted=f.restart();assert.equal(f.store.get(repair.operationId).state,'outcome_unknown');
     await restarted.recoverObservedEffects();assert.equal(f.store.get(repair.operationId).state,'succeeded');assert.equal(f.store.get(source.operationId).state,'succeeded');
     assert.equal(readFileSync(join(f.path,'.git/native-worker-count'),'utf8'),'native\n');assert.equal(readFileSync(join(f.path,'.git/worker-count'),'utf8'),'worker\n');
   }finally{await f.cleanup();}
@@ -216,11 +219,11 @@ test('concurrent native admissions select one attempt and interrupted pre-dispat
     const replies=await Promise.all([1,2].map(()=>f.call('runs.reconcile',{operationId:source.operationId,resumeNative:true,scopeToken:preview.scopeToken,requestId:randomUUID()})));
     assert.equal(replies.filter(value=>value.operationId).length,1);assert.equal(replies.filter(value=>value.error?.code==='NATIVE_RECONCILIATION_PENDING').length,1);
     const accepted=replies.find(value=>value.operationId),original=f.store.get(accepted.operationId);f.store.update(original,{state:'running'});
-    const restarted=new Engine(f.store,f.engine.payload);assert.equal(f.store.get(original.operationId).state,'interrupted');
+    const restarted=f.restart();assert.equal(f.store.get(original.operationId).state,'interrupted');
     const response=await restarted.dispatch({schemaVersion:1,command:'runs.reconcile',args:{operationId:original.operationId},cwd:f.path});
     assert.equal(response.operationId,original.operationId);assert.equal(response.operationState,'queued');assert.equal(f.store.get(original.operationId).attemptId,original.attemptId);
     f.store.setMeta('paused',false);restarted.kick();const completed=await f.wait(original.operationId);assert.equal(completed.state,'succeeded',JSON.stringify(completed));
-    restarted.stopping=true;while(restarted.active.size)await new Promise(r=>setTimeout(r,10));
+    await drainEngines(restarted);
     assert.equal(readFileSync(join(f.path,'.git/native-worker-count'),'utf8'),'native\n');assert.equal(readFileSync(join(f.path,'.git/worker-count'),'utf8'),'worker\n');
   }finally{await f.cleanup();}
 });

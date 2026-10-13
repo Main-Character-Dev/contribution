@@ -1,4 +1,4 @@
-import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
+import { drainEngines, waitOperation, waitFor } from './fixtures/lifecycle.mjs';
 import { gitEnvironment } from './fixtures/environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -166,7 +166,7 @@ const reply=await request(${JSON.stringify(f.store.directory)},{schemaVersion:1,
     writeFileSync(adoption.dispatcherPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(client)} "$1" "$2"\n`, { mode: 0o700 });
     f.store.put('adoptedHooks', f.repo.id, { ...adoption, dispatcherDigest: digest(readFileSync(adoption.dispatcherPath)) });
     assert.notEqual((await f.external()).code, 0);
-    const deadline = Date.now() + 4000; while (f.engine.active.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    await waitFor(() => !f.engine.active.size, 'Interrupted external gate observation');
     assert.equal(f.engine.active.size, 0); const op = f.store.list().find(op => op.kind === 'external_gate');
     assert.equal(op.state, 'outcome_unknown'); assert.equal(op.error.code, 'EXTERNAL_GATE_INTERRUPTED'); assert.equal(op.result.delivery, 'unobserved');
     assert.ok(LegacyPrimaryLease.inspect(f.repo.commonDir)); assert.equal(existsSync(f.count), false);
