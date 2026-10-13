@@ -509,3 +509,23 @@ The [review verification receipt](verification/architecture-fixture-review.json)
 records the source identities, focused and complete checks, investigation and
 remaining proof limits. These refactors and fixtures do not qualify an installed
 service, original project cutover or physical device behavior.
+
+## Performance validation and implementation — October 13, 2026
+
+The owner-approved audit recommendations now isolate live SQL from retained
+history, observe owned processes asynchronously, offload bounded file work,
+reuse negotiated finite peer sessions, perform fresh off-thread storage
+admission, refresh native activity from events and log cursors, and schedule
+GitHub observations at due deadlines. Canonical generated validators reduce
+helper startup work. Validation rejected producer-only storage caching because
+unknown files must continue to count.
+
+Scale, ownership, crash, file mutation, transfer fairness and recovery checks
+preserve the existing authority and durability boundaries. Complete validation
+found and repaired an async native-admission race and sticky transient process
+uncertainty. The full check passed 504 tests plus seven secret-scanner tests;
+the final UUID cursor correction passed 20 affected tests. Native build and 26
+Swift tests passed. [Performance proof](PERFORMANCE.md) and its
+[receipt](verification/performance-improvements.json) record source identities,
+local synthetic results and the separate installed/two-host/device proof still
+required. No live installation, enrollment, push or hardware change occurred.

@@ -2,6 +2,20 @@
 
 The generic two-host implementation uses the installed `contribution peer --stdio` entry point over ordinary OpenSSH with noninteractive authentication, strict host-key verification, and bounded waits. The remote command is fixed; repository paths and source text travel only in structured stdin. SSH disconnect does not own the receiving service's operation. No real host was paired during development.
 
+Peers advertising `stdio-session-v1` can use the fixed `peer --stdio-session`
+helper for Git and app transfers. Only begin/chunk/finish actions are accepted,
+using bounded newline-delimited request/response frames. A sender permits four
+requests in a window and waits for the ordinary receiver's durable
+acknowledgments before advancing. Sessions close at completion, after two idle
+seconds or within a five-minute lifetime; a closing process still blocks
+service drain until its ownership callback finishes. Control RPCs get a turn
+between windows and close the standing transfer owner before ordinary SSH.
+Peers without this capability retain `--stdio`. Frames, output, lifetime and
+helper request count have finite bounds; malformed/cancelled sessions preserve
+unconfirmed ownership until positive cleanup. This additive capability does
+not change protocol/schema version or authorize another command. See
+[performance proof](PERFORMANCE.md) for fixture and real-host limits.
+
 `hosts pair --ssh-alias ALIAS` verifies the Contribution host identity and compatible release. Configure the return route independently on the other host. Each host must explicitly enroll its own checkout of the logical repository. For an empty target, `repos add PATH --file POLICY.json` can enroll the exact shared policy without creating working files. The peer endpoint cannot choose arbitrary destination paths.
 
 `repos pair --repo ID --host OWNER --request-id UUID` transfers a generic repository's canonical authority. It requires idle, clean, compatible enrollments and identical committed history or an unborn side. Contribution installs its matching publication guard while preserving any existing hook owner. The initiating writer is durably fenced before the receiver can activate. Monotonic authority epochs and predecessor identities reject replayed old activations. Retrying the same request after a lost acknowledgment reconciles the same transition. Unavailability never elects another owner. Existing projects remain blocked until their hook and writer adapters are adopted.

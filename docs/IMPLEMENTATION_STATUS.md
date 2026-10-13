@@ -4,6 +4,10 @@ Current software implements the M0–M6 and D0–D4 foundations authorized on Oc
 
 The [checkpoint history](IMPLEMENTATION_HISTORY.md) retains previous source identities, counts and investigations. It is historical evidence, not the current work list. [Verification](VERIFICATION.md) owns proof levels and all 132 acceptance identities; [update lifecycle](UPDATE_LIFECYCLE.md#journal-compatibility-and-rollback) owns the current journal compatibility floor.
 
+[Performance implementation and proof](PERFORMANCE.md) records the approved
+engine, helper and native refresh changes, synthetic measurements and complete
+check receipt. Installed and physical acceptance remain incomplete.
+
 | Capability and owner | Implemented behavior | Remaining qualification or gap |
 |---|---|---|
 | [Lifecycle](LIFECYCLE.md) / [updates](UPDATE_LIFECYCLE.md) | One journal worker, verified immutable payload, private IPC, durable admission, drain and exec restart | Installed launchd, signed release, real updates, GUI |

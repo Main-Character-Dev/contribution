@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-13",
+  "status": "implemented_locally_validated_installed_qualification_not_run",
+  "baseline": "000d45a00fe808a6353d5b152451468e6986b70e",
+  "integrationBase": "a0e33d456aa9b66d2d25c8a5cd99234ff8ae0b06",
+  "runtimeCommit": "ded58ad44afab24505f8c6da1c6bf0829dbf82ba",
+  "scope": "Owner-approved performance audit validation and implementation across engine, CLI and macOS client",
+  "recommendations": [
+    {
+      "id": "R1",
+      "result": "implemented",
+      "change": "Indexed live queues and ownership independent of retained history, paged resource inspection and compact scalar status."
+    },
+    {
+      "id": "R2",
+      "result": "implemented",
+      "change": "Shared fresh asynchronous process census, indexed ancestry, exact signal checks and finite retry of a failed snapshot."
+    },
+    {
+      "id": "R3",
+      "result": "implemented",
+      "change": "Bounded worker pool for large hashes, extraction, app copying, history inventories, backup verification and storage traversal; final authority stays with service."
+    },
+    {
+      "id": "R4",
+      "result": "implemented",
+      "change": "Negotiated persistent owned peer helper, finite four-chunk windows, control fairness, legacy fallback and generated canonical validators."
+    },
+    {
+      "id": "R5",
+      "result": "implemented_safe_alternative",
+      "change": "Indexed retention and fresh complete off-thread storage admission. Producer-only cached usage was rejected because unknown files must count."
+    },
+    {
+      "id": "R6",
+      "result": "implemented",
+      "change": "Event-driven native refresh, targeted selected details, compact activity projections, bounded log cursors and inactive polling."
+    },
+    {
+      "id": "R7",
+      "result": "implemented",
+      "change": "Due-deadline GitHub polling with two concurrent repositories, coalescing and preserved retry/destination policy."
+    }
+  ],
+  "validation": [
+    {
+      "command": "bash scripts/dev.sh build",
+      "result": "passed",
+      "notes": "Canonical generation/drift and affected TypeScript builds.",
+      "runtimeCommit": "ded58ad44afab24505f8c6da1c6bf0829dbf82ba"
+    },
+    {
+      "result": "passed",
+      "tests": 52,
+      "label": "Focused indexed history, file/policy, process/resource and storage checks"
+    },
+    {
+      "result": "passed",
+      "tests": 39,
+      "label": "Focused transfer, crash recovery and peer session checks"
+    },
+    {
+      "result": "passed",
+      "tests": 27,
+      "label": "Focused app copy, build output, device execution and session checks"
+    },
+    {
+      "result": "passed",
+      "tests": 21,
+      "label": "Focused Git bundle retirement, storage, maintenance and history restoration"
+    },
+    {
+      "result": "passed",
+      "tests": 8,
+      "label": "Focused backup redundancy, corruption and async pin checks"
+    },
+    {
+      "result": "passed",
+      "tests": 19,
+      "label": "Focused actual live query plans, malformed ownership and fresh admission"
+    },
+    {
+      "result": "passed",
+      "tests": 2,
+      "label": "Focused native concurrent admission and post-promotion receipt checks"
+    },
+    {
+      "result": "passed",
+      "tests": 46,
+      "label": "Focused bounded census retry, process/resources and connectivity recovery"
+    },
+    {
+      "command": "bash scripts/dev.sh native:build",
+      "result": "passed",
+      "notes": "Unsigned arm64 development build; pinned Sparkle and native payload checks. After architecture merge; native source unchanged by later engine/CLI corrections.",
+      "runtimeCommit": "d470a432ecb21d724102547a1bfadcc10934d066"
+    },
+    {
+      "command": "bash scripts/dev.sh native:test",
+      "result": "passed",
+      "tests": 26,
+      "notes": "After architecture merge; native source unchanged by later engine/CLI corrections.",
+      "runtimeCommit": "d470a432ecb21d724102547a1bfadcc10934d066"
+    },
+    {
+      "command": "bash scripts/dev.sh check",
+      "result": "passed",
+      "runtimeCommit": "d5dcfa0fcb65a2f9be5dd1a33c1f658baa470ffc",
+      "tests": 504,
+      "failures": 0,
+      "cancelled": 0,
+      "testDurationMs": 959067.06125,
+      "additionalChecks": {
+        "secretScannerTests": 7,
+        "contractTypes": "passed",
+        "generatedDrift": "passed",
+        "foundationAndDocumentationAlignment": "passed"
+      },
+      "notes": "Complete standard check. Final cursor-only correction was subsequently built and verified by the affected focused tests."
+    },
+    {
+      "label": "Final process release recovery, persistent outage and retained copy permission-target checks",
+      "result": "passed",
+      "tests": 15
+    },
+    {
+      "command": "bash scripts/dev.sh exec node --import ./tests/fixtures/environment.mjs --test --test-concurrency=2 tests/cli.test.mjs tests/performance-history.test.mjs tests/resource-lifecycle.test.mjs tests/reviewed-policy.test.mjs",
+      "result": "passed",
+      "tests": 20,
+      "failures": 0,
+      "cancelled": 0,
+      "testDurationMs": 2654.867459,
+      "runtimeCommit": "ded58ad44afab24505f8c6da1c6bf0829dbf82ba",
+      "notes": "Authenticated UUID pagination, invalid cursor refusal, numeric event cursors and affected ownership/policy paths."
+    },
+    {
+      "command": "bash scripts/dev.sh check:foundation && bash scripts/dev.sh contracts:types && git diff --check",
+      "result": "passed",
+      "runtimeCommit": "ded58ad44afab24505f8c6da1c6bf0829dbf82ba",
+      "notes": "Final documentation and source alignment: 18 canonical schemas and all 132 retained acceptance identities; this does not mark installed acceptance passed."
+    }
+  ],
+  "investigation": [
+    "SQLite initially chose the namespace history index for a global live query; actual-plan proof and explicit sparse index selection repaired it. Missing-state records remain included and fenced.",
+    "Asynchronous storage admission exposed concurrent native repair selection; the uniqueness guard now runs in synchronous admission after the await.",
+    "An unavailable process snapshot had permanently poisoned later positive release evidence. Fresh complete disappearance can now confirm release; one retry stays within the original deadline. Persistent outage, malformed or empty observations and failed durable callbacks never grant release authority.",
+    "Two earlier complete runs were stopped after reproduced failures. Interrupted tests are not counted as passed; the final complete run is recorded separately.",
+    "App-copy permission changes now use retained file and directory descriptors; a replacement-path fixture preserves a foreign target.",
+    "CLI after parsing originally coerced UUID resource cursors to numbers. The final command-aware parser preserves UUIDs and rejects invalid resource cursors while numeric event cursors remain supported.",
+    "Obsolete generated CLI index output from the merged retirement was removed after verifying that its source was absent."
+  ],
+  "proofLimits": [
+    "Synthetic timings are local samples, not production latency guarantees.",
+    "Injected peer latency excludes real SSH, network and receiver fsync costs.",
+    "Installed macOS interaction, live two-host compatibility and physical devices were not qualified.",
+    "No installation, enrollment, push or hardware change was performed.",
+    "The full 504-test run predates only the final cursor correction; the final source passed its affected 20 tests and build. Focused runs overlap and are not summed."
+  ],
+  "worktree": "Native artifact inventory contains no archival attachment; the checkout remains intact.",
+  "fullCheckRuntimeCommit": "d5dcfa0fcb65a2f9be5dd1a33c1f658baa470ffc",
+  "measurements": {
+    "runtimeCommit": "ded58ad44afab24505f8c6da1c6bf0829dbf82ba",
+    "environment": {
+      "node": "v24.21.0",
+      "arch": "arm64",
+      "platform": "darwin",
+      "cpu": "Apple M4 Max"
+    },
+    "synthetic": true,
+    "method": "Warm medians: five ordinary samples, nine cold-launch samples and three filesystem census samples. Responsiveness, process and transfer probes are single samples. Baseline and final samples use their respective lockfiles.",
+    "rows": [
+      {
+        "name": "empty",
+        "medianMs": 33.27,
+        "minMs": 27.82,
+        "maxMs": 44.99,
+        "samples": 9
+      },
+      {
+        "name": "contracts-import",
+        "medianMs": 47.39,
+        "minMs": 37.28,
+        "maxMs": 52.9,
+        "samples": 9
+      },
+      {
+        "name": "cli-help",
+        "medianMs": 54.35,
+        "minMs": 48.61,
+        "maxMs": 64.12,
+        "samples": 9
+      },
+      {
+        "name": "status-100000-stopped-result",
+        "error": null,
+        "total": 100000
+      },
+      {
+        "name": "service.status-100000-stopped-resources",
+        "medianMs": 3.48,
+        "minMs": 2.86,
+        "maxMs": 4.34,
+        "samples": 5
+      },
+      {
+        "name": "live-100000-stopped-resources",
+        "medianMs": 0.01,
+        "minMs": 0,
+        "maxMs": 0.01,
+        "samples": 5
+      },
+      {
+        "name": "queue-100000-completed-operations",
+        "medianMs": 0,
+        "minMs": 0,
+        "maxMs": 0.01,
+        "samples": 5
+      },
+      {
+        "name": "unsettled-100000-completed-operations",
+        "medianMs": 0.01,
+        "minMs": 0,
+        "maxMs": 0.01,
+        "samples": 5
+      },
+      {
+        "name": "admission-storage-100000-completed-operations",
+        "medianMs": 0.19,
+        "minMs": 0.16,
+        "maxMs": 0.22,
+        "samples": 5
+      },
+      {
+        "name": "activity-projection",
+        "fullBytes": 291201,
+        "summaryBytes": 76401,
+        "reductionPercent": 73.76
+      },
+      {
+        "name": "managed-census-50000-files-async",
+        "medianMs": 127.3,
+        "minMs": 126.34,
+        "maxMs": 134.61,
+        "samples": 3
+      },
+      {
+        "name": "managed-census-control-responsiveness",
+        "wallMs": 126.73,
+        "timerPulses": 56,
+        "maximumTimerGapMs": 2.52
+      },
+      {
+        "name": "stable-hash-1GiB-control-responsiveness",
+        "wallMs": 503.42,
+        "timerPulses": 221,
+        "maximumTimerGapMs": 4.3
+      },
+      {
+        "name": "128MiB-extraction-control-responsiveness",
+        "wallMs": 843.36,
+        "timerPulses": 372,
+        "maximumTimerGapMs": 2.85
+      },
+      {
+        "name": "three-supervised-two-second-sleeps",
+        "wallMs": 2052.38,
+        "psCalls": 13,
+        "psBlockingMs": 0,
+        "codes": [
+          0,
+          0,
+          0
+        ],
+        "released": [
+          true,
+          true,
+          true
+        ]
+      },
+      {
+        "name": "8MiB-transfer-50ms-legacy",
+        "wallMs": 1767.55,
+        "requests": 34,
+        "windows": 0,
+        "opens": 0,
+        "note": "Actual sender; injected acknowledgment delay excludes SSH, network and receiver fsync."
+      },
+      {
+        "name": "8MiB-transfer-50ms-session",
+        "wallMs": 524.16,
+        "requests": 34,
+        "windows": 10,
+        "opens": 1,
+        "note": "Actual sender; injected acknowledgment delay excludes SSH, network and receiver fsync."
+      }
+    ]
+  }
+}

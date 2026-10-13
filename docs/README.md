@@ -11,6 +11,7 @@ The S0 development foundation is recorded in [SETUP_STATUS.md](SETUP_STATUS.md).
 | [Requirements review](REQUIREMENTS_REVIEW.md) | Resolved gaps, clarifications, and remaining evidence |
 | [Current implementation](IMPLEMENTATION_STATUS.md) | Current capability/gap matrix and software proof |
 | [Build](BUILD.md) | Pinned verification commands and payload tooling |
+| [Performance](PERFORMANCE.md) | Runtime improvements, local measurements and remaining qualification |
 | [Interim agent workflow](INTERIM_AGENT_WORKFLOW.md) | Commit, local integration and native worktree ownership |
 | [Roadmap](ROADMAP.md) | S0, core milestones, device track, and dependencies |
 | [Diagnostic sharing](DIAGNOSTIC_SHARING.md) | Redacted summaries and controlled local details |
