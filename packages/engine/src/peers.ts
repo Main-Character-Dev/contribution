@@ -444,7 +444,11 @@ export class Peers {
         if (response.operationId) this.store.put('peerOperation', response.operationId, { from, repositoryId: repo.id });
         return { response };
       }
-      if (action === 'transfer.begin') return this.begin(repo, from, body);
+      if (action === 'transfer.begin') {
+        const manifest = object(body['manifest']);
+        if (typeof manifest['transferId'] === 'string' && this.store.record('transfer', manifest['transferId'])) return this.begin(repo, from, body);
+        return this.store.withAdmission(() => this.begin(repo, from, body));
+      }
       if (action === 'transfer.chunk') return this.chunk(from, body);
       if (action === 'transfer.finish') return this.finish(repo, from, body);
       if (['operation.get', 'operation.cancel', 'operation.reconcile'].includes(action)) {
@@ -581,7 +585,7 @@ export class Peers {
   private async captureSelectedHistory(repo: Enrolled, kind: 'seed' | 'mirror', requestId: string): Promise<Operation> {
     const prior = this.store.byRequest(requestId);
     if (prior) { requireValue(prior.kind === `transfer.${kind}` && prior.repositoryId === repo.id, 'REQUEST_ID_CONFLICT', 'Request ID identifies another operation.'); return prior; }
-    this.store.assertRepositoryAvailable(repo.id); this.store.assertAdmissionStorage();
+    this.store.assertRepositoryAvailable(repo.id); await this.store.assertAdmissionStorageAsync();
     await this.repos.current(repo); const info = await identity(repo.path);
     const authority = this.store.record<Authority>('authority', repo.id); requireValue(authority?.phase === 'active', 'AUTHORITY_TRANSITION_PENDING', 'Complete repository pairing before history transfer.', 3);
     requireValue(kind === 'mirror' ? repo.canonicalHostId === this.store.hostId : repo.canonicalHostId !== this.store.hostId, 'TRANSFER_DIRECTION_INVALID', 'History transfer does not match this host role.');

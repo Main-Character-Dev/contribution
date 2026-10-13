@@ -55,10 +55,11 @@ export class ResourceCommands {
     const storage = args['worktrees'] === true ? new OwnedWorktrees(store) : args['bundles'] === true ? new GitBundleRetention(store) : new StorageRetention(store);
     if (args['preview'] === true) {
       requireValue(args['scopeToken'] === undefined && args['requestId'] === undefined, 'INVALID_USAGE', 'Preview and cleanup are separate requests.', 2);
-      return completed(await storage.preview());
+      return completed(await (storage instanceof StorageRetention ? storage.previewAsync() : storage.preview()));
     }
     requireValue(args['preview'] === undefined, 'INVALID_USAGE', 'Use --preview or select its scope token and a request UUID.', 2);
-    const result = await storage.apply(string(args['scopeToken'], 'scopeToken'), string(args['requestId'], 'requestId')); kick(); return completed(result);
+    const token = string(args['scopeToken'], 'scopeToken'), requestId = string(args['requestId'], 'requestId');
+    const result = await (storage instanceof StorageRetention ? storage.applyAsync(token, requestId) : storage.apply(token, requestId)); kick(); return completed(result);
   }
   private async storagePolicy(args: ObjectValue): Promise<Response> {
     const storage = new ManagedStorage(this.context.store);

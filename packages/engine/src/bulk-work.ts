@@ -2,7 +2,7 @@ import { Worker } from 'node:worker_threads';
 import { Fault } from './core.js';
 
 export type BulkJob = { kind: 'file-digest'; path: string; maxBytes: number; code: string } |
-  { kind: 'storage-usage'; path: string; maxStateBytes: number } | { kind: 'app-digest'; path: string } | { kind: 'app-extract'; path: string; destination: string; appName: string };
+  { kind: 'history-inventory'; path: string } | { kind: 'app-copy'; path: string; destination: string } | { kind: 'storage-usage'; path: string; maxStateBytes: number } | { kind: 'app-digest'; path: string } | { kind: 'app-extract'; path: string; destination: string; appName: string };
 interface Pending { job: BulkJob; signal?: AbortSignal; resolve: (value: unknown) => void; reject: (error: unknown) => void; removeAbort: () => void }
 const queue: Pending[] = [], idle: Worker[] = []; let active = 0;
 /** Computation and owned staging IO only. SQLite and effect authority remain

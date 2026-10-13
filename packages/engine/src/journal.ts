@@ -8,7 +8,7 @@ import type { ObjectValue, State } from './core.js';
 import { privateDirectory } from './private-files.js';
 import { ManagedStorage } from './managed-storage.js';
 import { BackupOutput } from './backup-output.js';
-import { stableFileDigest } from './bounded-file.js';
+import { stableFileDigestAsync } from './bounded-file.js';
 import { peerEvidenceProtected, peerCompletionStatus } from './peer-receipts.js';
 
 export interface Operation {
@@ -328,7 +328,7 @@ export class Journal {
       operations = Number(probe.prepare('SELECT COUNT(*) AS n FROM operations').get()?.['n']);
     } finally { probe.close(); }
     const receipt = { schemaVersion, payload, windowId, hostId: this.hostId, createdAt: now(), operations, lastEvent,
-      sha256: stableFileDigest(path, 4 * 1024 ** 3, 'BACKUP_INVALID').sha256, path, restoration: 'manual_compatibility_review_required' };
+      sha256: (await stableFileDigestAsync(path, 4 * 1024 ** 3, 'BACKUP_INVALID')).sha256, path, restoration: 'manual_compatibility_review_required' };
     writeFileSync(join(directory, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     for (const target of [path, join(directory, 'receipt.json'), directory, root]) {
       const handle = openSync(target, 'r'); try { fsyncSync(handle); } finally { closeSync(handle); }

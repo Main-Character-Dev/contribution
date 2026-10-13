@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, cpSync, chmodSync, openSync, closeSync, fsyncSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, chmodSync, openSync, closeSync, fsyncSync, realpathSync } from 'node:fs';
 import { join, isAbsolute, relative } from 'node:path';
 import { arch } from 'node:os';
 import { assertContract, buildIdentity } from '@contribution/contracts';
@@ -18,6 +18,7 @@ import { OwnedWorktrees } from './owned-worktrees.js';
 import type { AdoptedHooks } from './adopted-hooks.js';
 import { RobotyDevicePolicy } from './roboty-device-policy.js';
 import { RobotyOfflineBuild } from './roboty-offline-build.js';
+import { bulkWork } from './bulk-work.js';
 import { BuildOutput } from './build-output.js';
 
 type Build = DeviceProfileConfiguration['builds'][number];
@@ -152,7 +153,7 @@ export class DeviceBuilds {
     const beforeCopy = await appTreeDigestAsync(prepared.appPath), artifactId = id(), artifacts = join(this.store.directory, 'device-artifacts'); privateDirectory(artifacts);
     const retained = join(artifacts, artifactId); mkdirSync(retained, { mode: 0o700 });
     const appPath = join(retained, build.appName), path = join(retained, 'signed-app.zip');
-    cpSync(prepared.appPath, appPath, { recursive: true, errorOnExist: true, force: false });
+    requireValue(await bulkWork<string>({ kind: 'app-copy', path: prepared.appPath, destination: appPath }, signal) === beforeCopy, 'ARTIFACT_CHANGED', 'The source app changed before its bounded retained copy.');
     requireValue(await appTreeDigestAsync(appPath) === beforeCopy, 'ARTIFACT_CHANGED', 'App bytes changed during retention.');
     await this.driver.archive(appPath, path, options);
     const info = lstatSync(path); requireValue(info.isFile() && !info.isSymbolicLink() && info.size > 0 && info.size <= 1024 ** 3, 'ARTIFACT_TOO_LARGE', 'The signed archive must be a bounded regular file.');

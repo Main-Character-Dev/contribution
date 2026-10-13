@@ -17,6 +17,7 @@ export class PeerSession {
   private pending: { resolve: (reply: Response) => void; reject: (error: unknown) => void }[] = [];
   private readonly controller = new AbortController();
   private closing = false;
+  private windowBusy = false;
   private settled = false;
   private idle: NodeJS.Timeout | undefined;
   private protocolFailure: Fault | undefined;
@@ -52,10 +53,11 @@ export class PeerSession {
   get closed(): boolean { return this.closing; }
   get drained(): boolean { return this.settled; }
   async requestMany(envelopes: ObjectValue[], signal?: AbortSignal): Promise<ObjectValue[]> {
-    requireValue(envelopes.length > 0 && envelopes.length <= 4 && !this.pending.length && !this.closing, 'PEER_SESSION_BUSY', 'Session windows contain one to four requests.', 4);
+    requireValue(envelopes.length > 0 && envelopes.length <= 4 && !this.windowBusy && !this.pending.length && !this.closing, 'PEER_SESSION_BUSY', 'Session windows contain one to four requests.', 4);
     if (this.idle) clearTimeout(this.idle);
     const frames = envelopes.map(envelope => JSON.stringify(envelope) + '\n');
     requireValue(frames.every(frame => Buffer.byteLength(frame) <= 1024 ** 2), 'FRAME_TOO_LARGE', 'Peer session request exceeds one MiB.', 2);
+    this.windowBusy = true;
     const cancel = (): void => this.controller.abort(); signal?.addEventListener('abort', cancel, { once: true });
     try {
       if (signal?.aborted) cancel(); await this.ready;
@@ -64,7 +66,7 @@ export class PeerSession {
       const received = await Promise.all(replies);
       return received.map(response => { if (response.error) throw new Fault(response.error.code, response.error.message, 3, response.result ?? {}, response.error.retryable); return object(response.result); });
     } catch (error) { await this.close(); throw error; }
-    finally { signal?.removeEventListener('abort', cancel); if (!this.closing) this.idle = setTimeout(() => { void this.close().catch(() => {}); }, 2000); }
+    finally { this.windowBusy = false; signal?.removeEventListener('abort', cancel); if (!this.closing) this.idle = setTimeout(() => { void this.close().catch(() => {}); }, 2000); }
   }
   async close(): Promise<void> {
     if (this.idle) clearTimeout(this.idle); this.closing = true;

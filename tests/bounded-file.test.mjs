@@ -6,6 +6,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readStableFile, StableFileReader, stableFileDigest, stableFileDigestAsync } from '../packages/engine/dist/bounded-file.js';
+import { bulkWork } from '../packages/engine/dist/bulk-work.js';
+import { appTreeDigest } from '../packages/engine/dist/device-artifacts.js';
+
+test('off-thread app retention preserves executable modes, bounds buffers and refuses linked or existing destinations', async () => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'ct-bulk-copy-')), source = join(root, 'Fixture.app'), destination = join(root, 'retained.app');
+  try {
+    fs.mkdirSync(source); fs.mkdirSync(join(source, 'Assets')); fs.writeFileSync(join(source, 'run'), Buffer.alloc(16 * 1024 ** 2, 7), { mode: 0o755 }); fs.writeFileSync(join(source, 'Assets/data'), 'binary\0content');
+    const expected = appTreeDigest(source); let pulses = 0; const timer = setInterval(() => pulses++, 2);
+    try { assert.equal(await bulkWork({ kind: 'app-copy', path: source, destination }), expected); } finally { clearInterval(timer); }
+    assert(pulses > 2); assert.equal(appTreeDigest(destination), expected); assert.equal(fs.statSync(join(destination, 'run')).mode & 0o777, 0o755);
+    await assert.rejects(bulkWork({ kind: 'app-copy', path: source, destination })); assert.equal(appTreeDigest(destination), expected);
+    fs.symlinkSync(join(source, 'run'), join(source, 'link'));
+    await assert.rejects(bulkWork({ kind: 'app-copy', path: source, destination: join(root, 'linked.app') }), { code: 'ARTIFACT_LINK_UNSUPPORTED' });
+  } finally { fs.rmSync(root, { recursive: true }); }
+});
 
 test('bulk digest leaves control timers responsive and rejects mutation and cancellation', async () => {
   const root = fs.mkdtempSync(join(tmpdir(), 'ct-bulk-digest-')), path = join(root, 'artifact');

@@ -9,12 +9,13 @@ import { outputFile, outputManifest, sameOutputFile } from './output-files.js';
 import type { OutputFile } from './output-files.js';
 import type { BuildOutputOwner } from './build-output.js';
 import type { BackupOutputOwner } from './backup-output.js';
-import { stableFileDigest } from './bounded-file.js';
+import { stableFileDigest, stableFileDigestAsync } from './bounded-file.js';
 import { alive, processIdentity } from './process.js';
 
 type FileIdentity = OutputFile;
 interface Candidate { key: string; kind: 'artifact' | 'incoming' | 'legacy' | 'build' | 'backup'; directory: string; repositoryId: string; operationId?: string; attemptId?: string; artifactId?: string; transferId?: string; bytes: number; files: FileIdentity[] }
 interface Preview { token: string; createdAt: string; candidates: Candidate[]; policy: ObjectValue }
+interface BackupEvidence { ownerDigest: string; sha256: string }
 interface Cleanup { requestId: string; token: string; preview: Preview; completed: string[]; state: 'removing' | 'completed'; result?: ObjectValue }
 interface Incoming { manifest: { transferId: string; provenance: RetainedDeviceArtifact['provenance']; repositoryId: string }; directory: string; path: string; accepted?: { retainedAt: string } }
 function present(path: string): boolean { try { lstatSync(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; } }
@@ -41,7 +42,7 @@ export class StorageRetention {
     return Boolean(op && !op.pinned && ['succeeded', 'failed', 'cancelled'].includes(op.state) && typeof op.result['completedAt'] === 'string' &&
       Date.parse(op.result['completedAt']) <= cutoff && !this.store.peerEvidenceProtected(op));
   }
-  private census(observedAt: number): { candidates: Candidate[]; protected: ObjectValue[]; policy: ObjectValue } {
+  private census(observedAt: number, evidence?: Map<string, BackupEvidence>): { candidates: Candidate[]; protected: ObjectValue[]; policy: ObjectValue } {
     const operations = this.store.list(10001); requireValue(operations.length <= 10000, 'STORAGE_CENSUS_LIMIT', 'Large journals require a paged retention census before output can be removed.', 3);
     const rawLogDays = this.store.getMeta<{ retention: { rawLogDays: number } }>('settings')?.retention.rawLogDays ?? 30;
     const summaryDays = this.store.getMeta<{ retention: { summaryDays: number } }>('settings')?.retention.summaryDays ?? 365;
@@ -124,7 +125,10 @@ export class StorageRetention {
     // Independently rehash the two recovery copies we will retain. Filesystem
     // metadata alone must not make a damaged backup sufficient redundancy.
     const retainedBackups = complete.slice(0, 2).filter(owner => {
-      try { return stableFileDigest(String(owner.receipt!['path']), 4 * 1024 ** 3, 'BACKUP_INVALID').sha256 === owner.receipt!['sha256']; }
+      try {
+        const verified = evidence?.get(owner.id);
+        return (evidence ? verified?.ownerDigest === digest(owner) && verified.sha256 === owner.receipt!['sha256'] : stableFileDigest(String(owner.receipt!['path']), 4 * 1024 ** 3, 'BACKUP_INVALID').sha256 === owner.receipt!['sha256']);
+      }
       catch { return false; }
     });
     const backupIdle = !this.store.getMeta('maintenance') && !this.store.getMeta('maintenanceWindow') && !operations.some(op => op.pinned ||
@@ -141,13 +145,35 @@ export class StorageRetention {
       policy: { artifactsDays: 30, legacyRawOutputDays: rawLogDays, buildOutputDays: rawLogDays, buildSourceRemoval: 'requires_prior_confirmed_git_cleanup', backupDays: summaryDays, minimumNewerBackups: 2,
         preserved: ['request_and_effect_receipts', 'provenance', 'source_worktrees', 'git_transfers_and_refs', 'latest_two_complete_backups', 'unresolved_or_pinned_dependencies'] } };
   }
-  preview(): ObjectValue {
-    const observedAt = Date.now(), census = this.census(observedAt), preview: Preview = { token: id(), createdAt: new Date(observedAt).toISOString(), candidates: census.candidates, policy: census.policy };
+  private async backupEvidence(): Promise<Map<string, BackupEvidence>> {
+    const evidence = new Map<string, BackupEvidence>(), owners = this.store.records<BackupOutputOwner>('backupOutput');
+    requireValue(owners.length <= 1000, 'STORAGE_CENSUS_LIMIT', 'Large backup inventories require a paged cleanup census.', 3);
+    const history = this.store.records<ObjectValue>('maintenanceHistory');
+    const complete = owners.filter(owner => {
+      try {
+        if (owner.phase !== 'sealed' || owner.hostId !== this.store.hostId || owner.directory !== join(this.store.directory, 'backups', owner.id) || owner.receipt?.['schemaVersion'] !== 1 || owner.receipt['hostId'] !== this.store.hostId || owner.receipt['path'] !== join(owner.directory, 'journal.sqlite') || !owner.files || !history.some(value => value['id'] === owner.windowId && ['activated', 'cancelled'].includes(String(value['outcome'])) && typeof value['completedAt'] === 'string' && digest(value['backup']) === digest(owner.receipt)) || this.store.record('storageEviction', `backup:${owner.id}`)) return false;
+        const files = outputManifest(owner.directory), sealed = new Map(owner.files.map(file => [file.path, file]));
+        return files.length === sealed.size && files.every(file => sealed.has(file.path) && sameOutputFile(sealed.get(file.path)!, file));
+      } catch { return false; }
+    }).sort((a, b) => b.generation - a.generation).slice(0, 2);
+    await Promise.all(complete.map(async owner => {
+      try { evidence.set(owner.id, { ownerDigest: digest(owner), sha256: (await stableFileDigestAsync(String(owner.receipt!['path']), 4 * 1024 ** 3, 'BACKUP_INVALID')).sha256 }); }
+      catch { /* Damaged or changed recovery copies never authorize removal. */ }
+    }));
+    return evidence;
+  }
+  async previewAsync(): Promise<ObjectValue> { return this.previewVerified(await this.backupEvidence()); }
+  async applyAsync(token: string, requestId: string): Promise<ObjectValue> { return this.applyVerified(token, requestId, await this.backupEvidence()); }
+  preview(): ObjectValue { return this.previewVerified(); }
+  private previewVerified(evidence?: Map<string, BackupEvidence>): ObjectValue {
+
+    const observedAt = Date.now(), census = this.census(observedAt, evidence), preview: Preview = { token: id(), createdAt: new Date(observedAt).toISOString(), candidates: census.candidates, policy: census.policy };
     this.store.put('storagePreview', preview.token, preview);
     return { scopeToken: preview.token, policy: preview.policy, eligibleBytes: preview.candidates.reduce((sum, value) => sum + value.bytes, 0),
       candidates: preview.candidates.map(({ files: _files, ...candidate }) => candidate), protected: census.protected, mutation: 'none' };
   }
-  apply(token: string, requestId: string): ObjectValue {
+  apply(token: string, requestId: string): ObjectValue { return this.applyVerified(token, requestId); }
+  private applyVerified(token: string, requestId: string, evidence?: Map<string, BackupEvidence>): ObjectValue {
     requireValue(validateContractFormat('uuid', token) && validateContractFormat('uuid', requestId), 'INVALID_USAGE', 'Storage cleanup requires the preview UUID and an immutable request UUID.', 2);
     let cleanup = this.store.record<Cleanup>('storageCleanup', requestId);
     if (cleanup) { requireValue(cleanup.token === token, 'REQUEST_ID_CONFLICT', 'This cleanup request has a different preview.'); if (cleanup.result) return cleanup.result; }
@@ -155,7 +181,7 @@ export class StorageRetention {
     requireValue(preview, 'STORAGE_PREVIEW_REQUIRED', 'Review retained storage before selecting a cleanup scope.', 3);
     requireValue(!this.store.records<Cleanup>('storageCleanup').some(other => other.requestId !== requestId && other.state === 'removing' && other.preview.candidates.some(candidate => preview.candidates.some(selected => selected.key === candidate.key))),
       'STORAGE_CLEANUP_PENDING', 'Resume the existing cleanup request for this output before selecting another request.', 3);
-    const current = this.census(Date.now()), eligible = new Map(current.candidates.map(value => [value.key, value]));
+    const current = this.census(Date.now(), evidence), eligible = new Map(current.candidates.map(value => [value.key, value]));
     requireValue(digest(current.policy) === digest(preview.policy), 'STORAGE_SELECTION_CHANGED', 'Retention policy changed after this preview.');
     for (const candidate of preview.candidates) {
       if (cleanup?.completed.includes(candidate.key)) continue;

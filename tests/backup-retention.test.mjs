@@ -31,10 +31,10 @@ test('reviewed backup retention preserves the newest two complete recovery copie
       assert.equal(createHash('sha256').update(readFileSync(receipt.path)).digest('hex'), receipt.sha256);
     }
     const unknown = join(f.root, 'backups', randomUUID()); mkdirSync(unknown); writeFileSync(join(unknown, 'journal.sqlite'), 'unknown recovery data');
-    const preview = f.storage.preview(); assert.equal(preview.policy.backupDays, 365); assert.equal(preview.candidates.length, 2);
+    const preview = await f.storage.previewAsync(); assert.equal(preview.policy.backupDays, 365); assert.equal(preview.candidates.length, 2);
     assert.deepEqual(new Set(preview.candidates.map(value => value.key)), new Set(backups.slice(0, 2).map(value => `backup:${value.owner.id}`)));
-    const requestId = randomUUID(), result = f.storage.apply(preview.scopeToken, requestId);
-    assert.deepEqual(f.storage.apply(preview.scopeToken, requestId), result);
+    const requestId = randomUUID(), result = await f.storage.applyAsync(preview.scopeToken, requestId);
+    assert.deepEqual(await f.storage.applyAsync(preview.scopeToken, requestId), result);
     for (const value of backups.slice(0, 2)) assert.equal(existsSync(value.directory), false);
     for (const value of backups.slice(2)) assert.ok(existsSync(value.receipt.path)); assert.ok(existsSync(unknown));
     assert.deepEqual(f.store.record('maintenanceHistory', backups[0].requestId).backup, backups[0].receipt);
@@ -92,9 +92,19 @@ test('a stale preview cannot remove a backup after newer recovery copies or rete
       if (mode === 'schema-newer') f.store.put('backupOutput', newer.owner.id, { ...newer.owner, receipt: { ...newer.receipt, schemaVersion: 2 } });
       if (mode === 'policy') f.store.setMeta('settings', { retention: { rawLogDays: 30, summaryDays: 366, maxLogBytes: 2147483648 } });
       assert.throws(() => f.storage.apply(preview.scopeToken, randomUUID()), { code: 'STORAGE_SELECTION_CHANGED' }, mode);
+      await assert.rejects(f.storage.applyAsync(preview.scopeToken, randomUUID()), { code: 'STORAGE_SELECTION_CHANGED' }, mode);
       assert.ok(existsSync(selected.receipt.path)); assert.equal(f.store.records('storageCleanup').length, 0);
     } finally { f.close(); }
   }
+});
+
+test('asynchronous backup verification rechecks new pins before authorizing cleanup', async () => {
+  const f = fixture(); try {
+    let operation = f.store.admit(randomUUID(), 'checks', randomUUID(), {}, 'fixture'); operation = f.store.update(operation, { state: 'succeeded' });
+    const selected = await f.backup(); await f.backup(); await f.backup(); const preview = await f.storage.previewAsync(); assert.equal(preview.candidates.length, 1);
+    const cleanup = f.storage.applyAsync(preview.scopeToken, randomUUID()); f.store.update(operation, { pinned: true });
+    await assert.rejects(cleanup, { code: 'STORAGE_SELECTION_CHANGED' }); assert.ok(existsSync(selected.receipt.path)); assert.equal(f.store.records('storageCleanup').length, 0);
+  } finally { f.close(); }
 });
 
 test('backup copies become independently readable standalone SQLite while the live journal stays in WAL', async () => {

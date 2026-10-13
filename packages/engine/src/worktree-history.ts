@@ -1,11 +1,12 @@
-import { existsSync, lstatSync, readdirSync, realpathSync, statfsSync } from 'node:fs';
+import { existsSync, realpathSync, statfsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Journal } from './journal.js';
 import { git, gitText } from './git.js';
 import { ManagedStorage } from './managed-storage.js';
 import { privateDirectory } from './private-files.js';
-import { stableFileDigest, readStableFile } from './bounded-file.js';
+import { readStableFile } from './bounded-file.js';
+import { bulkWork } from './bulk-work.js';
 import { digest, now, requireValue } from './core.js';
 
 export interface HistoryReceipt {
@@ -17,24 +18,7 @@ export interface HistoryReceipt {
  * survive destruction of the source clone. No remote fetch or lazy hydration. */
 export class WorktreeHistory {
   constructor(readonly store: Journal) {}
-  private inventory(path: string): { digest: string; bytes: number } {
-    requireValue(realpathSync(path) === path, 'HISTORY_ARCHIVE_CHANGED', 'The retained archive path changed.', 3);
-    const files: { path: string; bytes: number; sha256: string }[] = []; let bytes = 0, entries = 0; const deadline = performance.now() + 10000;
-    const visit = (dir: string, prefix = ''): void => {
-      for (const entry of readdirSync(dir).sort()) {
-        requireValue(performance.now() < deadline && ++entries <= 100000, 'HISTORY_ARCHIVE_LIMIT', 'Archive entry census exceeded its finite limit.', 3);
-        const name = join(dir, entry), relative = prefix + entry, info = lstatSync(name);
-        requireValue(!info.isSymbolicLink() && info.uid === process.getuid?.() && (info.isDirectory() || info.isFile() && info.nlink === 1), 'HISTORY_ARCHIVE_CHANGED', 'Linked, shared or replaced archive entries remain protected.', 3);
-        if (info.isDirectory()) visit(name, relative + '/');
-        else {
-          bytes += info.size; requireValue(bytes <= 1024 ** 3, 'HISTORY_ARCHIVE_LIMIT', 'Archive exceeds the one GiB qualified source bound.', 3);
-          files.push({ path: relative, ...stableFileDigest(name, 1024 ** 3, 'HISTORY_ARCHIVE_CHANGED') });
-        }
-      }
-    };
-    visit(path); requireValue(!existsSync(join(path, 'objects', 'info', 'alternates')), 'HISTORY_ARCHIVE_DEPENDENCY', 'An independent archive cannot rely on alternates.', 3);
-    return { digest: digest(files), bytes };
-  }
+  private inventory(path: string): Promise<{ digest: string; bytes: number }> { return bulkWork({ kind: 'history-inventory', path }); }
   private async verifyGit(path: string, head: string): Promise<{ shallow: string[]; objects: string }> {
     const options = { timeoutMs: 30000, maxBytes: 4 * 1024 * 1024, env: { GIT_NO_LAZY_FETCH: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } };
     requireValue(await gitText(path, ['cat-file', '-t', head], options) === 'commit', 'HISTORY_ARCHIVE_INVALID', 'The exact selected commit is unavailable.', 3);
@@ -46,7 +30,7 @@ export class WorktreeHistory {
     return { shallow, objects: digest(objects.split('\n').sort()) };
   }
   async verify(receipt: HistoryReceipt): Promise<void> {
-    const archive = this.inventory(receipt.directory), restore = this.inventory(receipt.restoreDirectory);
+    const [archive, restore] = await Promise.all([this.inventory(receipt.directory), this.inventory(receipt.restoreDirectory)]);
     requireValue(archive.digest === receipt.archiveDigest && restore.digest === receipt.restoreDigest, 'HISTORY_ARCHIVE_CHANGED', 'Archive/restore integrity changed; preserve the worktree.', 3);
     const history = await this.verifyGit(receipt.restoreDirectory, receipt.head);
     requireValue(history.objects === receipt.objects && digest(history.shallow) === digest(receipt.shallow), 'HISTORY_ARCHIVE_INCOMPLETE', 'Restore does not match the retained available ancestry.', 3);
@@ -60,7 +44,7 @@ export class WorktreeHistory {
     const directory = join(parent, 'archive.git'), restoreDirectory = join(parent, 'restore.git');
     // Refuse unqualified large/shared/alternates topology before copying bytes.
     // Failed copies remain retained output, never trigger destructive retry.
-    const sourceBytes = this.inventory(commonDir).bytes, usage = new ManagedStorage(this.store).usage(), disk = statfsSync(root);
+    const sourceBytes = (await this.inventory(commonDir)).bytes, usage = await new ManagedStorage(this.store).usageAsync(), disk = statfsSync(root);
     requireValue(usage.complete && usage.logicalBytes + sourceBytes * 2 < usage.maxStateBytes && disk.bavail * disk.bsize > sourceBytes * 2, 'HISTORY_ARCHIVE_STORAGE_PRESSURE', 'Independent copies lack declared storage/headroom; preserve the source and raise the reviewed budget.', 3);
     const source = await this.verifyGit(commonDir, head);
     const intent = { attemptId, primary, commonDir, head, directory, restoreDirectory, source };
@@ -78,7 +62,7 @@ export class WorktreeHistory {
     requireValue(digest(restored) === digest(source), 'HISTORY_ARCHIVE_INCOMPLETE', 'Independent restore failed ancestry validation.', 3);
     // Disable all transfer endpoints; recovery never depends on their existence.
     for (const path of [directory, restoreDirectory]) if ((await git(path, ['config', '--get-regexp', '^remote\\.origin\\.'], options)).code === 0) await gitText(path, ['config', '--remove-section', 'remote.origin'], options);
-    const archive = this.inventory(directory), restore = this.inventory(restoreDirectory);
+    const [archive, restore] = await Promise.all([this.inventory(directory), this.inventory(restoreDirectory)]);
     await this.store.assertAdmissionStorageAsync();
     const receipt: HistoryReceipt = { attemptId, head, directory, restoreDirectory, ...restored, archiveDigest: archive.digest, restoreDigest: restore.digest, bytes: archive.bytes + restore.bytes, verifiedAt: now() };
     this.store.put('worktreeHistory', attemptId, receipt); await this.verify(receipt); return receipt;

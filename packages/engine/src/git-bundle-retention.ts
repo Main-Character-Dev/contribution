@@ -8,7 +8,7 @@ import { digest, id, now, requireValue } from './core.js';
 import type { ObjectValue } from './core.js';
 import { outputFile, sameOutputFile } from './output-files.js';
 import type { OutputFile } from './output-files.js';
-import { stableFileDigest } from './bounded-file.js';
+import { stableFileDigestAsync } from './bounded-file.js';
 import { MAX_GIT_BUNDLE } from './git-bundle.js';
 import { incomingFileSize } from './incoming-file.js';
 import type { IncomingFileIdentity } from './incoming-file.js';
@@ -100,7 +100,9 @@ export class GitBundleRetention {
       requireValue(digest(producer.file) === digest({ dev: String(info.dev), ino: String(info.ino), size: String(info.size), mtime: String(info.mtimeNs), mode: String(info.mode), uid: String(info.uid) }),
         'GIT_BUNDLE_CHANGED', 'The bundle no longer has its original producer identity.', 3);
     }
-    requireValue(digest(stableFileDigest(source.path, MAX_GIT_BUNDLE, 'GIT_BUNDLE_CHANGED')) === digest({ bytes: source.bytes, sha256: source.sha256 }), 'GIT_BUNDLE_CHANGED', 'Bundle bytes differ from the immutable transport digest.', 3);
+    requireValue(digest(await stableFileDigestAsync(source.path, MAX_GIT_BUNDLE, 'GIT_BUNDLE_CHANGED')) === digest({ bytes: source.bytes, sha256: source.sha256 }), 'GIT_BUNDLE_CHANGED', 'Bundle bytes differ from the immutable transport digest.', 3);
+    this.eligible(source);
+    requireValue(sameOutputFile(file, outputFile(source.path)) && sameOutputFile(parent, outputFile(dirname(source.path))) && sameOutputFile(clone, outputFile(repo.commonDir)), 'GIT_BUNDLE_CHANGED', 'The selected bundle or clone changed during verification.', 3);
     return { ...source, file, parent, clone, primary: repo.path, commonDir: repo.commonDir };
   }
   async preview(): Promise<ObjectValue> {

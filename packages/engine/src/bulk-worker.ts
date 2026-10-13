@@ -4,11 +4,15 @@ import { stableFileDigest } from './bounded-file.js';
 import { appTreeDigest } from './device-artifacts.js';
 import { extractSignedAppArchive } from './app-archive.js';
 import { managedStorageCensus } from './managed-storage.js';
+import { historyInventory } from './history-inventory.js';
+import { copyAppTree } from './app-tree-copy.js';
 import { Fault } from './core.js';
 
 parentPort!.on('message', (job: BulkJob) => {
 try {
   const value = job.kind === 'file-digest' ? stableFileDigest(job.path, job.maxBytes, job.code) :
+    job.kind === 'history-inventory' ? historyInventory(job.path) :
+    job.kind === 'app-copy' ? copyAppTree(job.path, job.destination) :
     job.kind === 'storage-usage' ? managedStorageCensus(job.path, job.maxStateBytes) :
     job.kind === 'app-digest' ? appTreeDigest(job.path) : extractSignedAppArchive(job.path, job.destination, job.appName);
   parentPort!.postMessage({ value });
