@@ -1,3 +1,4 @@
+import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, statSync } from 'node:fs';
@@ -35,8 +36,8 @@ async function setup() {
   const registered = await call('devices.configure', { repo: repo.id, config, expectedRevision: 'none', requestId: randomUUID() }); assert.equal(registered.error, null, JSON.stringify(registered));
   const grant = await call('devices.authorize', { repo: repo.id, device, operations: ['prepare'], requestId: randomUUID() }); assert.equal(grant.error, null, JSON.stringify(grant));
   const args = { repo: repo.id, host: store.hostId, device, sourceTip: tip, buildProfile: 'development', requestId: randomUUID() };
-  const wait = async op => { const deadline = Date.now() + 5000; while (Date.now() < deadline) { const result = await call('runs.get', { operationId: op }); if (!['queued', 'running'].includes(result.operationState)) return result; await new Promise(r => setTimeout(r, 10)); } throw Error('build timeout'); };
-  return { root, path, repo, config, store, engine, backend, driver, calls, host, call, args, wait, duringBuild: fn => { duringBuild = fn; }, cleanup: async () => { engine.stopping = true; while (engine.active.size) await new Promise(r => setTimeout(r, 10)); store.close(); rmSync(root, { recursive: true }); } };
+  const wait = op => waitOperation(() => call('runs.get', { operationId: op }), `Device build ${op}`);
+  return { root, path, repo, config, store, engine, backend, driver, calls, host, call, args, wait, duringBuild: fn => { duringBuild = fn; }, cleanup: async () => { await drainEngines(engine); store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('offline preparation retains an immutable artifact without observing, qualifying or owning the phone', async () => {

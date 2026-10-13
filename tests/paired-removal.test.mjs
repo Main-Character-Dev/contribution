@@ -1,3 +1,4 @@
+import { drainEngines } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, realpathSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -48,8 +49,7 @@ async function fixture() {
     beforeRelease: fn => { beforeRelease = fn; }, afterRelease: fn => { afterRelease = fn; },
     afterPrepare: fn => { afterPrepare = fn; }, losePrepare: () => { losePrepare = true; },
     dropActivation: () => { dropActivation = true; },
-    close: async () => { for (const engine of Object.values(hosts)) engine.stopping = true;
-      while (Object.values(hosts).some(engine => engine.active.size || engine.peers.busy)) await new Promise(resolve => setTimeout(resolve, 20));
+    close: async () => { await drainEngines(Object.values(hosts));
       for (const store of stores) store.close(); rmSync(root, { recursive: true }); }
   };
 }

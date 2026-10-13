@@ -25,6 +25,7 @@ If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global
 | `bash scripts/dev.sh contracts:types` | Compile-time structure proof for generated clients, including thirteen expected errors |
 | `bash scripts/dev.sh contracts:check` | Generation/package build, client type proof, the current 18-schema registry, 14 preserved examples, runtime negative shapes, formats and projection tests |
 | `bash scripts/dev.sh check` | Package build, boundary tests, privacy/provenance/requirements/docs checks |
+| `bash scripts/dev.sh test:secrets` | Seven scanner boundary tests; requires Gitleaks (validated with 8.30.1), also included in `check` |
 | `bash scripts/dev.sh native:test` | Compile/test the Swift platform package against canonical envelope fixtures and engine responses |
 | `bash scripts/dev.sh native:build` | Build/inspect an unsigned development `.app` with the shared Xcode scheme |
 | `bash scripts/dev.sh cli help` | Supported development command surface |
@@ -41,6 +42,18 @@ For pure JSON stdout without the pnpm script-runner prefix, invoke the compiled 
 ```
 
 The development CLI is not globally installed. Help and version work without the service. Product commands use authenticated private IPC and report missing service readiness truthfully. Operation admission, retained results, logs and exit semantics are implemented by the shared engine; see [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the partial acceptance boundary.
+
+Node tests preload `tests/fixtures/environment.mjs` to isolate Git configuration,
+identity and templates, including real engine subprocesses. Focused Node runs use
+`.tools/node/bin/node --import ./tests/fixtures/environment.mjs --test tests/NAME.test.mjs`.
+The default suite runs two test files concurrently: its many real process owners
+share macOS process inspection, and heavy four-file runs produced transient
+unconfirmed process censuses after otherwise successful Git exits. All ownership
+checks and test cases remain enabled.
+Uninstalled CLI fixtures always select disposable service state. Shared fixture
+lifecycle helpers retain process exit, bound readiness/drain waits and observe
+cleanup conditions before closing journals. These tests require normal macOS
+process inspection; restricted `ps` access cannot establish process ownership.
 
 ## Native application
 

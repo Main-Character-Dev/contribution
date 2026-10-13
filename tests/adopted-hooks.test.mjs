@@ -1,3 +1,5 @@
+import { drainEngines, waitOperation, waitFor } from './fixtures/lifecycle.mjs';
+import { gitEnvironment } from './fixtures/environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -47,17 +49,13 @@ if(!lease.releasePrimaryCheckoutLease({leasePath:acquired.leasePath,token:acquir
   store.put('adoptedHooks', repo.id, { schemaVersion: 1, phase: 'active', adoptionId, repositoryId: repo.id, adapter, policyRevision: repo.revision, hooksPath: hooks,
     dispatcherPath: dispatcher, dispatcherDigest: digest(readFileSync(dispatcher)), policyFilesDigest: digest(policyInventory(path, adapter).files), originalHookDigest: inactive ? null : digest(Buffer.from(script)) });
   const call = (command, args) => engine.dispatch({ schemaVersion: 1, command, args, cwd: path });
-  const wait = async operationId => {
-    const deadline = Date.now() + 10000;
-    while (Date.now() < deadline) { const result = await call('runs.get', { operationId }); if (!['queued', 'running'].includes(result.operationState)) return result; await new Promise(resolve => setTimeout(resolve, 20)); }
-    throw Error('adopted fixture deadline');
-  };
+  const wait = operationId => waitOperation(() => call('runs.get', { operationId }), `Adopted push ${operationId}`);
   const push = async () => { const preview = await call('push', { repo: repo.id, preview: true }); assert.equal(preview.error, null, JSON.stringify(preview));
     const args = { repo: repo.id, expectedTip: preview.result.expectedTip, scopeToken: preview.result.scopeToken, requestId: randomUUID() };
     const admitted = await call('push', args); assert.equal(admitted.error, null, JSON.stringify(admitted)); return { args, result: await wait(admitted.operationId) }; };
-  const external = () => run('/usr/bin/git', ['push', 'origin', 'dev'], { cwd: path, timeoutMs: 20000, env: { CONTRIBUTION_BRIDGE_NODE: process.execPath, CONTRIBUTION_BRIDGE_CLI: cli, CONTRIBUTION_BRIDGE_REPO: repo.id, CONTRIBUTION_BRIDGE_STATE: store.directory, CONTRIBUTION_OPERATION_ID: '', CONTRIBUTION_HOOK_TOKEN: '' } });
+  const external = () => run('/usr/bin/git', ['push', 'origin', 'dev'], { cwd: path, timeoutMs: 20000, env: { ...gitEnvironment(), CONTRIBUTION_BRIDGE_NODE: process.execPath, CONTRIBUTION_BRIDGE_CLI: cli, CONTRIBUTION_BRIDGE_REPO: repo.id, CONTRIBUTION_BRIDGE_STATE: store.directory, CONTRIBUTION_OPERATION_ID: '', CONTRIBUTION_HOOK_TOKEN: '' } });
   return { root, store, engine, repo, remote, path, count, input, call, push, external, cleanup: async () => {
-    engine.stopping = true; while (engine.active.size || engine.peers.busy || engine.github.busy) await new Promise(resolve => setTimeout(resolve, 20));
+    await drainEngines(engine);
     await new Promise(resolve => server.close(resolve)); store.close(); rmSync(root, { recursive: true });
   } };
   } catch (error) { engine.stopping = true; await new Promise(resolve => server.close(resolve)); store.close(); rmSync(root, { recursive: true }); throw error; }
@@ -168,7 +166,7 @@ const reply=await request(${JSON.stringify(f.store.directory)},{schemaVersion:1,
     writeFileSync(adoption.dispatcherPath, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(client)} "$1" "$2"\n`, { mode: 0o700 });
     f.store.put('adoptedHooks', f.repo.id, { ...adoption, dispatcherDigest: digest(readFileSync(adoption.dispatcherPath)) });
     assert.notEqual((await f.external()).code, 0);
-    const deadline = Date.now() + 4000; while (f.engine.active.size && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    await waitFor(() => !f.engine.active.size, 'Interrupted external gate observation');
     assert.equal(f.engine.active.size, 0); const op = f.store.list().find(op => op.kind === 'external_gate');
     assert.equal(op.state, 'outcome_unknown'); assert.equal(op.error.code, 'EXTERNAL_GATE_INTERRUPTED'); assert.equal(op.result.delivery, 'unobserved');
     assert.ok(LegacyPrimaryLease.inspect(f.repo.commonDir)); assert.equal(existsSync(f.count), false);

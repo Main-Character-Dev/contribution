@@ -1,3 +1,4 @@
+import { drainEngines } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
@@ -18,7 +19,7 @@ async function fixture() {
   const call = (command, input) => engine.dispatch({ schemaVersion: 1, command, args: input, cwd: path });
   return { root, path, task, tip, base, repo, args, call, get store() { return store; }, get engine() { return engine; },
     reopen: () => { engine.stopping = true; store.close(); store = new Journal(state); engine = new Engine(store, { identity: 'fixture' }); },
-    cleanup: async () => { engine.stopping = true; while (engine.active.size) await new Promise(resolve => setTimeout(resolve, 10)); store.close(); rmSync(root, { recursive: true }); } };
+    cleanup: async () => { await drainEngines(engine); store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('validated task capture survives restart and an advanced dirty source before admission', async t => {

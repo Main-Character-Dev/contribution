@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { waitFor } from './fixtures/lifecycle.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -249,7 +250,6 @@ for (const edge of ['intent', 'allocated', 'grant', 'dispatch', 'stopping', 'fin
             const script = `import {Journal} from '${engine}/journal.js';import {PeerConnectivity} from '${engine}/peer-connectivity.js';import {run} from '${engine}/process.js';const store=new Journal(${JSON.stringify(state)}),policy=new PeerConnectivity(store),owner=policy.processOwnership('fixture');for(const name of ['intent','allocated','grant','stopping','finished']){const original=owner[name];owner[name]=name==='intent'?async(...args)=>{await original(...args);if(name===${JSON.stringify(edge)})process.kill(process.pid,'SIGKILL');}:(...args)=>{original(...args);if(name===${JSON.stringify(edge)})process.kill(process.pid,'SIGKILL');};}await run(process.execPath,['-e',${JSON.stringify(target)}],{ownership:owner,timeoutMs:${edge === 'stopping' ? 100 : 3000},output:()=>{if(${JSON.stringify(edge)}==='dispatch')process.kill(process.pid,'SIGKILL');}});`;
             const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 5000 });
             assert.equal(crashed.signal, 'SIGKILL', crashed.stderr);
-            await new Promise(r => setTimeout(r, 400));
             store = new Journal(state);
             const policy = new PeerConnectivity(store);
             const retained = store.records('resource');
@@ -260,7 +260,9 @@ for (const edge of ['intent', 'allocated', 'grant', 'dispatch', 'stopping', 'fin
                 const { existsSync } = await import('node:fs');
                 assert.equal(existsSync(marker), false, 'No target code before the durable grant completes');
             }
-            const observed = await policy.reconcile('fixture', 'mini');
+            const observed = edge === 'intent' ? await policy.reconcile('fixture', 'mini') : await waitFor(async () => {
+                const value = await policy.reconcile('fixture', 'mini'); return value.reconciled && value;
+            }, `Crash ${edge} exact process release`);
             assert.equal(observed.reconciled, edge !== 'intent');
             if (edge === 'intent')
                 assert.equal(policy.snapshot('fixture', 'mini').reasonCode, 'PROCESS_RELEASE_UNCONFIRMED');

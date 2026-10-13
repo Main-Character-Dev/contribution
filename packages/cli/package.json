@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/client.js"
   },
-  "types": "./dist/index.d.ts",
+  "types": "./dist/client.d.ts",
   "dependencies": {
     "@contribution/contracts": "workspace:*",
     "@contribution/engine": "workspace:*"

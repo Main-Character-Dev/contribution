@@ -493,3 +493,19 @@ The initial [reversible hook adoption flow](ADOPTION.md) now prepares private so
 Partial adoption apply/rollback failures now identify their retained request in the service response, including while maintenance temporarily refuses continuation. The native request journal preserves that exact step instead of generating a new migration identity. Changed proposal/action/revision does not inherit the retained request. This does not change migration approval, source commit or activation requirements.
 
 Name and publication configuration changes on an active adopted project now reverify its original hook/dispatcher/policy evidence and bind that unchanged registration to the new configuration revision in the same durable transaction. They cannot replace validation, runtime or integration policy. Recovery refuses a changed adapter registration or enrollment/owner, preserving the retained intent and concurrent state. The original adoption proposal remains an immutable historical review; later configuration edits are not silently reverted by its old rollback snapshots.
+
+## Architecture and fixture review — October 12, 2026
+
+The owner-approved seven recommendations isolate disposable CLI state and Git
+fixtures, share bounded process/engine cleanup and condition-based waits, retire
+the unused S0 CLI/Swift client and its obsolete test, extract resource/storage/
+power command handlers, and consolidate reviewed-policy transactions and stable
+file descriptor verification. Existing persisted review formats and owner
+collision guards remain intact. Seven secret-scanner boundary tests now run in
+the standard check with an explicit Gitleaks prerequisite. Default test-file
+concurrency is two to reduce pressure on real macOS process observation.
+
+The [review verification receipt](verification/architecture-fixture-review.json)
+records the source identities, focused and complete checks, investigation and
+remaining proof limits. These refactors and fixtures do not qualify an installed
+service, original project cutover or physical device behavior.

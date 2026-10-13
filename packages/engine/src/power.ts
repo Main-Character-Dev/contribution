@@ -1,6 +1,7 @@
-import { assertContract, validateContractFormat } from '@contribution/contracts';
+import { assertContract } from '@contribution/contracts';
 import type { PowerPolicy } from '@contribution/contracts';
-import { digest, now, requireValue } from './core.js';
+import { digest, now } from './core.js';
+import { configureReviewedPolicy } from './reviewed-policy.js';
 import type { ObjectValue } from './core.js';
 import type { Journal } from './journal.js';
 import { run } from './process.js';
@@ -25,15 +26,11 @@ export class WorkPower {
   status(): ObjectValue { return { ...this.policy(), working: this.working, state: this.state, reason: this.reason, observedAt: this.observedAt,
     assertionSeconds: 45, scope: 'idle_system_sleep_only', physicalSleepQualification: 'not_established' }; }
   configure(config: unknown, expectedRevision: string, requestId: string): ObjectValue {
-    assertContract('power-policy', config);
-    requireValue(validateContractFormat('uuid', requestId), 'INVALID_USAGE', 'Use an immutable request UUID for the power preference.', 2);
-    const inputDigest = digest({ config, expectedRevision }), prior = this.store.record<{ digest: string; result: ObjectValue }>('workPowerPolicyRequest', requestId);
-    if (prior) { requireValue(prior.digest === inputDigest, 'REQUEST_ID_CONFLICT', 'This power request identifies a different reviewed preference.'); return prior.result; }
-    requireValue(!this.store.byRequest(requestId), 'REQUEST_ID_CONFLICT', 'This request already identifies an operation.');
-    requireValue(this.policy().revision === expectedRevision, 'REVISION_CONFLICT', 'The power preference changed since it was reviewed.');
-    const result = { policy: config, revision: digest(config), requestId };
-    this.store.transaction(() => { this.store.setMeta('workPowerPolicy', config); this.store.put('workPowerPolicyRequest', requestId, { digest: inputDigest, result }); });
-    this.refresh(this.working); return result;
+    return configureReviewedPolicy(this.store, config, expectedRevision, requestId, {
+      contract: 'power-policy', metadata: 'workPowerPolicy', requests: 'workPowerPolicyRequest', digestField: 'digest', selection: { config, expectedRevision }, currentRevision: () => this.policy().revision,
+      afterApply: () => this.refresh(this.working),
+      messages: { uuid: 'Use an immutable request UUID for the power preference.', replay: 'This power request identifies a different reviewed preference.', owner: 'This request already identifies an operation.', revision: 'The power preference changed since it was reviewed.' }
+    });
   }
   refresh(working: boolean): void {
     this.working = working && !this.closed;

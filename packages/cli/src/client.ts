@@ -1,9 +1,9 @@
 import { readFileSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { request, defaultStateDirectory, callerIdentity } from '@contribution/engine/client';
-import { Fault, object, rejected, terminal } from '@contribution/engine/core';
+import { Fault, object, rejected, terminal, completed } from '@contribution/engine/core';
 import type { ObjectValue } from '@contribution/engine/core';
-import { helpResponse, versionResponse } from '@contribution/engine';
+import { versionResponse } from '@contribution/engine';
 import type { Response } from '@contribution/contracts';
 import { executeAdoptedGate } from './adopted-hook.js';
 
@@ -76,7 +76,7 @@ export async function runCommand(argv: readonly string[], write: (text: string) 
       write(render(response, true)); return exitCode(response);
     }
     if (argv.length === 0 || argv[0] === 'help' || argv.includes('--help')) {
-      const response = helpResponse();
+      const response = completed();
       response.result = { commands: ['version', 'doctor', 'repos list|discover|add|create|initialize|inspect|configure|relocate|remove', 'status [--refresh]',
         'submit --repo ID --source-path PATH --source-tip OID --base OID --request-id ID [--metadata-file PATH]',
         'submit --repo ID --request-id ID --resume',

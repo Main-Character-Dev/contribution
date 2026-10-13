@@ -1,3 +1,4 @@
+import { drainEngines } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -26,7 +27,7 @@ async function fixture() {
   const repo = (await call('laptop', 'repos.add', { path: source })).result.repository;
   assert.equal((await call('laptop', 'hosts.pair', { sshAlias: 'mini' })).error, null);
   return { root, hosts, stores, call, source, repo, exchanges, offline: value => { offline = value; }, loseReply: () => { loseReply = true; },
-    cleanup: async () => { for (const host of Object.values(hosts)) host.stopping = true; while (Object.values(hosts).some(host => host.active.size || host.peers.busy)) await new Promise(resolve => setTimeout(resolve, 10)); for (const store of stores) store.close(); rmSync(root, { recursive: true }); } };
+    cleanup: async () => { await drainEngines(Object.values(hosts)); for (const store of stores) store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('paired discovery shows an absent project without sharing paths or granting enrollment and authority', async () => {

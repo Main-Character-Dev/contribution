@@ -13,11 +13,3 @@ export interface RepositoryAdapter {
   readonly repositoryId: string;
   readonly projectRuntime: ProjectRuntimeSelection;
 }
-export interface PlatformAvailability {
-  readonly installedService: false;
-  readonly reason: 'SERVICE_NOT_INSTALLED';
-}
-export const foundationAvailability: PlatformAvailability = Object.freeze({
-  installedService: false,
-  reason: 'SERVICE_NOT_INSTALLED',
-});

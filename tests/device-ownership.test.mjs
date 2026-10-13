@@ -1,3 +1,4 @@
+import { drainEngines, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
@@ -43,15 +44,11 @@ async function setup() {
   const owner = engines.source.devices.ownership(device);
   engines.source.devices.saveOwnership({ ...owner, ownerHostId: engines.source.store.hostId, state: 'owned', mutationsPermitted: true, priorSession: 'active', externalSession: 'absent', reasonCodes: [] });
   const args = { repo: sourceRepo.id, device, fromHost: engines.source.store.hostId, host: engines.target.store.hostId, expectedRevision: owner.revision, requestId: randomUUID() };
-  const wait = async (name, id) => {
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) { const value = await call(name, 'runs.get', { operationId: id }); if (!['queued', 'running'].includes(value.operationState)) return value; await new Promise(r => setTimeout(r, 10)); }
-    throw Error('Ownership fixture timeout');
-  };
+  const wait = (name, id) => waitOperation(() => call(name, 'runs.get', { operationId: id }), `Device ownership ${id}`);
   const transfer = async (name = 'source', input = args) => { const admitted = await call(name, 'devices.transfer-host', input); assert.equal(admitted.error, null, JSON.stringify(admitted)); return wait(name, admitted.operationId); };
   return { engines, observations, releases, offline, call, wait, args, transfer, sourceRepo, targetRepo,
     loseReply: () => { loseReply = true; }, loseCleanup: () => { loseCleanup = true; },
-    cleanup: async () => { for (const engine of Object.values(engines)) engine.stopping = true; while (Object.values(engines).some(e => e.active.size || e.peers.busy)) await new Promise(r => setTimeout(r, 10)); for (const e of Object.values(engines)) e.store.close(); rmSync(root, { recursive: true }); } };
+    cleanup: async () => { await drainEngines(Object.values(engines)); for (const e of Object.values(engines)) e.store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('ownership release fences the source, independently checks the destination and does not alter Git authority or grants', async () => {

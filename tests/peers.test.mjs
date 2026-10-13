@@ -1,3 +1,4 @@
+import { drainEngines, waitFor, waitOperation } from './fixtures/lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync, readFileSync, renameSync, existsSync } from 'node:fs';
@@ -39,19 +40,10 @@ async function pairFixture() {
   const source = repository(root, 'source'), target = repository(root, 'target');
   const config = (await call('laptop', 'repos.add', { path: source })).result.repository.config;
   const added = await call('mini', 'repos.add', { path: target, config }); assert.equal(added.error, null);
-  const wait = async (host, operationId) => {
-    const deadline = Date.now() + 15000;
-    while (Date.now() < deadline) {
-      const result = await call(host, 'runs.get', { operationId });
-      if (!['queued', 'running', 'queued_local'].includes(result.operationState)) return result;
-      await hosts.laptop.peers.tick(); await hosts.mini.peers.tick();
-      await new Promise(resolve => setTimeout(resolve, 30));
-    }
-    throw new Error('Fixture operation timed out: ' + JSON.stringify(await call(host, 'runs.get', { operationId })));
-  };
+  const wait = (host, operationId) => waitOperation(() => call(host, 'runs.get', { operationId }), `Peer operation ${operationId}`, { pending: ['queued', 'running', 'queued_local'], advance: async () => { await hosts.laptop.peers.tick(); await hosts.mini.peers.tick(); } });
   return { exchanges, loseChecks: () => { loseChecks = true; }, oldLookup: () => { oldLookup = true; }, root, hosts, source, target, config, call, wait, offline: value => { offline = value; }, loseActivation: () => { loseActivation = true; }, loseReceipt: () => { loseReceipt = true; },
     loseAcknowledgment: () => { loseAcknowledgment = true; }, beforeAcknowledgment: fn => { beforeAcknowledgment = fn; }, legacyReceipt: value => { legacyReceipt = value; }, transport,
-    cleanup: async () => { for (const host of Object.values(hosts)) host.stopping = true; while (Object.values(hosts).some(host => host.active.size || host.peers.busy)) await new Promise(resolve => setTimeout(resolve, 20)); for (const store of stores) store.close(); rmSync(root, { recursive: true }); } };
+    cleanup: async () => { await drainEngines(Object.values(hosts)); for (const store of stores) store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('adjacent peer patch compatibility requires explicit stable protocol and request semantics', () => {
@@ -384,7 +376,7 @@ for (const legacy of [false, true]) test(`lost canonical admission queries the i
     await f.call('laptop', 'repos.pair', { repo, host: f.hosts.mini.store.hostId, requestId: randomUUID() });
     const seed = await f.call('laptop', 'repos.seed', { repo, requestId: randomUUID() }); await f.wait('laptop', seed.operationId);
     f.loseChecks(); const requestId = randomUUID(), accepted = await f.call('laptop', 'checks.run', {repo, canonical: true, requestId});
-    while (f.hosts.laptop.peers.busy) await new Promise(resolve => setTimeout(resolve, 10));
+    await waitFor(() => !f.hosts.laptop.peers.busy, 'Peer observation');
     await f.hosts.laptop.peers.tick();
     const remote = f.hosts.mini.store.byRequest(requestId); assert.ok(remote);
     assert.equal(f.hosts.laptop.store.get(accepted.operationId).result.remoteOperationId, undefined);

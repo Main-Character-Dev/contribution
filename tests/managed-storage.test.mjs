@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { waitFor, drainEngines } from './fixtures/lifecycle.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, renameSync, readFileSync, statSync, linkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,7 +14,7 @@ function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'ct-managed-cap-')), store = new Journal(join(root, 'state'));
   const engine = new Engine(store, { identity: 'fixture', node: process.execPath, cli: 'unused' }), storage = new ManagedStorage(store);
   return { root, store, engine, storage, call: (command, args = {}) => engine.dispatch({ schemaVersion: 1, command, args, cwd: root }),
-    close: () => { store.close(); rmSync(root, { recursive: true }); } };
+    close: async () => { await drainEngines(engine); store.close(); rmSync(root, { recursive: true }); } };
 }
 
 test('asynchronous admission counts fresh unknown growth and preserves replay under pressure', async () => {
@@ -25,10 +26,10 @@ test('asynchronous admission counts fresh unknown growth and preserves replay un
     assert.equal((await f.store.admitAsync(first.requestId, first.kind, first.repositoryId, first.input, 'fixture')).operationId, first.operationId);
     assert.equal((await f.storage.usageAsync()).complete, true);
     assert.equal((await f.storage.usageAsync()).admissionBlocked, true);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-test('managed census counts all retained categories, unknown files and hard links without traversing external symlinks', () => {
+test('managed census counts all retained categories, unknown files and hard links without traversing external symlinks', async () => {
   const f = fixture(); try {
     const external = join(f.root, 'external'); mkdirSync(external); writeFileSync(join(external, 'app-data'), Buffer.alloc(2 * 1024 ** 2));
     symlinkSync(external, join(f.store.directory, 'external-link'));
@@ -41,16 +42,16 @@ test('managed census counts all retained categories, unknown files and hard link
     for (const category of ['installed_payloads', 'journal_backups', 'device_builds', 'outgoing_git_bundles', 'other_private_state', 'journal']) assert(usage.categories.some(row => row.category === category));
     assert(usage.categories.find(row => row.category === 'other_private_state').logicalBytes >= 3000);
     assert.equal(statSync(join(external, 'app-data')).mtimeMs, before.mtimeMs); assert(!JSON.stringify(usage).includes(f.root)); assert(!JSON.stringify(usage).includes('private-name'));
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
-test('incomplete census is explicitly blocked and unsafe root replacement never becomes zero usage', () => {
+test('incomplete census is explicitly blocked and unsafe root replacement never becomes zero usage', async () => {
   const f = fixture(); try {
     const limited = f.storage.usage({ entries: 1, depth: 32, milliseconds: 2000 });
     assert.equal(limited.complete, false); assert.equal(limited.admissionBlocked, true); assert.equal(limited.reason, 'STORAGE_CENSUS_LIMIT');
     renameSync(f.store.directory, join(f.root, 'retained-state')); symlinkSync('retained-state', f.store.directory);
     const changed = f.storage.usage(); assert.equal(changed.complete, false); assert.equal(changed.reason, 'UNSAFE_STATE_DIRECTORY'); assert.equal(changed.admissionBlocked, true);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
 test('managed-data pressure blocks new jobs while preserving duplicate requests, pins, files and explicit policy recovery', async () => {
@@ -73,7 +74,7 @@ test('managed-data pressure blocks new jobs while preserving duplicate requests,
     assert.equal((await f.call('service.storage-policy', { ...args, requestId: randomUUID() })).error.code, 'REVISION_CONFLICT');
     assert.equal(f.store.admit(randomUUID(), 'checks', randomUUID(), {}, 'fixture').state, 'queued');
     assert.equal((await f.call('doctor')).result.managedStorage.admissionBlocked, false);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
 test('storage policy is a strict separate contract and maintenance allows only its read route', async () => {
@@ -87,7 +88,7 @@ test('storage policy is a strict separate contract and maintenance allows only i
     assert.equal((await f.call('service.storage-policy', { config: selected.policy, expectedRevision: selected.revision, requestId: randomUUID() })).error.code, 'SERVICE_MAINTENANCE');
     assert.equal((await f.call('service.storage-policy', { expectedRevision: selected.revision })).error.code, 'INVALID_USAGE');
     assert.equal(JSON.stringify(f.store.getMeta('settings')), before);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
 
 test('already queued work waits under managed pressure and resumes only after a reviewed limit increase', async () => {
@@ -99,12 +100,12 @@ test('already queued work waits under managed pressure and resumes only after a 
     const policy = f.storage.policy();
     await f.call('service.storage-policy', { config: { schemaVersion: 1, maxStateBytes: 1048576 }, expectedRevision: policy.revision, requestId: randomUUID() });
     writeFileSync(join(f.store.directory, 'large-retained-output'), Buffer.alloc(2 * 1024 ** 2));
-    await f.call('service.resume'); await new Promise(resolve => setTimeout(resolve, 60));
+    await f.call('service.resume');
+    await waitFor(() => f.engine.storageHold?.reason === 'MANAGED_STORAGE_PRESSURE', 'Queued storage hold');
     assert.equal(f.store.get(accepted.operationId).state, 'queued'); assert.equal(f.engine.active.size, 0);
     assert.equal((await f.call('service.status')).result.storageHold.reason, 'MANAGED_STORAGE_PRESSURE');
     await f.call('service.storage-policy', { config: { schemaVersion: 1, maxStateBytes: 16 * 1024 ** 2 }, expectedRevision: f.storage.policy().revision, requestId: randomUUID() });
-    const deadline = Date.now() + 5000;
-    while (f.store.get(accepted.operationId).state !== 'succeeded' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+    await waitFor(() => f.store.get(accepted.operationId).state === 'succeeded', 'Queued storage recovery');
     assert.equal(f.store.get(accepted.operationId).state, 'succeeded'); assert.equal(f.engine.storageHold, null);
-  } finally { f.close(); }
+  } finally { await f.close(); }
 });
