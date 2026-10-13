@@ -51,3 +51,19 @@ test('configuration changes during polling cannot retain readiness for the previ
     assert.equal((await f.monitor.cached(f.repo)).readiness, 'unknown');
   } finally { f.cleanup(); }
 });
+
+test('deadline scheduling has bounded parallelism and a stalled repository cannot block the next due repository', async () => {
+  const f = await setup(); try {
+    let release, live = 0, maximum = 0; const started = [];
+    const barrier = new Promise(resolve => { release = resolve; });
+    f.monitor.refresh = async repo => { started.push(repo.id); maximum = Math.max(maximum, ++live); if (repo.id === 'first') await barrier; live--; f.store.put('githubNext', repo.id, { at: 40000 }); return {}; };
+    const repos = ['first', 'second', 'third'].map(id => ({ ...f.repo, id }));
+    const pending = f.monitor.tick(repos);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(started, ['first', 'second', 'third']); assert.equal(maximum, 2);
+    release(); await pending;
+    assert.equal(f.monitor.nextDelay(repos, 10000), 30000);
+    assert.equal(f.monitor.nextDelay(repos, 39000), 1000);
+    assert.equal(f.monitor.nextDelay([], 10000), 600000);
+  } finally { f.cleanup(); }
+});

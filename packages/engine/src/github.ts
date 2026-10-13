@@ -257,6 +257,7 @@ export class GitHubMonitor {
     try { return await work; } finally { if (this.refreshing.get(repo.id) === work) this.refreshing.delete(repo.id); }
   }
   private async refreshOnce(repo: Enrolled, scope: string): Promise<Observation | null> {
+    const startedAt = Date.now();
     if (!repo.config.publication.remote || !repo.config.publication.branch) return null;
     const remote = await this.destination(repo); if (!remote) return null;
     const cached = this.store.record<Observation>('github', repo.id), selectedDestination = this.store.record<{ destination: string }>('githubSelection', repo.id);
@@ -276,7 +277,7 @@ export class GitHubMonitor {
     });
     this.store.transaction(() => { this.store.put('github', repo.id, observation); this.store.put('githubSelection', repo.id, { scope, destination: digest(remote), observedAt: observation.observedAt }); });
     const active = observation.workflows.some(run => run['status'] !== 'completed') || ['blocked', 'unknown'].includes(observation.readiness);
-    this.store.put('githubNext', repo.id, { at: observation.retryAt ? Date.parse(observation.retryAt) : Date.now() + (observation.freshness === 'stale' ? 300000 : active ? 30000 : 600000) });
+    this.store.put('githubNext', repo.id, { at: observation.retryAt ? Date.parse(observation.retryAt) : startedAt + (observation.freshness === 'stale' ? 300000 : active ? 30000 : 600000) });
     return observation;
   }
   async cached(repo: Enrolled): Promise<Observation | null> {
@@ -289,9 +290,18 @@ export class GitHubMonitor {
   }
   async tick(repos: Enrolled[]): Promise<void> {
     if (this.running) return; this.running = true;
-    try { for (const repo of repos) {
-      if ((this.store.record<{ at: number }>('githubNext', repo.id)?.at ?? 0) > Date.now()) continue;
-      try { await this.refresh(repo); } catch { this.store.put('githubNext', repo.id, { at: Date.now() + 300000 }); }
-    } } finally { this.running = false; }
+    const due = repos.filter(repo => repo.config.publication.remote && repo.config.publication.branch &&
+      (this.store.record<{ at: number }>('githubNext', repo.id)?.at ?? 0) <= Date.now())
+      .sort((a, b) => (this.store.record<{ at: number }>('githubNext', a.id)?.at ?? 0) - (this.store.record<{ at: number }>('githubNext', b.id)?.at ?? 0));
+    const worker = async (): Promise<void> => { for (let repo = due.shift(); repo; repo = due.shift()) {
+      try { if (!await this.refresh(repo)) this.store.put('githubNext', repo.id, { at: Date.now() + 600000 }); }
+      catch { this.store.put('githubNext', repo.id, { at: Date.now() + 300000 }); }
+    } };
+    try { await Promise.all([worker(), worker()]); } finally { this.running = false; }
+  }
+  nextDelay(repos: Enrolled[], time = Date.now()): number {
+    const deadlines = repos.filter(repo => repo.config.publication.remote && repo.config.publication.branch)
+      .map(repo => this.store.record<{ at: number }>('githubNext', repo.id)?.at ?? time);
+    return Math.max(1000, Math.min(600000, ...deadlines.map(at => at - time)));
   }
 }

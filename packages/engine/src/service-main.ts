@@ -42,7 +42,13 @@ try {
       } else if (!discardHint) { hintBuffer += character; if (hintBuffer.length > 128) { hintBuffer = ''; discardHint = true; } }
     }
   });
-  const monitor = setInterval(() => { if (!engine.stopping && !journal.getMeta('maintenance')) void engine.github.tick(engine.repos.all()); }, 30000);
+  let monitor: NodeJS.Timeout;
+  const observeGitHub = async (): Promise<void> => {
+    if (closing) return;
+    if (!engine.stopping && !journal.getMeta('maintenance')) await engine.github.tick(engine.repos.all());
+    if (!closing) monitor = setTimeout(() => { void observeGitHub(); }, journal.getMeta('maintenance') ? 30000 : engine.github.nextDelay(engine.repos.all()));
+  };
+  monitor = setTimeout(() => { void observeGitHub(); }, 1000);
   const peerMonitor = setInterval(() => { if (!engine.stopping && !engine.stopping && !engine.maintenance.busy) void engine.peers.tick(); }, 1500);
   const storageMonitor = setInterval(() => { if (engine.storageHold && !engine.stopping && !journal.getMeta('maintenance')) engine.kick(); }, 30000);
   const close = (): void => {
