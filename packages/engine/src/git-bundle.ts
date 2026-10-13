@@ -7,7 +7,7 @@ import { git } from './git.js';
 import type { Journal } from './journal.js';
 import { alive, processIdentity } from './process.js';
 import { privateDirectory } from './private-files.js';
-import { stableFileDigest } from './bounded-file.js';
+import { stableFileDigestAsync } from './bounded-file.js';
 
 export const MAX_GIT_BUNDLE = 256 * 1024 * 1024;
 interface FileIdentity { dev: string; ino: string; size: string; mtime: string; mode: string; uid: string }
@@ -38,7 +38,7 @@ async function produce(store: Journal, requestId: string, identity: string, sour
   let record = store.record<Production>('bundleProduction', requestId);
   requireValue(!record || record.identity === identity, 'REQUEST_ID_CONFLICT', 'The bundle producer already retained another source selection.');
   const save = (value: Production): void => store.transaction(() => { store.put('bundleProductionAttempt', value.id, value); store.put('bundleProduction', requestId, value); });
-  if (record && ['sealed', 'publishing', 'completed'].includes(record.state)) { publish(record, maxBytes, save); return; }
+  if (record && ['sealed', 'publishing', 'completed'].includes(record.state)) { await publish(record, maxBytes, save); return; }
   // Bundles produced by older payloads still undergo caller-owned ref/digest
   // validation. This producer never replaces or edits an existing artifact.
   if (!record && existsSync(path)) return;
@@ -68,7 +68,7 @@ async function produce(store: Journal, requestId: string, identity: string, sour
     requireValue(result.code === 0, result.outputLimited ? 'BUNDLE_SIZE_LIMIT' : 'BUNDLE_CREATION_FAILED',
       result.outputLimited ? 'The Git bundle exceeded its finite output limit. Source history and bounded partial output remain retained.' : 'Bundle creation did not finish. Retry the original request; retained source history remains unchanged.', 3);
     fsyncSync(fd); closeSync(fd); fd = undefined;
-    const bundle = stableFileDigest(record.partial, maxBytes, 'BUNDLE_RECOVERY_REQUIRED');
+    const bundle = await stableFileDigestAsync(record.partial, maxBytes, 'BUNDLE_RECOVERY_REQUIRED');
     requireValue(bundle.sha256 === hash.digest('hex') && digest(fileIdentity(lstatSync(record.partial, { bigint: true }))) === digest(last), 'BUNDLE_RECOVERY_REQUIRED', 'Bundle output changed before it could be sealed.');
     record = { ...record, state: 'sealed', bundle, file: fileIdentity(lstatSync(record.partial, { bigint: true })) }; save(record);
   } catch (error) {
@@ -76,16 +76,16 @@ async function produce(store: Journal, requestId: string, identity: string, sour
     if (record.state === 'writing') save({ ...record, state: 'interrupted' });
     throw error;
   }
-  publish(record, maxBytes, save);
+  await publish(record, maxBytes, save);
 }
-function publish(record: Production, maxBytes: number, save: (value: Production) => void): void {
+async function publish(record: Production, maxBytes: number, save: (value: Production) => void): Promise<void> {
   requireValue(record.file && record.bundle && realpathSync(dirname(record.path)) === record.parent, 'BUNDLE_RECOVERY_REQUIRED', 'The sealed bundle identity or directory changed.', 3);
   const check = (path: string): BigIntStats => {
     const info = lstatSync(path, { bigint: true });
     requireValue(isOwned(info) && digest(fileIdentity(info)) === digest(record.file), 'BUNDLE_RECOVERY_REQUIRED', 'Sealed output changed. Preserve it for reconciliation.', 3); return info;
   };
   if (record.state === 'completed') {
-    check(record.path); requireValue(digest(stableFileDigest(record.path, maxBytes, 'BUNDLE_RECOVERY_REQUIRED')) === digest(record.bundle), 'BUNDLE_RECOVERY_REQUIRED', 'Completed bundle bytes changed.'); return;
+    check(record.path); requireValue(digest(await stableFileDigestAsync(record.path, maxBytes, 'BUNDLE_RECOVERY_REQUIRED')) === digest(record.bundle), 'BUNDLE_RECOVERY_REQUIRED', 'Completed bundle bytes changed.'); return;
   }
   if (!existsSync(record.path)) {
     requireValue(check(record.partial).nlink === 1n, 'BUNDLE_RECOVERY_REQUIRED', 'The sealed partial is shared outside its producer.');
@@ -100,6 +100,7 @@ function publish(record: Production, maxBytes: number, save: (value: Production)
     requireValue(final.nlink === 2n && partial.nlink === 2n && final.dev === partial.dev && final.ino === partial.ino, 'BUNDLE_RECOVERY_REQUIRED', 'The publication names no longer identify one owned artifact.');
     unlinkSync(record.partial); syncDirectory(dirname(record.path));
   }
-  requireValue(digest(stableFileDigest(record.path, maxBytes, 'BUNDLE_RECOVERY_REQUIRED')) === digest(record.bundle), 'BUNDLE_RECOVERY_REQUIRED', 'Published bundle bytes changed.');
+  requireValue(digest(await stableFileDigestAsync(record.path, maxBytes, 'BUNDLE_RECOVERY_REQUIRED')) === digest(record.bundle), 'BUNDLE_RECOVERY_REQUIRED', 'Published bundle bytes changed.');
+  check(record.path);
   save({ ...record, state: 'completed' });
 }

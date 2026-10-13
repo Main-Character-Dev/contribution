@@ -15,7 +15,7 @@ import { privateDirectory } from './private-files.js';
 import { Milestones } from './notifications.js';
 import { ProjectRegistry } from './project-registry.js';
 import type { ProjectCatalog } from './project-registry.js';
-import { StableFileReader, stableFileDigest } from './bounded-file.js';
+import { StableFileReader, stableFileDigestAsync } from './bounded-file.js';
 import { createBoundedBundle, MAX_GIT_BUNDLE } from './git-bundle.js';
 import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './incoming-file.js';
 import type { IncomingFileIdentity } from './incoming-file.js';
@@ -488,7 +488,7 @@ export class Peers {
     const m = transfer.manifest, file = new StableFileReader(transfer.path, MAX_BUNDLE, 'BUNDLE_DIGEST_MISMATCH');
     try {
     this.prepareRequest(repo, from, m.requestId, { manifest: m });
-    requireValue(file.size === m.bytes && file.digest() === m.bundleDigest, 'BUNDLE_DIGEST_MISMATCH', 'The retained bundle does not match its immutable manifest.');
+    requireValue(file.size === m.bytes && await file.digestAsync() === m.bundleDigest, 'BUNDLE_DIGEST_MISMATCH', 'The retained bundle does not match its immutable manifest.');
     requireValue((await identity(repo.path)).objectFormat === m.objectFormat, 'OBJECT_FORMAT_MISMATCH', 'The peer Git object formats differ.');
     const heads = await gitText(repo.path, ['bundle', 'list-heads', transfer.path]);
     requireValue(heads === `${m.tip} ${m.sourceRef}`, 'UNEXPECTED_BUNDLE_REFS', 'A transfer must contain exactly its declared source ref.');
@@ -522,7 +522,7 @@ export class Peers {
     requireValue(!this.store.record('gitBundleEviction', `outgoing:${manifest.requestId}`), 'GIT_BUNDLE_EXPIRED', 'This completed transport copy expired. Its original request, source ref and completion receipt remain retained; do not resend it as new work.', 3);
     const file = new StableFileReader(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
     try {
-    requireValue(file.size === manifest.bytes && file.digest() === manifest.bundleDigest, 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
+    requireValue(file.size === manifest.bytes && await file.digestAsync() === manifest.bundleDigest, 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
     const begin = await this.call(hostId, 'transfer.begin', { repositoryId: manifest.repositoryId, manifest });
     if (begin['accepted']) return object(begin['accepted']);
     let offset = Number(begin['offset']); file.verify();
@@ -574,11 +574,11 @@ export class Peers {
     if (retained.code !== 0) await gitText(repo.path, ['update-ref', sourceRef, m.tip, '0'.repeat(m.tip.length)]);
     const directory = join(this.store.directory, 'transfers'); privateDirectory(directory);
     await createBoundedBundle(this.store, requestId, repo.path, sourceRef, m.tip, path);
-    const bundle = stableFileDigest(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
+    const bundle = await stableFileDigestAsync(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED');
     requireValue(!selected.bundle || digest(selected.bundle) === digest(bundle), 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed.');
     await gitText(repo.path, ['bundle', 'verify', path]);
     requireValue(await gitText(repo.path, ['bundle', 'list-heads', path]) === `${m.tip} ${m.sourceRef}`, 'HISTORY_SELECTION_CHANGED', 'The retained bundle differs from the selected history.');
-    requireValue(digest(stableFileDigest(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED')) === digest(bundle), 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed during validation.');
+    requireValue(digest(await stableFileDigestAsync(path, MAX_BUNDLE, 'LOCAL_BUNDLE_CHANGED')) === digest(bundle), 'LOCAL_BUNDLE_CHANGED', 'Retained transfer bytes changed during validation.');
     await this.repos.current(repo); currentSelection();
     this.store.put('historyCaptureIntent', requestId, { ...selected, bundle });
     const manifest: TransferManifest = { ...m, bundleDigest: bundle.sha256, bytes: bundle.bytes };

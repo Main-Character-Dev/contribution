@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import type { BigIntStats } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { requireValue } from './core.js';
+import { bulkWork } from './bulk-work.js';
 
 /** A size check followed by readFile is not a bound when another process can
  * append, replace or link the path. Read one verified descriptor with a finite
@@ -69,9 +70,18 @@ export class StableFileReader {
     for (let offset = 0; offset < this.size; offset += 1024 ** 2) hash.update(this.read(offset, Math.min(1024 ** 2, this.size - offset)));
     this.verify(); return hash.digest('hex');
   }
+  async digestAsync(signal?: AbortSignal): Promise<string> {
+    this.verify();
+    const evidence = await bulkWork<{ bytes: number; sha256: string }>({ kind: 'file-digest', path: this.path, maxBytes: this.size, code: this.code }, signal);
+    this.verify(); requireValue(evidence.bytes === this.size, this.code, 'The verified artifact size changed.', 3); return evidence.sha256;
+  }
   close(): void { closeSync(this.fd); }
 }
 export function stableFileDigest(path: string, maxBytes: number, code: string): { bytes: number; sha256: string } {
   const file = new StableFileReader(path, maxBytes, code);
   try { return { bytes: file.size, sha256: file.digest() }; } finally { file.close(); }
+}
+export async function stableFileDigestAsync(path: string, maxBytes: number, code: string, signal?: AbortSignal): Promise<{ bytes: number; sha256: string }> {
+  const file = new StableFileReader(path, maxBytes, code);
+  try { return { bytes: file.size, sha256: await file.digestAsync(signal) }; } finally { file.close(); }
 }

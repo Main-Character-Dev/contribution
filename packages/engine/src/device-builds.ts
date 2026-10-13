@@ -12,7 +12,7 @@ import { clean, identity, gitText, inputFingerprint, contained, ordinaryHistory 
 import { run, alive, processIdentity } from './process.js';
 import type { RunOptions } from './process.js';
 import { privateDirectory } from './private-files.js';
-import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
+import { appTreeDigestAsync, inspectSignedApp, artifactFileDigestAsync } from './device-artifacts.js';
 import { artifactRetention, requireArtifactAvailable } from './storage.js';
 import { OwnedWorktrees } from './owned-worktrees.js';
 import type { AdoptedHooks } from './adopted-hooks.js';
@@ -149,14 +149,14 @@ export class DeviceBuilds {
     const relativeApp = relative(realpathSync(directory), realpathSync(prepared.appPath));
     requireValue(relativeApp && !relativeApp.startsWith('../') && !isAbsolute(relativeApp), 'BUILD_OUTPUT_ESCAPED', 'The app must be inside this owned build attempt.');
     requireValue(digest(prepared.app) === digest(receipt.intent.app) && prepared.signing.eligibleDeviceRefs.includes(receipt.deviceId), 'APP_IDENTITY_MISMATCH', 'Prepared signed app does not match the selected identity/device.');
-    const beforeCopy = appTreeDigest(prepared.appPath), artifactId = id(), artifacts = join(this.store.directory, 'device-artifacts'); privateDirectory(artifacts);
+    const beforeCopy = await appTreeDigestAsync(prepared.appPath), artifactId = id(), artifacts = join(this.store.directory, 'device-artifacts'); privateDirectory(artifacts);
     const retained = join(artifacts, artifactId); mkdirSync(retained, { mode: 0o700 });
     const appPath = join(retained, build.appName), path = join(retained, 'signed-app.zip');
     cpSync(prepared.appPath, appPath, { recursive: true, errorOnExist: true, force: false });
-    requireValue(appTreeDigest(appPath) === beforeCopy, 'ARTIFACT_CHANGED', 'App bytes changed during retention.');
+    requireValue(await appTreeDigestAsync(appPath) === beforeCopy, 'ARTIFACT_CHANGED', 'App bytes changed during retention.');
     await this.driver.archive(appPath, path, options);
     const info = lstatSync(path); requireValue(info.isFile() && !info.isSymbolicLink() && info.size > 0 && info.size <= 1024 ** 3, 'ARTIFACT_TOO_LARGE', 'The signed archive must be a bounded regular file.');
-    await clean(repo.path); requireValue((await identity(repo.path)).tip === source.tip && await inputFingerprint(repo.path) === inputDigest && appTreeDigest(prepared.appPath) === beforeCopy && appTreeDigest(appPath) === beforeCopy,
+    await clean(repo.path); requireValue((await identity(repo.path)).tip === source.tip && await inputFingerprint(repo.path) === inputDigest && await appTreeDigestAsync(prepared.appPath) === beforeCopy && await appTreeDigestAsync(appPath) === beforeCopy,
       'BUILD_INPUT_CHANGED', 'Source or signed output changed during preparation; it is not an installable artifact.');
     requireValue(!signal.aborted, 'CANCELLED', 'Preparation was cancelled before publishing its retained artifact.', 130);
     const afterHost = (await this.observe(repo, receipt.deviceId, build.id)).context.host;
@@ -167,21 +167,21 @@ export class DeviceBuilds {
     const provenance: ArtifactProvenance = { schemaVersion: 1, recordMode: this.mode, artifactId, repositoryId: repo.id,
       source: { commit: source.tip!, tree: await gitText(repo.path, ['rev-parse', `${source.tip}^{tree}`]), inputDigest, configurationId: build.id, configurationDigest: digest(build), adapterId: registration.config.adapterId, adapterVersion: '1', policyRevision: registration.revision },
       build: { hostId: this.store.hostId, attemptId: op.attemptId, preparedAt: now(), macOSVersion: host.macOSVersion!, macOSBuild: host.macOSBuild!, xcodeVersion: host.xcodeVersion!, xcodeBuild: host.xcodeBuild!, engineVersion: buildIdentity.version },
-      artifact: { sha256: artifactFileDigest(path), bytes: info.size, format: 'signed_app_archive' }, app: prepared.app, signing: prepared.signing, deviceAcceptance: 'not_established_by_preparation', evidenceRefs: [evidenceRef] };
+      artifact: { sha256: await artifactFileDigestAsync(path), bytes: info.size, format: 'signed_app_archive' }, app: prepared.app, signing: prepared.signing, deviceAcceptance: 'not_established_by_preparation', evidenceRefs: [evidenceRef] };
     assertContract('artifact-provenance', provenance);
     const artifact: RetainedDeviceArtifact = { provenance, path, appPath, appDigest: beforeCopy };
     this.store.transaction(() => { this.store.put('deviceBuildEvidence', evidenceRef, { operationId: op.operationId, recordMode: this.mode, source: provenance.source, details: prepared.evidence }); this.store.put('deviceArtifact', artifactId, artifact); this.store.put('devicePreparedArtifact', op.operationId, { artifactId, policy: registration.revision, sourceTip: source.tip }); });
     output.seal(op);
     return { artifact: provenance, artifactRef: { artifactId, sha256: provenance.artifact.sha256 }, evidenceRefs: [evidenceRef] };
   }
-  reconcile(op: Operation, receipt: DeviceOperation): ObjectValue {
+  async reconcile(op: Operation, receipt: DeviceOperation): Promise<ObjectValue> {
     const retained = this.store.record<{ artifactId: string; policy: string; sourceTip: string }>('devicePreparedArtifact', op.operationId);
     requireValue(retained && retained.policy === receipt.intent.policyRevision && retained.sourceTip === receipt.intent.sourceCommit, 'NO_SEALED_ARTIFACT', 'No complete retained artifact exists for this interrupted build. Inspect its local output before requesting a new preparation.', 3);
     const artifact = this.store.record<RetainedDeviceArtifact>('deviceArtifact', retained.artifactId);
     requireValue(artifact, 'NO_SEALED_ARTIFACT', 'The retained build has no sealed artifact.', 3);
     requireArtifactAvailable(this.store, artifact);
     requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.build.attemptId === op.attemptId && artifact.provenance.repositoryId === op.repositoryId &&
-      artifactFileDigest(artifact.path) === artifact.provenance.artifact.sha256 && lstatSync(artifact.path).size === artifact.provenance.artifact.bytes && appTreeDigest(artifact.appPath) === artifact.appDigest,
+      await artifactFileDigestAsync(artifact.path) === artifact.provenance.artifact.sha256 && lstatSync(artifact.path).size === artifact.provenance.artifact.bytes && await appTreeDigestAsync(artifact.appPath) === artifact.appDigest,
       'ARTIFACT_CHANGED', 'The sealed build or materialized app changed; preserve it for inspection.');
     assertContract('artifact-provenance', artifact.provenance);
     return { artifact: artifact.provenance, artifactRef: { artifactId: retained.artifactId, sha256: artifact.provenance.artifact.sha256 }, evidenceRefs: artifact.provenance.evidenceRefs };
@@ -210,7 +210,7 @@ export class XcodeDeviceBuildDriver implements DeviceBuildDriver {
       const primary = JSON.parse(String(row['body'])) as Enrolled;
       requireValue(primary.commonDir === repo.commonDir, 'BUILD_SOURCE_UNCONFIRMED', 'The primary clone changed before Roboty preparation.', 3);
       const prepared = await new RobotyOfflineBuild(this.store, this.hooks).build(primary, repo.path, config, build, directory, deviceId, options);
-      appTreeDigest(prepared.appPath);
+      await appTreeDigestAsync(prepared.appPath);
       const signing = await inspectSignedApp(prepared.appPath, config.app, build.signingMode, [{ deviceId, udid: selection.udid }]);
       return { appPath: prepared.appPath, app: config.app, signing, evidence: prepared.evidence };
     }
@@ -224,7 +224,7 @@ export class XcodeDeviceBuildDriver implements DeviceBuildDriver {
     const result = await run(command, argv, { ...options, cwd: repo.path, timeoutMs: build.timeoutSeconds * 1000, maxBytes: 8 * 1024 * 1024, env: { DEVELOPER_DIR: build.developerDirectory } });
     requireValue(result.code === 0 && !result.cancelled && !result.timedOut, result.cancelled ? 'CANCELLED' : 'BUILD_FAILED', 'The offline build did not complete. Its retained log describes the project/signing prerequisite.', result.cancelled ? 130 : 5);
     const appPath = join(products, build.appName);
-    requireValue(existsSync(appPath), 'BUILD_OUTPUT_MISSING', 'Xcode did not produce the approved app bundle name.', 5); appTreeDigest(appPath);
+    requireValue(existsSync(appPath), 'BUILD_OUTPUT_MISSING', 'Xcode did not produce the approved app bundle name.', 5); await appTreeDigestAsync(appPath);
     const verification = await inspectSignedApp(appPath, config.app, build.signingMode, [{ deviceId, udid: selection.udid }]);
     return { appPath, app: config.app, signing: verification, evidence: { signature: 'verified', provisioning: 'verified', phoneContacted: false, projectContainerDigest: digest(build), command: 'xcodebuild', arguments: argv } };
   }

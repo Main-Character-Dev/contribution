@@ -6,12 +6,19 @@ import { run } from './process.js';
 import { digest, now, requireValue, object } from './core.js';
 import type { ObjectValue } from './core.js';
 import { readStableFile, stableFileDigest } from './bounded-file.js';
+import { stableFileDigestAsync } from './bounded-file.js';
+import { bulkWork } from './bulk-work.js';
 
 export function artifactFileDigest(path: string): string {
   const file = stableFileDigest(path, 1024 ** 3, 'ARTIFACT_CHANGED');
   requireValue(file.bytes > 0, 'ARTIFACT_INVALID', 'The signed archive must contain bounded regular file bytes.', 3);
   return file.sha256;
 }
+export async function artifactFileDigestAsync(path: string, signal?: AbortSignal): Promise<string> {
+  const file = await stableFileDigestAsync(path, 1024 ** 3, 'ARTIFACT_CHANGED', signal);
+  requireValue(file.bytes > 0, 'ARTIFACT_INVALID', 'The signed archive must contain bounded regular file bytes.', 3); return file.sha256;
+}
+export function appTreeDigestAsync(path: string, signal?: AbortSignal): Promise<string> { return bulkWork<string>({ kind: 'app-digest', path }, signal); }
 
 export async function provisioningIdentity(input: Buffer): Promise<{ expiration: string; devices: string[]; teams: string[] }> {
   const extract = async (key: string, format: 'raw' | 'json', type: string): Promise<string> => {
@@ -65,7 +72,7 @@ export function appTreeDigest(root: string): string {
   return digest(files);
 }
 export async function inspectSignedApp(appPath: string, expected: ArtifactProvenance['app'], mode: 'development' | 'ad_hoc', devices: { deviceId: string; udid: string }[], invoke: typeof run = run): Promise<ArtifactProvenance['signing']> {
-  const before = appTreeDigest(appPath);
+  const before = await appTreeDigestAsync(appPath);
   const plist = async (input: Buffer): Promise<ObjectValue> => {
     const result = await invoke('/usr/bin/plutil', ['-convert', 'json', '-o', '-', '--', '-'], { input, timeoutMs: 5000 });
     requireValue(result.code === 0, 'PLIST_UNREADABLE', 'Native artifact identity could not be decoded.', 3); return object(JSON.parse(result.stdout));
@@ -91,7 +98,7 @@ export async function inspectSignedApp(appPath: string, expected: ArtifactProven
   const permitted = object(JSON.parse(profileEntitlements.stdout));
   requireValue(entitlementsCovered(entitlements, permitted), 'ENTITLEMENTS_NOT_PROVISIONED', 'The signed app requests an entitlement not permitted by its provisioning profile.', 3);
   requireValue(digest(readStableFile(profilePath, 16 * 1024 ** 2, 'PROVISIONING_INVALID')) === digest(profile), 'PROVISIONING_CHANGED', 'Provisioning bytes changed while their identity was verified.', 3);
-  requireValue(appTreeDigest(appPath) === before, 'ARTIFACT_CHANGED', 'The signed app changed while signature and provisioning were verified.', 3);
+  requireValue(await appTreeDigestAsync(appPath) === before, 'ARTIFACT_CHANGED', 'The signed app changed while signature and provisioning were verified.', 3);
   return { mode, signatureVerified: true, provisioningVerified: true, entitlementsDigest: digest(entitlements), provisioningProfileDigest: digest(profile), eligibleDeviceRefs: eligible as [string, ...string[]], verifiedAt: now() };
 }
 

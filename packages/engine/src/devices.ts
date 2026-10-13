@@ -6,7 +6,7 @@ import type { ObjectValue } from './core.js';
 import type { Journal, Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import { identity, clean } from './git.js';
-import { artifactFileDigest } from './device-artifacts.js';
+import { artifactFileDigestAsync } from './device-artifacts.js';
 import { DeviceBuilds } from './device-builds.js';
 import { requireArtifactAvailable } from './storage.js';
 import type { DeviceBuildDriver } from './device-builds.js';
@@ -263,7 +263,7 @@ export class Devices {
       requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.repositoryId === repo.id && artifact.provenance.signing.eligibleDeviceRefs.includes(deviceId), 'ARTIFACT_UNAUTHORIZED', 'The selected signed artifact is not eligible for this app/device.', 3);
       requireArtifactAvailable(this.store, artifact);
       requireValue(this.appIdentity({ ...profile, app: artifact.provenance.app }) === this.appIdentity(profile), 'APP_IDENTITY_MISMATCH', 'In-place installation must preserve the approved bundle/team identity.');
-      requireValue(statSync(artifact.path).size === artifact.provenance.artifact.bytes && artifactFileDigest(artifact.path) === artifact.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'The immutable artifact bytes changed.');
+      requireValue(statSync(artifact.path).size === artifact.provenance.artifact.bytes && await artifactFileDigestAsync(artifact.path) === artifact.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'The immutable artifact bytes changed.');
     }
     let installed: { app: DeviceOperation['intent']['app']; deviceId: string; repositoryId: string; hostId: string; policy: string } | undefined;
     if (['launch', 'logs', 'debug', 'screenshot', 'screen_capture'].includes(action)) {
@@ -328,7 +328,7 @@ export class Devices {
           const artifact = this.store.record<RetainedDeviceArtifact>('deviceArtifact', receipt.intent.artifactRef!.artifactId);
           requireValue(artifact, 'ARTIFACT_UNAUTHORIZED', 'The selected retained artifact is unavailable.', 3);
           requireArtifactAvailable(this.store, artifact);
-          requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.artifact.sha256 === receipt.intent.artifactRef!.sha256 && statSync(artifact.path).size === artifact.provenance.artifact.bytes && artifactFileDigest(artifact.path) === receipt.intent.artifactRef!.sha256,
+          requireValue(artifact && artifact.provenance.recordMode === this.mode && artifact.provenance.artifact.sha256 === receipt.intent.artifactRef!.sha256 && statSync(artifact.path).size === artifact.provenance.artifact.bytes && await artifactFileDigestAsync(artifact.path) === receipt.intent.artifactRef!.sha256,
             'ARTIFACT_CHANGED', 'Retained artifact bytes changed before device dispatch.');
           await this.backend.verifyArtifact(artifact, receipt);
         }
@@ -408,7 +408,7 @@ export class Devices {
   async reconcile(op: Operation): Promise<ObjectValue> {
     const receipt = structuredClone(op.result['deviceOperation']) as DeviceOperation;
     if (receipt?.intent.operation === 'prepare' && receipt.operationState === 'interrupted') {
-      const result = this.builds.reconcile(op, receipt);
+      const result = await this.builds.reconcile(op, receipt);
       receipt.operationState = 'succeeded'; receipt.stage = 'reconciled'; receipt.resultCertainty = 'confirmed'; receipt.completedAt = now();
       for (const effect of receipt.effects) { effect.state = 'succeeded'; effect.certainty = 'confirmed'; effect.completedAt = now(); effect.evidenceRefs = result['evidenceRefs'] as string[]; effect.reasonCodes = []; effect.missingProof = []; }
       receipt.missingProof = []; receipt.reasonCodes = []; receipt.reconciliation.status = 'resolved'; receipt.reconciliation.lastObservedAt = now();

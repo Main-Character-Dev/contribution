@@ -8,8 +8,8 @@ import type { Journal, Operation } from './journal.js';
 import type { Enrolled } from './repositories.js';
 import type { RetainedDeviceArtifact, DeviceProfile } from './devices.js';
 import { privateDirectory } from './private-files.js';
-import { extractSignedAppArchive } from './app-archive.js';
-import { appTreeDigest, inspectSignedApp, artifactFileDigest } from './device-artifacts.js';
+import { bulkWork } from './bulk-work.js';
+import { appTreeDigestAsync, inspectSignedApp, artifactFileDigestAsync } from './device-artifacts.js';
 import { requireArtifactAvailable } from './storage.js';
 import { StableFileReader } from './bounded-file.js';
 import { incomingFileIdentity, incomingFileSize, retainIncomingChunk } from './incoming-file.js';
@@ -51,7 +51,7 @@ export class DeviceArtifactTransfers {
     const { manifest: m, path } = outbox, expected = m.provenance.artifact;
     const file = new StableFileReader(path, 1024 ** 3, 'ARTIFACT_CHANGED');
     try {
-    requireValue(file.size === expected.bytes && file.digest() === expected.sha256, 'ARTIFACT_CHANGED', 'The selected immutable archive changed before transfer.');
+    requireValue(file.size === expected.bytes && await file.digestAsync(signal) === expected.sha256, 'ARTIFACT_CHANGED', 'The selected immutable archive changed before transfer.');
     const body = { repositoryId: m.repositoryId, transferId: m.transferId };
     const check = (): void => { this.enabled(); requireValue(!signal.aborted, 'CANCELLED', 'Artifact transfer was cancelled; already received private bytes remain retained without installation authority.', 130); };
     check(); let response = await this.call(m.receiverHostId, 'artifact.begin', { ...body, manifest: m });
@@ -122,9 +122,9 @@ export class DeviceArtifactTransfers {
       return { transferId, offset: retained };
     }
     requireValue(action === 'artifact.finish', 'PEER_ACTION_UNSUPPORTED', 'Unknown artifact transfer action.', 2);
-    requireValue(incomingFileSize(incoming.path, m.provenance.artifact.bytes, incoming.fileIdentity) === m.provenance.artifact.bytes && artifactFileDigest(incoming.path) === m.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'Received bytes differ from the immutable artifact manifest.');
-    const extraction = extractSignedAppArchive(incoming.path, join(incoming.directory, `materialized-${id()}`), m.appName);
-    requireValue(appTreeDigest(extraction.appPath) === m.appDigest, 'ARTIFACT_CHANGED', 'The extracted signed app differs from its retained tree identity.');
+    requireValue(incomingFileSize(incoming.path, m.provenance.artifact.bytes, incoming.fileIdentity) === m.provenance.artifact.bytes && await artifactFileDigestAsync(incoming.path) === m.provenance.artifact.sha256, 'ARTIFACT_CHANGED', 'Received bytes differ from the immutable artifact manifest.');
+    const extraction = await bulkWork<{ appPath: string; files: number; bytes: number }>({ kind: 'app-extract', path: incoming.path, destination: join(incoming.directory, `materialized-${id()}`), appName: m.appName });
+    requireValue(await appTreeDigestAsync(extraction.appPath) === m.appDigest, 'ARTIFACT_CHANGED', 'The extracted signed app differs from its retained tree identity.');
     if (this.mode === 'observed') {
       const approved = this.store.record<{ config: DeviceProfileConfiguration }>('deviceBuildProfile', repo.id)!.config.eligibleDeviceRefs;
       const devices = m.provenance.signing.eligibleDeviceRefs.filter(deviceId => approved.includes(deviceId)).flatMap(deviceId => {
@@ -135,7 +135,8 @@ export class DeviceArtifactTransfers {
       requireValue(signing.entitlementsDigest === m.provenance.signing.entitlementsDigest && signing.provisioningProfileDigest === m.provenance.signing.provisioningProfileDigest, 'ARTIFACT_CHANGED', 'Received signing inputs differ from the retained provenance.');
     }
     // Recheck policy and archive after asynchronous native signature verification.
-    requireValue(this.profile(repo, m).revision === incoming.policy && artifactFileDigest(incoming.path) === m.provenance.artifact.sha256, 'POLICY_CHANGED', 'Artifact or destination policy changed during verification.');
+    requireValue(await artifactFileDigestAsync(incoming.path) === m.provenance.artifact.sha256 && this.profile(repo, m).revision === incoming.policy, 'POLICY_CHANGED', 'Artifact or destination policy changed during verification.');
+    incomingFileSize(incoming.path, m.provenance.artifact.bytes, incoming.fileIdentity);
     const previous = this.store.record<RetainedDeviceArtifact>('deviceArtifact', m.provenance.artifactId);
     requireValue(!previous || digest(previous.provenance) === digest(m.provenance), 'ARTIFACT_ID_CONFLICT', 'A different artifact already owns this artifact identity.');
     chmodSync(incoming.path, 0o400); sync(incoming.path);

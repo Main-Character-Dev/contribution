@@ -1,8 +1,8 @@
 import { arch } from 'node:os';
 import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appTreeDigest, inspectSignedApp } from './device-artifacts.js';
-export { appTreeDigest, provisioningIdentity } from './device-artifacts.js';
+import { appTreeDigestAsync, inspectSignedApp } from './device-artifacts.js';
+export { appTreeDigestAsync, provisioningIdentity } from './device-artifacts.js';
 import { buildIdentity } from '@contribution/contracts';
 import type { DeviceOperation, DeviceContext } from '@contribution/contracts';
 import { run } from './process.js';
@@ -97,7 +97,7 @@ export class CoreDeviceBackend implements DeviceBackend {
   }
   async verifyArtifact(artifact: RetainedDeviceArtifact, receipt: DeviceOperation): Promise<void> {
     requireValue(artifact.provenance.recordMode === 'observed' && artifact.provenance.signing.eligibleDeviceRefs.includes(receipt.deviceId), 'ARTIFACT_UNAUTHORIZED', 'Fixture or ineligible artifacts cannot be installed.');
-    requireValue(artifact.appDigest && appTreeDigest(artifact.appPath) === artifact.appDigest, 'ARTIFACT_CHANGED', 'The materialized app no longer matches its sealed build/transfer receipt.');
+    requireValue(artifact.appDigest && await appTreeDigestAsync(artifact.appPath) === artifact.appDigest, 'ARTIFACT_CHANGED', 'The materialized app no longer matches its sealed build/transfer receipt.');
     const signing = await inspectSignedApp(artifact.appPath, receipt.intent.app, artifact.provenance.signing.mode, [{ deviceId: receipt.deviceId, udid: this.selection(receipt.deviceId).udid }]);
     requireValue(signing.entitlementsDigest === artifact.provenance.signing.entitlementsDigest && signing.provisioningProfileDigest === artifact.provenance.signing.provisioningProfileDigest,
       'ENTITLEMENTS_CHANGED', 'Signed entitlements or provisioning differ from the retained artifact.');

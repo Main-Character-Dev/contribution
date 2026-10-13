@@ -5,7 +5,21 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { readStableFile, StableFileReader, stableFileDigest } from '../packages/engine/dist/bounded-file.js';
+import { readStableFile, StableFileReader, stableFileDigest, stableFileDigestAsync } from '../packages/engine/dist/bounded-file.js';
+
+test('bulk digest leaves control timers responsive and rejects mutation and cancellation', async () => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'ct-bulk-digest-')), path = join(root, 'artifact');
+  try {
+    fs.writeFileSync(path, Buffer.alloc(128 * 1024 ** 2, 7));
+    let pulses = 0; const timer = setInterval(() => pulses++, 5);
+    const expected = stableFileDigest(path, 128 * 1024 ** 2, 'CHANGED');
+    try { assert.deepEqual(await stableFileDigestAsync(path, 128 * 1024 ** 2, 'CHANGED'), expected); assert(pulses > 3); } finally { clearInterval(timer); }
+    const changed = stableFileDigestAsync(path, 128 * 1024 ** 2, 'CHANGED');
+    fs.writeFileSync(path, 'replacement'); await assert.rejects(changed, { code: 'CHANGED' });
+    const controller = new AbortController(); controller.abort();
+    await assert.rejects(stableFileDigestAsync(path, 128 * 1024 ** 2, 'CHANGED', controller.signal), { code: 'CANCELLED' });
+  } finally { fs.rmSync(root, { recursive: true }); }
+});
 
 test('large artifact digests and range reads use finite buffers and retain binary identity', t => {
   const root = fs.mkdtempSync(join(tmpdir(), 'ct-artifact-read-')), path = join(root, 'bundle');
