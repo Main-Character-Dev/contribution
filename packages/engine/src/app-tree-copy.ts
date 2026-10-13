@@ -1,4 +1,4 @@
-import { chmodSync, closeSync, constants, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs';
+import { closeSync, constants, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { appTreeDigest } from './device-artifacts.js';
@@ -27,9 +27,13 @@ export function copyAppTree(source: string, destination: string): string {
     requireValue(!info.isSymbolicLink() && info.uid === BigInt(process.getuid?.() ?? -1) && (info.isDirectory() || info.isFile() && info.nlink === 1n), 'ARTIFACT_CHANGED', 'Only owned, unshared regular app entries can be retained.', 3);
     if (info.isDirectory()) {
       mkdirSync(output, { mode: 0o700 });
-      directories.push({ path: output, stat: lstatSync(output, { bigint: true }) });
-      for (const name of readdirSync(input).sort()) copy(join(relative, name), depth + 1);
-      verifyDirectories(); chmodSync(output, Number(info.mode & 0o777n)); directories.pop();
+      const stat = lstatSync(output, { bigint: true }), fd = openSync(output, constants.O_RDONLY | constants.O_NOFOLLOW);
+      directories.push({ path: output, stat });
+      try {
+        const opened = fstatSync(fd, { bigint: true }); requireValue(opened.dev === stat.dev && opened.ino === stat.ino, 'ARTIFACT_CHANGED', 'The new app directory was replaced.', 3);
+        for (const name of readdirSync(input).sort()) copy(join(relative, name), depth + 1);
+        verifyDirectories(); fchmodSync(fd, Number(info.mode & 0o777n)); fsyncSync(fd);
+      } finally { closeSync(fd); directories.pop(); }
     } else {
       bytes += Number(info.size); requireValue(bytes <= 4 * 1024 ** 3, 'ARTIFACT_TOO_LARGE', 'The retained copy exceeds its finite byte bound.', 3);
       const file = new StableFileReader(input, Number(info.size), 'ARTIFACT_CHANGED'); let fd: number | undefined;
@@ -42,7 +46,7 @@ export function copyAppTree(source: string, destination: string): string {
           const data = file.read(offset, Math.min(1024 ** 2, file.size - offset)); let written = 0;
           while (written < data.length) { const count = writeSync(fd, data, written, data.length - written); requireValue(count > 0, 'ARTIFACT_CHANGED', 'Retained staging write made no progress.', 3); written += count; }
         }
-        file.verify(); chmodSync(output, Number(info.mode & 0o777n)); fsyncSync(fd);
+        file.verify(); fchmodSync(fd, Number(info.mode & 0o777n)); fsyncSync(fd);
       } finally { file.close(); if (fd !== undefined) closeSync(fd); }
     }
   };

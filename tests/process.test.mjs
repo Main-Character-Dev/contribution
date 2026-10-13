@@ -30,6 +30,21 @@ test('concurrent process observation shares a fresh census and leaves timers res
   } finally { clearInterval(timer); }
 });
 
+test('release waits for fresh positive census after an outage and persistent outage stays fenced', async t => {
+  const original = childProcess.execFile; let persistent = false, failures = 0;
+  t.mock.method(childProcess, 'execFile', (file, args, options, callback) => {
+    if (file === '/bin/ps' && args[0] === '-axo' && (persistent || failures < 2)) { failures++; queueMicrotask(() => callback(new Error('EAGAIN'), '', '')); return; }
+    return original(file, args, options, callback);
+  }); syncBuiltinESMExports();
+  try {
+    const recovered = await run('/bin/sleep', ['0.05'], { timeoutMs: 5000 });
+    assert.equal(failures, 2); assert.equal(recovered.code, 0); assert.equal(recovered.cleanup.released, true);
+    persistent = true;
+    const unavailable = await run('/bin/sleep', ['0.05'], { timeoutMs: 5000, terminationGraceMs: 0 });
+    assert.equal(unavailable.actualExitCode, 0); assert.equal(unavailable.code, 5); assert.equal(unavailable.cleanup.released, false); assert.equal(unavailable.cleanup.reason, 'PROCESS_RELEASE_UNCONFIRMED');
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+});
+
 test('cancellation terminates a resistant descendant after its shell leader exits', { timeout: 10000 }, async () => {
   const controller = new AbortController(); let timer;
   const result = await run('/bin/sh', ['-c', 'trap "exit 0" TERM; /bin/sh -c \'trap "" TERM; echo child-ready; while :; do sleep 1; done\' & wait'], {

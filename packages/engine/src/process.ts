@@ -113,7 +113,11 @@ export async function run(executable: string, argv: readonly string[], options: 
     const known = new Map<number, string>(), pending = { stdout: '', stderr: '' }, decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') };
     const maxBytes = options.maxBytes ?? 4 * 1024 * 1024;
     const retain = async (): Promise<ProcessMember[] | null> => {
-      const census = await sharedProcessCensus(); if (settled) return null; if (!census) { identityUnknown = true; return null; }
+      const census = await sharedProcessCensus(); if (settled) return null;
+      // An unavailable snapshot confers no absence or signal authority. A
+      // later fresh complete census may still positively confirm release;
+      // failed durable observer callbacks remain permanently unconfirmed.
+      if (!census) return null;
       let changed = false; const indexed = new Map(census.map(row => [row.pid, row]));
       // Membership is acquired only from exact ancestry while a retained parent
       // exists, or the still-owned detached group while the leader is live.

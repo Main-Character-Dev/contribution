@@ -8,6 +8,22 @@ import { createHash } from 'node:crypto';
 import { readStableFile, StableFileReader, stableFileDigest, stableFileDigestAsync } from '../packages/engine/dist/bounded-file.js';
 import { bulkWork } from '../packages/engine/dist/bulk-work.js';
 import { appTreeDigest } from '../packages/engine/dist/device-artifacts.js';
+import { copyAppTree } from '../packages/engine/dist/app-tree-copy.js';
+
+test('retained copy mode changes use the owned descriptor when a named output is replaced', t => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'ct-copy-mode-')), source = join(root, 'Fixture.app'), destination = join(root, 'retained.app'), foreign = join(root, 'foreign');
+  try {
+    fs.mkdirSync(source); fs.writeFileSync(join(source, 'run'), 'data', { mode: 0o755 }); fs.writeFileSync(foreign, 'preserve', { mode: 0o600 });
+    const original = fs.writeSync; let changed = false;
+    t.mock.method(fs, 'writeSync', (...args) => {
+      const result = original(...args);
+      if (!changed) { changed = true; fs.renameSync(join(destination, 'run'), join(destination, 'original')); fs.symlinkSync(foreign, join(destination, 'run')); }
+      return result;
+    }); syncBuiltinESMExports();
+    assert.throws(() => copyAppTree(source, destination), { code: 'ARTIFACT_LINK_UNSUPPORTED' });
+    assert.equal(fs.statSync(foreign).mode & 0o777, 0o600); assert.equal(fs.readFileSync(foreign, 'utf8'), 'preserve');
+  } finally { t.mock.restoreAll(); syncBuiltinESMExports(); fs.rmSync(root, { recursive: true }); }
+});
 
 test('off-thread app retention preserves executable modes, bounds buffers and refuses linked or existing destinations', async () => {
   const root = fs.mkdtempSync(join(tmpdir(), 'ct-bulk-copy-')), source = join(root, 'Fixture.app'), destination = join(root, 'retained.app');
