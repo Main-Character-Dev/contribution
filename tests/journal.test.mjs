@@ -6,6 +6,23 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Journal } from '../packages/engine/dist/journal.js';
 
+test('cursor log pages preserve UTF-8, avoid replaying unchanged output and bound the first snapshot', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ct-log-cursor-')), journal = new Journal(root);
+  try {
+    const op = journal.admit(randomUUID(), 'checks', randomUUID(), {}, 'fixture');
+    const text = 'a'.repeat(128 * 1024 - 2) + '🙂' + 'end'; journal.log(op, text);
+    const first = journal.logRange(op, 0), second = journal.logRange(op, first.cursor);
+    assert.equal(first.text + second.text, text); assert(!first.text.includes('�')); assert(!second.text.includes('�'));
+    const unchanged = journal.logRange(op, second.cursor); assert.equal(unchanged.text, ''); assert.equal(unchanged.cursor, second.cursor);
+    const initial = journal.logRange(op); assert(initial.reset); assert.match(initial.text, /Earlier retained output omitted/); assert(Buffer.byteLength(initial.text) < 132000);
+    assert.equal(journal.logRange(op, second.cursor + 1).reset, true);
+    const large = journal.update(op, { input: { tip: 'a'.repeat(40), diagnostics: 'secret'.repeat(100000) }, result: { executionHostId: 'host', diagnostics: 'retained'.repeat(100000) }, pinned: true });
+    const summary = journal.summaries()[0]; assert.equal(summary.pinned, true); assert.equal(summary.result.executionHostId, 'host'); assert.equal(summary.result.remoteOperationId, undefined); assert.equal(summary.input.tip, large.input.tip);
+    assert(JSON.stringify(summary).length < 2000); assert.equal(journal.get(op.operationId).input.diagnostics, large.input.diagnostics);
+    assert.equal(journal.eventHead(), journal.events().at(-1).sequence);
+  } finally { journal.close(); rmSync(root, { recursive: true }); }
+});
+
 test('filtered event replay reaches a target beyond a full page of unrelated events', () => {
   const root = mkdtempSync(join(tmpdir(), 'ct-journal-')), journal = new Journal(root);
   try {

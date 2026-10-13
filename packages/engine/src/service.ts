@@ -60,8 +60,8 @@ const allowed: Record<string, string[]> = {
   'repos.relocate': ['repo', 'path'], 'repos.remove': ['repo'], 'status': ['repo', 'refresh'],
   'push': ['repo', 'preview', 'expectedTip', 'scopeToken', 'requestId'], 'submit': ['repo', 'sourcePath', 'sourceTip', 'base', 'requestId', 'metadata', 'resume'],
   'checks.run': ['repo', 'sourcePath', 'canonical', 'checkId', 'fresh', 'requestId'],
-  'runs.list': ['repo'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
-  'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId', 'resumeNative', 'preview', 'scopeToken', 'requestId'], 'logs': ['operationId', 'tail'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
+  'runs.list': ['repo', 'summary'], 'runs.get': ['operationId'], 'runs.cancel': ['operationId'], 'runs.pin': ['operationId'], 'runs.unpin': ['operationId'],
+  'runs.events': ['operationId', 'after'], 'runs.reconcile': ['operationId', 'resumeNative', 'preview', 'scopeToken', 'requestId'], 'logs': ['operationId', 'tail', 'after', 'cursor', 'attemptId'], 'repair-context': ['operationId'], 'codex.open': ['repo', 'operationId'],
   'settings.get': [], 'settings.apply': ['config', 'expectedRevision', 'requestId'], 'hosts.list': [], 'hosts.reconcile': ['host'], 'hosts.check': ['host'], 'hosts.retry': ['host'], 'hosts.diagnose': ['host'], 'hosts.pair': ['sshAlias'], 'hosts.sync': ['host'], 'peer.exchange': ['envelope'],
   'hook.pre-push': ['repo', 'operationId', 'hookToken', 'remote', 'url', 'stdin', 'caller'], 'update.check': [], 'update.apply': ['whenIdle'],
   'hook.borrow': ['repo', 'operationId', 'hookToken', 'caller'], 'hook.release-borrow': ['repo', 'operationId', 'hookToken', 'caller', 'borrowToken'],
@@ -411,7 +411,7 @@ export class Engine {
       }
       if (command === 'version') return completed({ ...buildIdentity, interfaceVersion: buildIdentity.version, engineVersion: buildIdentity.version, supportedSchemaVersions: [1], compatibility: 'compatible', payload: this.payload.identity, manifestDigest: this.payload.manifestDigest ?? null, distribution: this.payload.distribution, service: 'running' });
       if (command === 'service.status') return completed({ state: this.stopping ? 'stopping' : 'running', paused: this.store.getMeta('paused') ?? false,
-        resources: this.resources.counts(),
+        resources: this.resources.counts(), eventCursor: this.store.eventHead(),
         backendSessions: BackendSessions.status(this.store),
         storageHold: this.storageHold, power: this.power.status(),
         connectivityHints: this.store.getMeta('connectivityHints') ?? { status: 'unknown', observedAt: null }, connectivityHintReceipt: this.store.getMeta('connectivityHintReceipt') ?? null, maintenance: this.store.getMeta('maintenance') ?? false, maintenanceWindow: this.maintenance.current() ?? null,
@@ -528,7 +528,7 @@ export class Engine {
         if (!this.store.byRequest(requestId)) await this.store.assertAdmissionStorageAsync();
         const repo = await this.repos.create(string(args['path'], 'path'), requestId); return await this.admit(requestId, 'initialize', repo.id, { policy: repo.revision });
       }
-      if (command === 'runs.list') return completed({ operations: this.store.list().filter(op => !args['repo'] || op.repositoryId === args['repo']) });
+      if (command === 'runs.list') return completed({ operations: args['summary'] === true ? this.store.summaries(typeof args['repo'] === 'string' ? args['repo'] : undefined) : this.store.list().filter(op => !args['repo'] || op.repositoryId === args['repo']) });
       if (command === 'runs.events') return completed({ events: this.store.events(Math.max(0, Number(args['after'] ?? 0)), typeof args['operationId'] === 'string' ? args['operationId'] : undefined) });
       if (['runs.get', 'runs.cancel', 'runs.pin', 'runs.unpin', 'runs.reconcile', 'logs', 'repair-context'].includes(command)) {
         let op = this.store.get(string(args['operationId'], 'operationId'));
@@ -557,7 +557,7 @@ export class Engine {
           this.kick(); op = this.store.get(op.operationId);
         }
         if (command === 'logs') {
-          return completed({ operationId: op.operationId, attemptId: op.attemptId, ...(op.result['remoteOperationId'] ? this.store.remoteLogs(op, Number(args['tail'] ?? 200)) : { text: this.store.logs(op, Number(args['tail'] ?? 200)) }) });
+          return completed({ operationId: op.operationId, attemptId: op.attemptId, ...(op.result['remoteOperationId'] ? { ...this.store.remoteLogs(op, Number(args['tail'] ?? 200)), reset: true } : args['cursor'] === true ? this.store.logRange(op, args['after'] === undefined || args['attemptId'] !== op.attemptId ? undefined : Number(args['after'])) : { text: this.store.logs(op, Number(args['tail'] ?? 200)) }) });
         }
         if (command === 'repair-context') return completed({ operation: op, log: this.store.logs(op, 100), boundaries: ['Repair only the recorded failure.', 'Preserve unrelated work.', 'Publication needs a new explicit preview when scope changes.'] });
         if (command === 'runs.pin' || command === 'runs.unpin') return this.store.response(this.store.update(op, { pinned: command === 'runs.pin' }));

@@ -1,5 +1,5 @@
 import { DatabaseSync, backup } from 'node:sqlite';
-import { chmodSync, readFileSync, appendFileSync, openSync, closeSync, fsyncSync, statSync, existsSync, lstatSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, readSync, fstatSync, constants, appendFileSync, openSync, closeSync, fsyncSync, statSync, existsSync, lstatSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertContract } from '@contribution/contracts';
 import type { Response } from '@contribution/contracts';
@@ -158,6 +158,21 @@ export class Journal {
     return row ? JSON.parse(String(row['body'])) as Operation : undefined;
   }
   list(limit = 200): Operation[] { return this.db.prepare('SELECT body FROM operations ORDER BY sequence DESC LIMIT ?').all(limit).map(row => JSON.parse(String(row['body'])) as Operation); }
+  summaries(repositoryId?: string): ObjectValue[] {
+    const fields = ['operationId','requestId','repositoryId','kind','state','stage','createdAt','attemptId','pinned','effectDispatched'];
+    const project = (key: string): string => `'${key}',json_extract(body,'$.${key}')`;
+    const sql = `SELECT json_object(${fields.map(project).join(',')},
+      'input',json_object(${['tip','base','sourceTip','expectedTip','destinationHostId'].map(key => `'${key}',json_extract(body,'$.input.${key}')`).join(',')}),
+      'result',json_object(${['executionHostId','canonicalHostId','remoteOperationId'].map(key => `'${key}',json_extract(body,'$.result.${key}')`).join(',')}),
+      'error',CASE WHEN json_type(body,'$.error')='object' THEN json_object('code',json_extract(body,'$.error.code'),'message',json_extract(body,'$.error.message')) ELSE NULL END) AS body
+      FROM operations ${repositoryId ? 'WHERE repository_id=?' : ''} ORDER BY sequence DESC LIMIT 200`;
+    return (repositoryId ? this.db.prepare(sql).all(repositoryId) : this.db.prepare(sql).all()).map(row => {
+      const value = JSON.parse(String(row['body'])) as ObjectValue;
+      for (const key of ['input', 'result']) { const selected = value[key] as ObjectValue; value[key] = Object.fromEntries(Object.entries(selected).filter(([, item]) => item !== null)); }
+      value['pinned'] = value['pinned'] === 1; value['effectDispatched'] = value['effectDispatched'] === 1; return value;
+    });
+  }
+  eventHead(): number { return Number(this.db.prepare('SELECT COALESCE(MAX(sequence),0) AS n FROM events').get()?.['n']); }
   peerEvidenceProtected(op: Operation): boolean { return peerEvidenceProtected(this, op); }
   queue(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state='queued' ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
   unsettled(): Operation[] { return this.db.prepare("SELECT body FROM operations WHERE state NOT IN ('succeeded','failed','cancelled','interrupted') ORDER BY sequence").all().map(row => JSON.parse(String(row['body'])) as Operation); }
@@ -201,6 +216,25 @@ export class Journal {
     requireValue(Number.isInteger(tail) && tail > 0 && tail <= 10000, 'INVALID_LOG_RANGE', 'Request between 1 and 10000 retained lines.', 2);
     if (!existsSync(this.logPath(op)) && this.record('logEviction', op.attemptId)) throw new Fault('LOG_EXPIRED', 'Raw output expired under retention. Its operation summary and replay identity remain retained.', 3);
     try { return readFileSync(this.logPath(op), 'utf8').split('\n').slice(-tail).join('\n'); } catch { throw new Fault('LOG_UNAVAILABLE', 'The retained log is unavailable on this host.', 3); }
+  }
+  logRange(op: Operation, after?: number): ObjectValue {
+    requireValue(after === undefined || Number.isSafeInteger(after) && after >= 0, 'INVALID_LOG_RANGE', 'Log cursor must be a nonnegative byte offset.', 2);
+    const path = this.logPath(op);
+    if (!existsSync(path) && this.record('logEviction', op.attemptId)) throw new Fault('LOG_EXPIRED', 'Raw output expired under retention.', 3);
+    const named = lstatSync(path), fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = fstatSync(fd);
+      requireValue(info.isFile() && info.uid === process.getuid?.() && info.nlink === 1 && info.dev === named.dev && info.ino === named.ino, 'LOG_UNAVAILABLE', 'The retained log identity changed.', 3);
+      const reset = after === undefined || after > info.size, start = reset ? Math.max(0, info.size - 128 * 1024) : after!;
+      const bytes = Buffer.alloc(Math.min(128 * 1024, info.size - start)); let read = 0;
+      while (read < bytes.length) { const count = readSync(fd, bytes, read, bytes.length - read, start + read); if (!count) break; read += count; }
+      let end = read;
+      // Do not split a UTF-8 character between cursor pages.
+      if (start + end < info.size && end) { const next = Buffer.alloc(1); readSync(fd, next, 0, 1, start + end); if ((next[0]! & 0xc0) === 0x80) { while (end > 0 && (bytes[end - 1]! & 0xc0) === 0x80) end--; if (end > 0) end--; } }
+      let begin = 0; if (reset) while (begin < end && (bytes[begin]! & 0xc0) === 0x80) begin++;
+      const current = lstatSync(path); requireValue(current.dev === info.dev && current.ino === info.ino && current.size >= start + end, 'LOG_UNAVAILABLE', 'The retained log changed during range inspection.', 3);
+      return { text: (reset && start > 0 ? '[Earlier retained output omitted]\n' : '') + bytes.subarray(begin, end).toString('utf8'), cursor: start + end, reset, more: start + end < info.size };
+    } finally { closeSync(fd); }
   }
   retainRemoteLog(op: Operation, hostId: string, text: string, state: 'available' | 'expired' | 'unavailable'): void {
     requireValue(typeof op.result['remoteOperationId'] === 'string' && [op.result['canonicalHostId'], op.result['executionHostId']].includes(hostId),

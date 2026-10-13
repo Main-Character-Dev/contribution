@@ -7,6 +7,12 @@ import ContributionPlatform
     let client = ServiceClient()
     let notifications = LocalNotifications()
     let updater = ReleaseUpdater()
+    @ObservationIgnored private var eventCursor: Decimal = 0
+    @ObservationIgnored private var lastReconcile = Date.distantPast
+    @ObservationIgnored private var logCursor: Decimal?
+    @ObservationIgnored private var logAttempt = ""
+    @ObservationIgnored private var monitorBusy = false
+    var windowVisible = false
     @ObservationIgnored private var monitoring: Task<Void, Never>?
     @ObservationIgnored private var selectionGeneration = UUID()
     @ObservationIgnored private var loadedOperation: String?
@@ -38,10 +44,14 @@ import ContributionPlatform
         guard monitoring == nil else { return }
         monitoring = Task { [weak self] in
             await self?.updater.reconcileInstalledUpdate()
+            var lastNotificationPoll = Date.distantPast
             while !Task.isCancelled {
                 guard let self else { return }
-                await refresh(); await notifications.poll(client: client)
-                try? await Task.sleep(for: .seconds(5))
+                let visible = windowVisible && NSApplication.shared.isActive
+                if Date().timeIntervalSince(lastReconcile) >= (visible ? 15 : 30) { await refresh() }
+                else if visible { await monitorChanges() }
+                if Date().timeIntervalSince(lastNotificationPoll) >= 5 { await notifications.poll(client: client); lastNotificationPoll = Date() }
+                try? await Task.sleep(for: visible ? .milliseconds(500) : .seconds(5))
             }
         }
     }
@@ -55,32 +65,67 @@ import ContributionPlatform
     }
     func refresh() async {
         guard !busy else { return }; busy = true; defer { busy = false }
-        if let response = await call("service.status") {
+        async let statusReply = call("service.status")
+        async let reposReply = call("repos.list")
+        async let runsReply = call("runs.list", ["summary": .bool(true)])
+        async let hostsReply = call("hosts.list")
+        if let response = await statusReply {
             let result = response.fields["result"]?.object ?? [:]; service = result["state"]?.text ?? "Unknown"; paused = result["paused"]?.boolean ?? false
             if case .object = result["storageHold"] { service = "Storage needs attention — open Settings → Storage" }
+            if case .number(let cursor) = result["eventCursor"] { eventCursor = cursor }
             localHostID = result["hostId"]?.text ?? ""; devicesEnabled = result["remoteDevicesEnabled"]?.boolean ?? false
         } else { service = "Service unavailable"; return }
-        if let response = await call("repos.list") {
+        if let response = await reposReply {
             repositories = response.fields["result"]?.object["repositories"]?.array ?? []
             sharedProjects = (response.fields["result"]?.object["peerProjects"]?.array ?? []).map(SharedProject.init)
                 .filter { $0.fields.object["state"]?.text != "mapped" }
         }
-        if let response = await call("runs.list") { operations = response.fields["result"]?.object["operations"]?.array ?? [] }
-        if let response = await call("hosts.list") { hosts = response.fields["result"]?.object["hosts"]?.array ?? [] }
+        if let response = await runsReply { operations = response.fields["result"]?.object["operations"]?.array ?? [] }
+        if let response = await hostsReply { hosts = response.fields["result"]?.object["hosts"]?.array ?? [] }
         do { pendingRequest = try NativeRequestJournal(directory: client.directory).pending() } catch { self.error = error.localizedDescription }
-        await loadSelection(); await loadRepository()
+        if loadedOperation != selectedOperation || !selectedTerminal { await loadSelection() }
+        await loadRepository(); lastReconcile = Date()
+    }
+    private var selectedTerminal: Bool { ["succeeded", "failed", "cancelled", "interrupted"].contains(detail.object["operationState"]?.text ?? "") }
+    private func monitorChanges() async {
+        guard !busy && !monitorBusy else { return }; monitorBusy = true; defer { monitorBusy = false }
+        if let response = await call("runs.events", ["after": .number(eventCursor)]) {
+            let events = response.fields["result"]?.object["events"]?.array ?? []
+            if let last = events.last, case .number(let cursor) = last.object["sequence"] { eventCursor = cursor }
+            if !events.isEmpty {
+                if let rows = await call("runs.list", ["summary": .bool(true)]) { operations = rows.fields["result"]?.object["operations"]?.array ?? [] }
+                if events.contains(where: { $0.object["operationId"]?.text == selectedOperation }) { await loadSelection() }
+                if events.contains(where: { $0.object["repositoryId"]?.text == selectedRepository }) { await loadRepository() }
+            }
+            // An overflowed cursor page is reconciled by the periodic snapshot;
+            // the next tick continues from the exact final sequence.
+        }
+        if selectedOperation != nil && !selectedTerminal { await loadSelectedLog(generation: selectionGeneration) }
+    }
+    private func loadSelectedLog(generation: UUID) async {
+        guard let selectedOperation else { return }
+        var args: [String: JSONValue] = ["operationId": .string(selectedOperation), "cursor": .bool(true), "tail": .number(2000)]
+        if let logCursor { args["after"] = .number(logCursor); args["attemptId"] = .string(logAttempt) }
+        let response = await call("logs", args, accepting: { self.selectionGeneration == generation && self.selectedOperation == selectedOperation })
+        guard !Task.isCancelled, selectionGeneration == generation, self.selectedOperation == selectedOperation, let fields = response?.fields["result"]?.object else { return }
+        let attempt = fields["attemptId"]?.text ?? "", text = fields["text"]?.text ?? ""
+        if fields["reset"]?.boolean == true || attempt != logAttempt { log = text } else { log += text }
+        // Bound retained UI text, even if the engine log is eight MiB.
+        let lines = log.split(separator: "\n", omittingEmptySubsequences: false)
+        if lines.count > 2000 { log = lines.suffix(2000).joined(separator: "\n") }
+        if log.utf8.count > 256 * 1024 { log = "[Earlier retained output omitted]\n" + log.suffix(64 * 1024) }
+        logAttempt = attempt; if case .number(let cursor) = fields["cursor"] { logCursor = cursor } else { logCursor = nil }
     }
     func loadSelection() async {
         let generation = UUID(); selectionGeneration = generation
-        guard let selectedOperation else { detail = .null; log = ""; loadedOperation = nil; return }
-        if loadedOperation != selectedOperation { detail = .null; log = ""; loadedOperation = selectedOperation }
+        guard let selectedOperation else { detail = .null; log = ""; logCursor = nil; logAttempt = ""; loadedOperation = nil; return }
+        if loadedOperation != selectedOperation { detail = .null; log = ""; logCursor = nil; logAttempt = ""; loadedOperation = selectedOperation }
         let response = await call("runs.get", ["operationId": .string(selectedOperation)], accepting: { self.selectionGeneration == generation && self.selectedOperation == selectedOperation })
         guard !Task.isCancelled, selectionGeneration == generation, self.selectedOperation == selectedOperation else { return }
         if let response { detail = .object(response.fields) }
-        let logs = await call("logs", ["operationId": .string(selectedOperation), "tail": .number(2000)], accepting: { self.selectionGeneration == generation && self.selectedOperation == selectedOperation })
-        guard !Task.isCancelled, selectionGeneration == generation, self.selectedOperation == selectedOperation else { return }
-        if let logs { log = logs.fields["result"]?.object["text"]?.text ?? "" }
+        await loadSelectedLog(generation: generation)
     }
+
     func hostLabel(_ id: String) -> String {
         if id == localHostID { return "This Mac" }
         let host = hosts.first { $0.object["hostId"]?.text == id }
@@ -148,7 +193,7 @@ import ContributionPlatform
     }
     func operationAction(_ action: String) async {
         guard let selectedOperation else { return }
-        _ = await call(action, ["operationId": .string(selectedOperation)]); await refresh()
+        _ = await call(action, ["operationId": .string(selectedOperation)]); await loadSelection(); await refresh()
     }
 }
 struct PublicationPreview: Identifiable {
@@ -245,7 +290,9 @@ private struct WorkspaceView: View {
                     .padding(10).background(.orange.opacity(0.12)).accessibilityIdentifier("contribution.error")
             }
         }
+        .onDisappear { workspace.windowVisible = false }
         .onAppear {
+            workspace.windowVisible = true
             workspace.startMonitoring()
             workspace.notifications.onOpen = { route in
                 if let response = await workspace.call("notifications.context", route.mapValues(JSONValue.string)) {
