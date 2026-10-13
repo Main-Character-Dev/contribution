@@ -28,11 +28,15 @@ test('stopped history cannot fence admission, replay, live ownership or paged in
     observe.mock.restore();
     const liveQueries = selectedQueries.filter(sql => sql.includes("$.state") && sql.includes("FROM records"));
     assert.equal(liveQueries.length, 2);
-    for (const sql of liveQueries) assert.match(JSON.stringify(prepare('EXPLAIN QUERY PLAN ' + sql).all()), /USING INDEX resource_live/);
+    for (const sql of liveQueries) assert.match(JSON.stringify(prepare('EXPLAIN QUERY PLAN ' + sql).all()), /USING INDEX resource_ownership/);
     const fresh = lifecycle.begin(op, { ...input, requestId: randomUUID() });
     assert.deepEqual(lifecycle.blockers(), [fresh]);
     assert.equal(ResourceLifecycle.pending(store, op.repositoryId), true);
     assert.throws(() => lifecycle.begin(op, { ...input, requestId: randomUUID() }), { code: 'RESOURCE_BUSY' });
+    const malformed = { ...stopped, resourceId: randomUUID(), requestId: randomUUID() }; delete malformed.state;
+    store.put('resource', malformed.resourceId, malformed);
+    assert.throws(() => lifecycle.live());
+    assert.throws(() => store.admit(randomUUID(), 'checks', op.repositoryId, {}, 'fixture'), { code: 'RESOURCE_RECONCILIATION_REQUIRED' });
     const plans = ["SELECT body FROM operations WHERE state='queued' ORDER BY sequence", "SELECT body FROM operations WHERE state NOT IN ('succeeded','failed','cancelled','interrupted') ORDER BY sequence"];
     for (const sql of plans) assert.match(JSON.stringify(store.db.prepare('EXPLAIN QUERY PLAN ' + sql).all()), /operations_(queued|unsettled)/);
   } finally { store.close(); rmSync(root, { recursive: true }); }

@@ -66,7 +66,7 @@ export class ResourceLifecycle {
   }
   /** Live ownership stays bounded independently of retained, stopped history. */
   live(repositoryId?: string): Resource[] {
-    const sql = "SELECT body FROM records INDEXED BY resource_live WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped'";
+    const sql = "SELECT body FROM records INDEXED BY resource_ownership WHERE namespace='resource' AND json_extract(body,'$.state') IS NOT 'stopped'";
     const rows = (repositoryId === undefined ? this.store.db.prepare(sql + ' LIMIT 10001').all() :
       this.store.db.prepare(sql + " AND json_extract(body,'$.repositoryId')=? LIMIT 10001").all(repositoryId)).map(row => JSON.parse(String(row['body'])) as Resource);
     requireValue(rows.length <= 10000, 'RESOURCE_CENSUS_LIMIT', 'Live resource census exceeds its bounded inspection limit.', 3);
@@ -74,7 +74,7 @@ export class ResourceLifecycle {
   }
   counts(): { total: number; unresolved: number } {
     const total = Number(this.store.db.prepare("SELECT count(*) AS n FROM records WHERE namespace='resource'").get()?.['n']);
-    const unresolved = Number(this.store.db.prepare("SELECT count(*) AS n FROM records INDEXED BY resource_live WHERE namespace='resource' AND json_extract(body,'$.state')!='stopped' AND json_extract(body,'$.state')='unresolved'").get()?.['n']);
+    const unresolved = Number(this.store.db.prepare("SELECT count(*) AS n FROM records INDEXED BY resource_ownership WHERE namespace='resource' AND json_extract(body,'$.state') IS NOT 'stopped' AND json_extract(body,'$.state')='unresolved'").get()?.['n']);
     return { total, unresolved };
   }
   history(after = '', limit = 200): Resource[] {
