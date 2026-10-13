@@ -46,6 +46,10 @@ The development CLI is not globally installed. Help and version work without the
 Node tests preload `tests/fixtures/environment.mjs` to isolate Git configuration,
 identity and templates, including real engine subprocesses. Focused Node runs use
 `.tools/node/bin/node --import ./tests/fixtures/environment.mjs --test tests/NAME.test.mjs`.
+The default suite runs two test files concurrently: its many real process owners
+share macOS process inspection, and heavy four-file runs produced transient
+unconfirmed process censuses after otherwise successful Git exits. All ownership
+checks and test cases remain enabled.
 Uninstalled CLI fixtures always select disposable service state. Shared fixture
 lifecycle helpers retain process exit, bound readiness/drain waits and observe
 cleanup conditions before closing journals. These tests require normal macOS

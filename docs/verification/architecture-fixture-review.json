@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-12",
+  "status": "automated_review_verification_passed_installed_qualification_not_run",
+  "baseline": "000d45a00fe808a6353d5b152451468e6986b70e",
+  "integrationBase": "2d3c2a57d2da5c30d0a4b9ba8cf8ca7aaac1476b",
+  "runtimeCommit": "c49b093643d40cc5805810f73e8932bc8c7c4bb4",
+  "fixtureFollowupCommit": "00e907a085c2d104199637c4a55f45b4482b83a0",
+  "scope": "Owner-approved architecture, fixture reliability, obsolete test/client removal and duplicated abstraction consolidation",
+  "recommendations": [
+    {
+      "id": "R1",
+      "result": "implemented",
+      "change": "Disposable uninstalled CLI state and isolated Git config, identity, signing and templates across engine subprocesses."
+    },
+    {
+      "id": "R2",
+      "result": "implemented",
+      "change": "Shared retained child exit, idempotent bounded stop, readiness/operation observation and engine/background drain before journal removal; fixed sleeps and unbounded cleanup waits removed from affected fixtures."
+    },
+    {
+      "id": "R3",
+      "result": "implemented",
+      "change": "Removed unused S0 CLI and Swift DevelopmentClient, its obsolete parity test and an exact read-call count assertion; current schema and real native IPC coverage preserved."
+    },
+    {
+      "id": "R4",
+      "result": "implemented",
+      "change": "Resource/storage/power command handlers own fields, maintenance predicates, execution and retained failures; Engine retains common gates and scheduling."
+    },
+    {
+      "id": "R5",
+      "result": "implemented",
+      "change": "Shared reviewed-policy transaction mechanics preserve historical digest inputs, namespaces, extra resource collision guard and replay ordering."
+    },
+    {
+      "id": "R6",
+      "result": "implemented",
+      "change": "Small and large immutable reads share owned-descriptor identity verification, with distinct byte caps, buffering and exit semantics preserved."
+    },
+    {
+      "id": "R7",
+      "result": "implemented",
+      "change": "All seven secret-scanner boundary tests are included in check with an explicit Gitleaks prerequisite."
+    }
+  ],
+  "investigation": {
+    "fourFileRun": {
+      "nodeTests": 487,
+      "passed": 482,
+      "failed": 5
+    },
+    "resolution": "Reduce default test-file concurrency from four to two without bypassing ownership checks; focused restart cleanup repairs drain every owner.",
+    "observedFailure": "Detailed failures reported Git actualExitCode 0 with PROCESS_IDENTITY_UNCONFIRMED cleanup; ownership checks conservatively refused completion.",
+    "tradeoff": "Reduced test-file concurrency preserves every case and ownership check. The final complete Node run took 920668 ms (about 15.3 minutes)."
+  },
+  "checks": [
+    {
+      "command": "PATH=/opt/homebrew/bin:$PATH bash scripts/dev.sh check",
+      "result": "passed",
+      "nodeTests": 487,
+      "scannerTests": 7,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "nodeDurationMs": 920668,
+      "scope": "Complete final suite including all affected fixtures, 22 generated identity/client drift checks, strict package builds, canonical contracts, expected type failures, foundation and documentation checks"
+    },
+    {
+      "command": "PATH=/opt/homebrew/bin:$PATH bash scripts/dev.sh native:test",
+      "result": "passed",
+      "xctestMethods": 26,
+      "failed": 0,
+      "scope": "Final dependencies and source, 9 positive and 11 negative canonical envelope projections; current native client tests"
+    },
+    {
+      "command": "PATH=/opt/homebrew/bin:$PATH bash scripts/dev.sh native:build",
+      "result": "passed",
+      "scope": "Unsigned arm64 macOS application, pinned Sparkle runtime/license and version inspection"
+    },
+    {
+      "command": "PATH=/opt/homebrew/bin:$PATH bash scripts/check-native-client.sh",
+      "result": "passed",
+      "scope": "Compiled current Swift client against disposable immutable worker payload, authenticated IPC, shared CLI, admission and retained results"
+    },
+    {
+      "command": ".tools/node/bin/node --import ./tests/fixtures/environment.mjs --test tests/managed-storage.test.mjs tests/fixture-lifecycle.test.mjs",
+      "result": "passed",
+      "nodeTests": 9,
+      "failed": 0,
+      "scope": "Signal/natural exit cleanup, bounded forced stop, background drain, hostile Git configuration and managed storage"
+    },
+    {
+      "command": ".tools/node/bin/node --import ./tests/fixtures/environment.mjs --test --test-name-pattern='concurrent native admissions|lost external gate client|receipt delivery' tests/adopted-hooks.test.mjs tests/adopted-landing.test.mjs",
+      "result": "passed",
+      "nodeTests": 3,
+      "failed": 0,
+      "scope": "Final restart fixture ownership and external gate observation repair; also included in the final complete suite"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "notRun": [
+    "installed launchd or live enrollment",
+    "signed release/update and publication",
+    "physical MacBook Pro/Mini, VPN and iPhone acceptance"
+  ],
+  "contracts": {
+    "schemaChanges": false,
+    "persistedPolicyFormatsChanged": false,
+    "acceptancePromoted": false
+  },
+  "testedRunner": {
+    "node": "24.21.0",
+    "pnpm": "12.11.2",
+    "typescript": "6.0.3",
+    "gitleaks": "8.30.1",
+    "testFileConcurrency": 2,
+    "packageManifestSha256": "d84658c713c81da30aa597d969df826a915a4103dd600de86486f214f3ad1bcf"
+  }
+}
