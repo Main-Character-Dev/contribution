@@ -152,8 +152,8 @@ private struct RepositoryOverview: View {
                 }
                 Button("Refresh remote status") { Task { await workspace.loadRepository(refresh: true) } }.disabled(workspace.repositoryLoading)
                 Button("Run local checks") {
-                    guard let id = repository.object["id"]?.text else { return }
-                    Task { await workspace.submit("checks.run", args: ["repo": .string(id)]) }
+                    guard let id = repository.object["id"]?.text, let path = repository.object["path"]?.text, !path.isEmpty else { return }
+                    Task { await workspace.submit("checks.run", args: ["repo": .string(id), "sourcePath": .string(path)]) }
                 }.disabled(workspace.sending || workspace.pendingRequest != nil)
             }.controlSize(.small)
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
