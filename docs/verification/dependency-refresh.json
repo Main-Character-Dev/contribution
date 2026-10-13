@@ -1,0 +1,95 @@
+{
+  "date": "2026-10-12",
+  "timezone": "America/New_York",
+  "sourceBase": "000d45a00fe808a6353d5b152451468e6986b70e",
+  "branch": "codex/dependency-refresh",
+  "scope": "Contribution dependency and GitHub maintenance; local source only; no installation, publication or physical acceptance",
+  "upgrades": {
+    "pnpm": "11.23.0 -> 12.11.2",
+    "typescript": "5.9.3 -> 6.0.3",
+    "@types/node": "24.10.1 -> 24.19.2",
+    "json-schema-to-typescript": "15.0.4 -> 16.0.0",
+    "ajv": "8.17.1 -> 8.20.0",
+    "Go": "1.26.5 -> 1.27.2",
+    "go-ios": "273d3e06e803fb6ee95e4df914d8be82c5ee4bb0 -> ca2c56d2c294ff702cadf4821edd30b069d3a264"
+  },
+  "unchangedCurrent": {
+    "Node24": "24.21.0",
+    "Sparkle": "2.10.0",
+    "Gitleaks": "8.30.1",
+    "actions/checkout": "v7.0.1 / 3d3c42e5aac5ba805825da76410c181273ba90b1",
+    "Xcode": "27.0 / 27A266a; newer upstream entries are prereleases"
+  },
+  "github": {
+    "openDependabotAlerts": 0,
+    "openPullRequests": 0,
+    "automaticSecurityFixesEnabled": true,
+    "weeklyVersionUpdateConfig": "npm and github-actions; activation awaits authorized publication",
+    "pnpm12DependabotSupport": "unqualified; official support lists pnpm through v10"
+  },
+  "heldVersions": {
+    "typescript": "7.0.2 requires migration away from stable compiler API in regression fixtures",
+    "@types/node": "26.6.5 is outside the selected Node 24 runtime major"
+  },
+  "checks": [
+    {
+      "command": "PATH=<bundled-python-bin>:$PATH bash scripts/setup.sh",
+      "outcome": "passed checksum-verified scoped bootstrap and frozen install"
+    },
+    {
+      "command": "bash scripts/dev.sh generate",
+      "outcome": "passed; 22 generated files unchanged"
+    },
+    {
+      "command": "bash scripts/dev.sh contracts:check",
+      "outcome": "passed; strict build, compile-time contract proof and 31 tests"
+    },
+    {
+      "command": "bash scripts/dev.sh check:foundation",
+      "outcome": "passed; pins, backend dependency hashes, provenance, privacy, requirements and docs"
+    },
+    {
+      "command": "bash scripts/dev.sh audit",
+      "outcome": "zero known npm vulnerabilities"
+    },
+    {
+      "command": "PATH=/opt/homebrew/bin:$PATH bash scripts/dev.sh native:test",
+      "outcome": "passed; 27 XCTest methods"
+    },
+    {
+      "command": "PATH=/opt/homebrew/bin:$PATH bash scripts/dev.sh native:build",
+      "outcome": "passed unsigned app build and payload verification with normal Xcode cache permissions"
+    },
+    {
+      "command": "python3.14 scripts/build-go-ios.py <new-output> --private-transport",
+      "outcome": "passed; five transport tests, 30 linked module notices, no device CLI execution",
+      "binarySHA256": "1343be186a2a7d8b7dbb5f5039e62bacaa9531548e8d1c5a830a0d45e8268edf"
+    },
+    {
+      "command": "python3.14 scripts/build-go-ios.py <new-output>",
+      "outcome": "passed; 30 linked module notices, no device CLI execution",
+      "binarySHA256": "c4ec60bc69635713dbd9d3da49ba31f0b3a938a1c88e0fef8450b295c7e73c20"
+    },
+    {
+      "command": "python3.14 scripts/check-backend-control.py",
+      "outcome": "passed three synthetic Go/TypeScript IPC scenarios"
+    },
+    {
+      "command": "go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -mode=binary <private-backend-binary>",
+      "outcome": "zero symbol or imported-package vulnerabilities; required-module-only GO-2026-5932 has no affected openpgp package or symbol in this binary and no published fix"
+    }
+  ],
+  "qualification": "Fixtures/builds only; installed-service, signing, two-host and physical-device acceptance remain unqualified",
+  "environmentNotes": [
+    "System Python 3.9 lacks safe tarfile extraction; bundled Python 3.12 or installed Python 3.14 is required. Bootstrap now fails before downloading with an actionable reason.",
+    "Sandbox-restricted process observation caused service-fixture failures; complete suite uses normal process/local IPC permissions. Native build requires normal SwiftPM diagnostic cache access."
+  ],
+  "sources": [
+    "https://registry.npmjs.org/",
+    "https://nodejs.org/dist/index.json",
+    "https://github.com/danielpaulus/go-ios/commit/ca2c56d2c294ff702cadf4821edd30b069d3a264",
+    "https://go.dev/dl/?mode=json",
+    "https://developer.apple.com/xcode/system-requirements",
+    "https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories"
+  ]
+}

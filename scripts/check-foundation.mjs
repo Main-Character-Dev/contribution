@@ -45,6 +45,12 @@ const pins = json('toolchain.json'), pkg = json('package.json');
 assert.equal(pkg.engines.node, pins.node); assert.equal(read('.node-version').trim(), pins.node);
 assert.equal(pkg.packageManager, 'pnpm@' + pins.pnpm);
 assert.equal(pkg.engines.pnpm, pins.pnpm); assert.equal(pkg.devDependencies.typescript, pins.typescript);
+const backend = json('config/go-ios.json');
+assert.deepEqual(Object.keys(backend.dependencyOverlay.files).sort(), ['go.mod', 'go.sum']);
+for (const [name, digest] of Object.entries(backend.dependencyOverlay.files)) {
+  assert.equal(hash('backends/go-ios/dependencies/' + name), digest, 'Backend dependency overlay drifted: ' + name);
+}
+assert(read('backends/go-ios/dependencies/go.mod').startsWith('module ' + backend.module + '\n'), 'Backend module identity drifted');
 const allowlist = json('config/payload-allowlist.json');
 const sparkle = json('config/sparkle.json'), swiftPackage = read('apps/macos/Packages/ContributionPlatform/Package.swift');
 assert(swiftPackage.includes(sparkle.url) && swiftPackage.includes(sparkle.sha256), 'Sparkle pins drifted');

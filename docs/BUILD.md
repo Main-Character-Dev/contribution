@@ -10,7 +10,7 @@ Contribution targets Apple Silicon and macOS 14.0 using Xcode 27.0 build 27A266a
 bash scripts/setup.sh
 ```
 
-Prerequisites are the exact Xcode above (installed separately), Python 3.11 or newer with safe `tarfile` extraction support, and network access to the official Node distribution, npm registry and pinned Sparkle GitHub release. Native commands seed a checksum-verified repository-local SwiftPM artifact cache. The bootstrap downloads Node 24.21.0 and pnpm 11.23.0 under `.tools`, compares Node's pinned SHA-256 to the official checksum manifest, verifies downloaded bytes, and verifies pnpm's pinned registry SHA-512. Dependencies use the committed pnpm lockfile with frozen installation. No global runtime selection, package-manager installation, shell profile, Git hooks, login item or service registration is changed.
+Prerequisites are the exact Xcode above (installed separately), Python 3.11 or newer with safe `tarfile` extraction support, and network access to the official Node distribution, npm registry and pinned Sparkle GitHub release. Native commands seed a checksum-verified repository-local SwiftPM artifact cache. The bootstrap downloads Node 24.21.0 and pnpm 12.11.2 under `.tools`, compares Node's pinned SHA-256 to the official checksum manifest, verifies downloaded bytes, and verifies the native Darwin arm64 pnpm tarball's pinned registry SHA-512. Dependencies use the committed pnpm lockfile with frozen installation. No global runtime selection, package-manager installation, shell profile, Git hooks, login item or service registration is changed.
 
 If Xcode is elsewhere, set `DEVELOPER_DIR` for the command. Do not change global `xcode-select` as a setup side effect. Toolchain mismatches fail with a reason. The root TypeScript workspace is portable in principle, but this bootstrap and native build are qualified only on Apple Silicon macOS.
 
@@ -59,3 +59,27 @@ Builds and disposable fixtures prove only their recorded boundaries. They do not
 Run `brew install gitleaks` and install the repository hooks with `git config core.hooksPath .githooks`. The hooks scan staged changes before commits and outgoing commit history before pushes; deleted refs skip scanning. Missing tools or unresolved history block the operation.
 
 The standalone `Secret scanning` GitHub workflow runs the checksum-verified Gitleaks 8.30.1 CLI on Linux with read-only permissions and a five-minute timeout. Pull requests and pushes scan introduced commits; manual runs scan reachable history. New local branches scan commits not already known on the destination remote; new hosted branches scan against the default branch when available. It does not execute project code, use the separately licensed Action wrapper, upload reports, or enable paid GitHub security. Actions minutes may apply. Local and hosted output redacts detected values. Real exposed credentials must be rotated; test values require exact, reviewed exceptions.
+
+## Dependency maintenance
+
+The October 12, 2026 refresh pins pnpm 12.11.2, TypeScript 6.0.3, Node 24
+declarations 24.19.2, Ajv 8.20.0 and json-schema-to-typescript 16.0.0. Node
+24.21.0 remains the latest release in the selected LTS major. TypeScript 7.0.2
+is deferred because regression fixtures require the stable `createProgram` and
+`transpileModule` compiler API. Updating those fixtures is a separate migration.
+The Node declaration major follows the runtime rather than npm's latest tag.
+
+The native pnpm executable and nested scripts use only the scoped tool directory.
+pnpm 12 writes a multi-document lockfile that also records package-manager
+dependencies; use the pinned runner for frozen installation and audit.
+
+Weekly Dependabot configuration covers npm and SHA-pinned GitHub Actions.
+GitHub automatic security fixes are enabled. GitHub currently documents pnpm
+support only through v10, so pnpm 12 lockfile updates remain unqualified and
+require manual frozen-install, audit, generation and contract verification.
+Dependabot PRs also cannot update the separate checksum pins in `toolchain.json`
+or custom Sparkle/go-ios JSON pins: review these boundaries explicitly.
+See [GitHub ecosystem support](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories).
+
+[Dependency refresh receipt](verification/dependency-refresh.json) records versions,
+verification commands, compatibility holds and qualification limits.

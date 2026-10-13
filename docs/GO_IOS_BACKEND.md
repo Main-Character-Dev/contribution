@@ -1,6 +1,6 @@
 # Pinned remote backend investigation
 
-The D0 prototype uses the exact revision and module checksums in [config/go-ios.json](../config/go-ios.json). `python3 scripts/build-go-ios.py /absolute/new/output` builds a scoped Darwin arm64 binary with Go 1.26.5, CGO disabled, readonly module resolution and Go's checksum database enabled. It does not run the binary, alter global tools, start a tunnel or access pairing records. `GOWORK=off` is deliberate: the upstream workspace names nested modules that are absent from its published root-module archive.
+The D0 prototype uses the exact revision and module checksums in [config/go-ios.json](../config/go-ios.json). `python3 scripts/build-go-ios.py /absolute/new/output` builds a scoped Darwin arm64 binary with Go 1.27.2, CGO disabled, readonly module resolution and Go's checksum database enabled. It does not run the binary, alter global tools, start a tunnel or access pairing records. `GOWORK=off` is deliberate: the upstream workspace names nested modules that are absent from its published root-module archive.
 
 The output contains the executable, Go build metadata, a SHA-256 file manifest, the Go runtime license, and notices from the 30 linked modules. The observed top-level texts use MIT, BSD-family, Apache-2.0 or mixed permissive notices. The complete copied texts, not that shorthand, govern redistribution. Dependency versions and checksums are retained in the generated manifest. The binary remains excluded from the Contribution product payload; the present output is an engineering prototype, not a qualified remote-device backend.
 
@@ -15,15 +15,15 @@ The output contains the executable, Go build metadata, a SHA-256 file manifest, 
 
 No device, tunnel, pairing or privileged operation was performed during this build. An earlier explicit `version` probe returned `local-build` and checked for a local tunnel agent; subsequent build verification reads Go metadata without executing the backend. The source pin and checksum receipt identify the prototype more precisely than that upstream version string.
 
-Sources inspected: [pinned go.mod](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/go.mod), [tunnel command](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/cmd_tunnel.go), [tunnel manager and HTTP API](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/ios/tunnel/tunnel_api.go), and [userspace transport](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/ios/tunnel/userspace_tunnel.go).
+Historical source inspection (October 5, 2026): [pinned go.mod](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/go.mod), [tunnel command](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/cmd_tunnel.go), [tunnel manager and HTTP API](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/ios/tunnel/tunnel_api.go), and [userspace transport](https://github.com/danielpaulus/go-ios/blob/273d3e06e803fb6ee95e4df914d8be82c5ee4bb0/ios/tunnel/userspace_tunnel.go).
 
 Local build evidence on 2026-10-05: two fresh output directories produced the same executable SHA-256, `2921a8b6c6cbff817f4e3b2bef3f8dc0800382926be3d2284b126047454283d6`, with 30 linked module notice sets. This establishes repeatability on the current toolchain/host, not cross-host reproducibility or runtime support.
 
 ## Private transport overlay
 
-The [Contribution transport overlay](../backends/go-ios/README.md) now builds against that same verified pin using `--private-transport`. It replaces the control listener with mutually authenticated private Unix IPC and adds mutual challenge/HMAC authentication to the loopback data proxy. It rejects shared/linked keys, preserves unknown retained sockets, disables automatic agent startup and repeated reconnect passes, and restricts the research command entry point to explicit per-device userspace tunnel operations. Kernel startup and Apple's default pairing-file path are refused. The complete before/after source hashes and notices are retained in its build manifest.
+The [Contribution transport overlay](../backends/go-ios/README.md) now builds against the current verified pin using `--private-transport`. It replaces the control listener with mutually authenticated private Unix IPC and adds mutual challenge/HMAC authentication to the loopback data proxy. It rejects shared/linked keys, preserves unknown retained sockets, disables automatic agent startup and repeated reconnect passes, and restricts the research command entry point to explicit per-device userspace tunnel operations. Kernel startup and Apple's default pairing-file path are refused. The complete before/after source hashes and notices are retained in its build manifest.
 
-Five named Go transport tests passed in the copied upstream package using only temporary state, in-memory pipes and local sockets. The isolated bounded build produced executable SHA-256 `3ebf17076990b231bcda99b3ec5df53b0bfb1315ae96a7036861ba01a3b3f431` with 30 linked notice sets. The resulting backend executable was not run. Its source entry gate, transport authentication and command restrictions are fixture/build proof, not a physical capability.
+Historical October 5 proof: five named Go transport tests passed in the copied upstream package using only temporary state, in-memory pipes and local sockets. The isolated bounded build produced executable SHA-256 `3ebf17076990b231bcda99b3ec5df53b0bfb1315ae96a7036861ba01a3b3f431` with 30 linked notice sets. The resulting backend executable was not run. Its source entry gate, transport authentication and command restrictions are fixture/build proof, not a physical capability.
 
 The default app still uses its conservative CoreDevice adapter. The private research backend is not in the product payload and does not yet have the service's scoped per-app dispatcher, native-session attribution or physical ownership/bootstrap integration. Its internal session lifecycle boundary is described below. The userspace path still depends on upstream device discovery and approved existing trust; these changes do not establish a cold cellular route. The hardware session and operation-specific investigation remain required.
 
@@ -44,3 +44,29 @@ A waiting Node wrapper receives no backend grant until its exact PID/start ident
 The parent can cancel only its actively owned process through the bounded runner. After restart, recovery observes retained process identities without killing, reconnecting, deleting sockets or rotating credentials. A dead process or elapsed deadline does not prove that the phone-side session was released, and a new session remains blocked on that unresolved evidence. Authenticated control observations retain their exact endpoint identity across recovery and report only private-backend readiness and selected-tunnel presence. They never establish physical trust, native ownership or other capability support.
 
 Engine startup reconciles retained session records; service status exposes bounded opaque summaries; maintenance accounts for unresolved local workers. Pairing, secrets, raw identifiers, local paths and backend output remain private. Product dispatch, evidence-based release/manual recovery, persistent-session qualification and backend packaging remain unfinished. Fixtures execute only a disposable synthetic shell backend and local IPC, never the research backend or a phone.
+
+## Dependency refresh — October 12, 2026
+
+The candidate now pins upstream `ca2c56d2c294ff702cadf4821edd30b069d3a264`
+(`v1.3.3-0.20261009072143-ca2c56d2c294`) and Go 1.27.2. The checksum-verified
+private-overlay build passed its five named transport tests, retained all 30
+linked-module notices and produced SHA-256
+`1343be186a2a7d8b7dbb5f5039e62bacaa9531548e8d1c5a830a0d45e8268edf`.
+The separate Go/TypeScript control fixture passed all three synthetic scenarios.
+No backend executable or device operation ran. Historical hashes above remain
+proof of their earlier pin only; physical qualification remains incomplete.
+
+The latest upstream revision still retained vulnerable Go networking modules.
+The [dependency overlay](../backends/go-ios/dependencies/go.mod) and its
+[checksums](../backends/go-ios/dependencies/go.sum) update x/net to v0.61.0,
+x/crypto to v0.58.0 and miekg/dns to v1.1.73 with their compatible transitive
+updates. `config/go-ios.json` pins both overlay file hashes. Both ordinary and
+private builds copy the verified upstream source into disposable state, apply
+only the pinned dependency manifests, verify Go checksums, refuse manifest
+drift and retain the dependency overlay in their output receipt. The module
+cache remains unchanged. Homebrew's relocated Go license is retained too.
+
+`govulncheck` v1.9.0 binary analysis finds zero reachable-symbol or imported-package
+vulnerabilities. One required-module advisory has no affected symbol in this
+binary and no published fix; this is not a claim of physical or runtime safety.
+The ordinary candidate also builds without executing its device CLI.

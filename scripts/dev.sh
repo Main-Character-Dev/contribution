@@ -3,4 +3,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 runtime="$PWD/.tools/node/bin"
 export PATH="$runtime:$PATH"
-exec "$runtime/node" "$PWD/.tools/pnpm/package/bin/pnpm.mjs" "$@"
+pnpm_version="$("$runtime/node" -p 'require("./toolchain.json").pnpm')"
+export PATH="$PWD/.tools/pnpm-$pnpm_version/package:$PATH"
+exec "$PWD/.tools/pnpm-$pnpm_version/package/pnpm" "$@"

@@ -1,12 +1,16 @@
 """Scoped macOS development tools. No global installs or shell/profile changes."""
 import base64
 import hashlib
+import inspect
 import json
 import platform
 import subprocess
 import tarfile
 import urllib.request
 from pathlib import Path
+
+if "filter" not in inspect.signature(tarfile.TarFile.extractall).parameters:
+    raise SystemExit("Use Python 3.11+ with tarfile data-filter support (for example python3.14).")
 
 ROOT = Path(__file__).resolve().parent.parent
 PINS = json.loads((ROOT / "toolchain.json").read_text())
@@ -48,11 +52,14 @@ if not node.exists():
     extract(url + filename, PINS["nodeDarwinArm64Sha256"], "sha256", TOOLS)
 if subprocess.check_output([str(node), "--version"], text=True).strip() != "v" + PINS["node"]:
     raise SystemExit("Wrong scoped Node version")
-pnpm = TOOLS / "pnpm/package/bin/pnpm.mjs"
+# pnpm 12 ships a native executable. Pin and verify the platform tarball itself;
+# do not let the npm wrapper download a second, unpinned executable.
+pnpm_dir = TOOLS / ("pnpm-" + PINS["pnpm"])
+pnpm = pnpm_dir / "package/pnpm"
 if not pnpm.exists():
-    extract("https://registry.npmjs.org/pnpm/-/pnpm-" + PINS["pnpm"] + ".tgz",
-            PINS["pnpmIntegrity"].removeprefix("sha512-"), "sha512", TOOLS / "pnpm")
-if subprocess.check_output([str(node), str(pnpm), "--version"], text=True).strip() != PINS["pnpm"]:
+    extract("https://registry.npmjs.org/@pnpm/exe.darwin-arm64/-/exe.darwin-arm64-" + PINS["pnpm"] + ".tgz",
+            PINS["pnpmIntegrity"].removeprefix("sha512-"), "sha512", pnpm_dir)
+if subprocess.check_output([str(pnpm), "--version"], text=True).strip() != PINS["pnpm"]:
     raise SystemExit("Wrong scoped pnpm version")
 print("Scoped tools verified: Node " + PINS["node"] + ", pnpm " + PINS["pnpm"])
 

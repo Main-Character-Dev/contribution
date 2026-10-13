@@ -56,20 +56,35 @@ source = Path(module['Dir'])
 go('mod', 'verify', cwd=source)
 patches = None
 private_copy = None
-if private_transport:
+if private_transport or PIN.get('dependencyOverlay'):
     private_copy = tempfile.TemporaryDirectory(prefix='private-backend-', dir=CACHE / 'tmp')
     copied = Path(private_copy.name) / 'source'
     shutil.copytree(source, copied, copy_function=shutil.copyfile)
     for directory in [copied, *[entry for entry in copied.rglob('*') if entry.is_dir()]]:
         directory.chmod(0o700)
-    spec = importlib.util.spec_from_file_location('private_go_ios', ROOT / 'scripts/private-go-ios.py')
-    overlay = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(overlay)
-    patches = overlay.apply(copied)
     source = copied
-    # These named transport tests use temporary files, in-memory pipes and local
-    # sockets. They never enumerate, pair or contact an Apple device.
-    print(go('test', './ios', '-run', '^TestContribution', '-count=1', cwd=source), end='')
+    dependency_changes = {}
+    for name, digest in PIN.get('dependencyOverlay', {}).get('files', {}).items():
+        if name not in ('go.mod', 'go.sum'):
+            raise SystemExit('Unexpected dependency overlay file.')
+        overlay_file = ROOT / 'backends/go-ios/dependencies' / name
+        if sha(overlay_file) != digest:
+            raise SystemExit('Dependency overlay checksum mismatch: ' + name)
+        dependency_changes[name] = {'before': sha(source / name), 'after': digest}
+        shutil.copyfile(overlay_file, source / name)
+    go('mod', 'download', cwd=source)
+    go('mod', 'verify', cwd=source)
+    # Resolution must leave both checksum-pinned dependency manifests unchanged.
+    for name, record in dependency_changes.items():
+        if sha(source / name) != record['after']:
+            raise SystemExit('Dependency overlay resolution drifted: ' + name)
+    if private_transport:
+        spec = importlib.util.spec_from_file_location('private_go_ios', ROOT / 'scripts/private-go-ios.py')
+        overlay = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(overlay)
+        patches = overlay.apply(copied)
+        # These tests use temporary files, in-memory pipes and local sockets.
+        print(go('test', './ios', '-run', '^TestContribution', '-count=1', cwd=source), end='')
 modules = {PIN['module']: module}
 for package in records(go('list', '-deps', '-json', '.', cwd=source)):
     dependency = package.get('Module')
@@ -93,13 +108,17 @@ for name, dependency in sorted(modules.items()):
             raise SystemExit('Unexpected license source: ' + name)
         shutil.copyfile(file, target / file.name)
     module_receipts.append({'module': name, 'version': dependency['Version'], 'sum': dependency.get('Sum'), 'notices': [str((target / file.name).relative_to(OUTPUT)) for file in candidates]})
-golang = Path(go('env', 'GOROOT').strip()) / 'LICENSE'
+goroot = Path(go('env', 'GOROOT').strip())
+golang = goroot / 'LICENSE'
+# Homebrew keeps Go's upstream license beside libexec rather than inside GOROOT.
+if not golang.is_file() and goroot.name == 'libexec':
+    golang = goroot.parent / 'LICENSE'
 shutil.copyfile(golang, notices / 'Go-LICENSE')
 go('build', '-trimpath', '-buildvcs=false', '-o', str(OUTPUT / 'ios'), '.', cwd=source)
 (OUTPUT / 'build-info.txt').write_text(go('version', '-m', str(OUTPUT / 'ios')))
 files = {str(file.relative_to(OUTPUT)): sha(file) for file in sorted(OUTPUT.rglob('*')) if file.is_file()}
 (OUTPUT / 'manifest.json').write_text(json.dumps({'schemaVersion': 1, 'pin': PIN, 'toolchain': observed_toolchain, 'CGO_ENABLED': '0', 'GOWORK': 'off',
-    'modules': module_receipts, 'files': files, 'privateTransportOverlay': patches, 'productEnabled': False, 'runtimeExecuted': False}, indent=2) + '\n')
+    'modules': module_receipts, 'files': files, 'dependencyOverlay': PIN.get('dependencyOverlay'), 'privateTransportOverlay': patches, 'productEnabled': False, 'runtimeExecuted': False}, indent=2) + '\n')
 if private_copy:
     private_copy.cleanup()
 print(json.dumps({'output': str(OUTPUT), 'revision': PIN['revision'], 'binarySHA256': files['ios'], 'linkedModules': len(module_receipts), 'privateTransport': private_transport, 'runtimeExecuted': False}))

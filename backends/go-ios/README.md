@@ -19,3 +19,9 @@ The five tests exercise key permissions/links, incorrect clients, server imperso
 The output remains excluded from the app payload. Internal session supervision and conservative restart reconciliation now have disposable process fixtures. Product dispatch, independent trust/bootstrap, confirmed phone-session release, actual remote transport, cold cellular and each device operation remain unfinished or unqualified. See [backend investigation](../../docs/GO_IOS_BACKEND.md). No persistent state or tunnel has been created on either real host.
 
 The internal service control client and transport-only interoperability fixture are described in [the backend investigation](../../docs/GO_IOS_BACKEND.md#service-control-client). `python3 scripts/check-backend-control.py` compiles this overlay with `fixtures/control-server.go`, without linking upstream device packages, and checks the TypeScript client against real Go authentication and HTTP framing. It opens only disposable local IPC. It does not start the research backend or grant phone authority.
+
+Dependency maintenance uses the checksum-pinned `dependencies/go.mod` and
+`dependencies/go.sum` overlay in both build variants. The builder verifies
+upstream provenance before making a disposable source copy and rejects changes
+to the dependency manifests during resolution. See the October 12 refresh in
+[backend investigation](../../docs/GO_IOS_BACKEND.md#dependency-refresh--october-12-2026).

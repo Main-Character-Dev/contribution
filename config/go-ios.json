@@ -1,12 +1,18 @@
 {
   "module": "github.com/danielpaulus/go-ios",
-  "version": "v1.3.3-0.20261002094649-273d3e06e803",
-  "revision": "273d3e06e803fb6ee95e4df914d8be82c5ee4bb0",
-  "sum": "h1:fjgXgKqzZDtG/NPo7oIxKYJ7UUyvoCjYCYw4OZwZQIM=",
+  "version": "v1.3.3-0.20261009072143-ca2c56d2c294",
+  "revision": "ca2c56d2c294ff702cadf4821edd30b069d3a264",
+  "sum": "h1:gyGZt7DSH9k7q1b0cwJCZB5gVhH1sU4/SAM47iZ+eTg=",
   "goModSum": "h1:A3Oz+qKOuQs0RorxTPTxojxO2cVpdUEfiP3hfvd9IcQ=",
-  "toolchain": "go1.26.5",
+  "toolchain": "go1.27.2",
   "target": "darwin/arm64",
   "enabledInProduct": false,
   "upstreamLicense": "MIT",
-  "runtimePolicy": "No automatic tunnel, pairing, privilege escalation, developer image download, or device operation. CLI prototype is excluded from product payloads."
+  "runtimePolicy": "No automatic tunnel, pairing, privilege escalation, developer image download, or device operation. CLI prototype is excluded from product payloads.",
+  "dependencyOverlay": {
+    "files": {
+      "go.mod": "7b1dd28ecd4ca39960cb7ee681c8ee827c7f0445e4f9c24724b9f4b92b0bcbbc",
+      "go.sum": "11e0cac9a246a72c5b92a6583870bd237903a60b61915ba73b836c3e9f0a1f1a"
+    }
+  }
 }
